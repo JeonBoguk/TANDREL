@@ -811,10 +811,10 @@ function winTowns() {
       const recent = W.events.filter((e) => e && e.town === t.id && e.imp >= 3 && W.day - e.day <= 30 && (!p || p.known.has(e.id))).slice(-3).reverse();
       const notable = adults.slice().sort((a, b) => (sc.get(b.id) || 0) - (sc.get(a.id) || 0)).slice(0, 4);
       const jobs = {}; for (const n of adults) jobs[n.job] = (jobs[n.job] || 0) + 1;
-      const mood = t.fallen ? ["함락됨", "bad"] : price >= 4 ? ["굶주림", "bad"] : price >= 2 ? ["빠듯함", "mid"] : ["넉넉함", "good"];
+      const mood = t.fallen ? ["함락됨", "bad"] : price >= 4 ? ["굶주림", "bad"] : t.worry ? ["겨울 걱정", "mid"] : price >= 2 ? ["빠듯함", "mid"] : ["넉넉함", "good"];
       return h("div", { class: "town card" + (p && p.town === t.id ? " here" : "") },
         h("div", { class: "ttl" }, h("span", null, t.name, h("span", { class: "small muted" }, ` · ${A.nationName(W, t.nation)}${t.border ? " · 국경" : ""}`)), h("span", { class: "chip " + mood[1] }, mood[0])),
-        h("div", { class: "small" }, `주민 ${res.length}명 · 곡식 한 끼 ${price}닢${p && p.home === t.id ? " · 내 집" : ""}`),
+        h("div", { class: "small" }, `주민 ${res.length}명 · 곡식 한 끼 ${price}닢${t.store >= 1 ? ` · 곳간 비축 ${Math.round(t.store)}` : ""}${p && p.home === t.id ? " · 내 집" : ""}`),
         h("div", { class: "jobs" }, Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, c]) => h("span", { class: "chip" }, `${A.JOBS[j].name} ${c}`))),
         h("div", { class: "sub" }, "이름난 사람"), h("div", { class: "fam" }, notable.map((n) => h("button", { type: "button", onclick: () => { bioId = n.id; openWin("people"); } }, following(n.id) ? "★ " : "", n.name, h("span", { class: "muted" }, ` ${W.jobName(n)}`)))),
         h("div", { class: "sub" }, "요즘 이 마을"), recent.length ? h("ul", { class: "mini" }, recent.map((e) => h("li", null, h("span", { class: "muted" }, W.ago(e.day) + " "), e.text))) : h("div", { class: "small muted" }, p ? "들려온 소식이 없다." : "조용하다."));

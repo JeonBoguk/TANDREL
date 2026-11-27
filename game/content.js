@@ -337,7 +337,7 @@
       festival: "마을 소식", caravan: "살림·장사", plague: "사건·사고", plague_heal: "사람들", bandits: "사건·사고", bandits_beaten: "사건·사고", bandits_won: "사건·사고",
       renovate: "살림·장사", renovate_done: "사람들", discovery: "사람들", learn: "사람들", independence: "전황", race_born: "사람들", contact: "전황",
       dream_done: "사람들", dream_lost: "사람들", dream_start: "사람들", feast: "사람들",
-      nation_founded: "전황", follow_founder: "사람들", job_born: "살림·장사", founding: "전황",
+      nation_founded: "전황", follow_founder: "사람들", granary_open: "마을 소식", food_aid: "살림·장사", food_worry: "마을 소식", job_born: "살림·장사", founding: "전황",
     },
   });
 })(typeof window !== "undefined" ? window : globalThis);

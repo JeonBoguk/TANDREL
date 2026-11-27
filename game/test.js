@@ -247,6 +247,24 @@
       const w3 = A.World.deserialize(old); G.setup(w3);
       t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
     } },
+    { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
+      const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);
+      while (W.season !== "가을") G.tick(W, 24 * 60);
+      a.food = pop(a) * 40; a.store = 0; G.tick(W, 24 * 60);
+      t.check(a.store > 0, `가을에 남는 식량을 곳간에 쌓았다 (${Math.round(a.store)})`);
+      a.food = 0; a.store = pop(a) * 10; a.storeOpen = false; G.tick(W, 24 * 60);
+      t.check(W.events.some((e) => e && e.kind === "granary_open" && e.town === a.id), "곳간을 열었다는 소식");
+      const b = ts.find((x) => x !== a && x.nation === a.nation) || ts[1];
+      for (const x of ts) if (x !== a) x.food = pop(x) * 25;
+      a.food = 0; a.store = 0; a.aidDay = null; A._.granaries(W, ts, Object.fromEntries(ts.map((x) => [x.id, pop(x)])));
+      const aid = W.events.filter((e) => e && e.kind === "food_aid" && e.data.to === a.id).pop();
+      t.check(aid && W.towns[aid.data.from].nation === a.nation || (aid && !ts.some((x) => x !== a && x.nation === a.nation)), aid ? aid.text : "지원 없음");
+      // 걱정이 든 마을의 농부는 밭을 떠나지 않는다
+      const f = W.residents(a.id, true).find((n) => n.job === "farmer" && n.controller !== "player");
+      if (f) { a.worry = true; f.gold = 999; f.dream = null; t.check(A._.betterJob(f, W) === null, `${f.name}은 겨울 걱정에 밭에 남는다`); }
+      const w2 = A.World.deserialize(JSON.parse(W.serialize()));
+      t.check(Math.abs(w2.towns[a.id].store - a.store) < 1e-6, "곳간 비축이 저장된다");
+    } },
     { id: "skills", name: "기술은 사람에게 남고, 일할수록 솜씨가 는다", run(t) {
       const W = t.w, smith = W.spawn(t.town(), { race: "human", job: "blacksmith", ageYears: 30 });
       t.check(A.knows(smith, "woodwork") && A.knows(smith, "farming_tools"), "대장장이는 목공·농기구 만들기를 안다");

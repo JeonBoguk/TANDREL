@@ -561,7 +561,7 @@
       const npcs = this.npcs.map((n) => ({ ...n,
         mem: n.mem.map((m) => [m.e, m.s, m.f ? 1 : 0, m.v]),
         known: [...n.known].filter((id) => memIds.has(id)), flags: [...n.flags] }));
-      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
+      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
       return JSON.stringify({
         format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
@@ -851,7 +851,9 @@
     // 꿈이 가리키는 직업이 있고 돈이 모였다면 그 길로 간다
     const want = n.dream && n.dream.job && JOBS[n.dream.job];
     if (want && want.id !== n.job && want.entry_cost <= n.gold && jobDemand(w, want, n.town, 1) > 0.6) return want;
-    if (w.foodPrice(w.towns[n.town]) >= 4 && !JOBS[n.job].food && n.traits.ambition < 0.8) return JOBS.farmer;
+    const home = w.towns[n.town];
+    if (home.worry && JOBS[n.job].food) return null; // 겨울 양식이 걱정이면 밭을 떠나지 않는다
+    if (!JOBS[n.job].food && ((w.foodPrice(home) >= 4 && n.traits.ambition < 0.8) || (home.worry && n.traits.ambition < 0.5 && expectedIncome(w, JOBS[n.job], n.town) < 3))) return JOBS.farmer;
     const cur = expectedIncome(w, JOBS[n.job], n.town);
     // 돈을 들여 차리는 일(가게·공방)로 옮겨 간다. 돈이 안 드는 일로는 먹을 것을 만드는 일(농사)만 옮겨 간다
     const opts = w.openJobs().filter((j) => j.id !== n.job && (j.entry_cost > 0 || j.food) && j.entry_cost <= n.gold * 0.8 && (!j.needKnow || knows(n, j.needKnow)) && expectedIncome(w, j, n.town, 1) > cur * 1.3);
@@ -871,7 +873,9 @@
     const old = JOBS[n.job].name, from = n.job;
     if (j.id === "farmer") {
       setJob(n, "farmer"); n.job_cooldown = 120;
-      w.record("career", `흉년이 닥치자 ${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 생계를 위해 밭을 갈기 시작했다`, { actor: n.id, town: n.town, imp: 3, wr: 0.3, data: { from, to: "farmer", why: "famine" } });
+      const famine = w.foodPrice(w.towns[n.town]) >= 4;
+      w.record("career", famine ? `흉년이 닥치자 ${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 생계를 위해 밭을 갈기 시작했다` : `겨울 양식이 걱정된 ${old} ${jo(n.name, "이/가")} 밭을 갈기 시작했다`,
+        { actor: n.id, town: n.town, imp: 3, wr: 0.3, data: { from, to: "farmer", why: famine ? "famine" : "worry" } });
       return;
     }
     n.gold -= j.entry_cost; setJob(n, j.id); n.job_cooldown = 240; n.fame += 1;
@@ -1009,6 +1013,41 @@
     const pops = Object.fromEntries(towns.map((t) => [t.id, Math.max(1, w.residents(t.id).length)]));
     const avg = towns.reduce((s, t) => s + t.food, 0) / Object.values(pops).reduce((s, x) => s + x, 0);
     for (const t of towns) t.food += (avg * pops[t.id] - t.food) * 0.02;
+    granaries(w, towns, pops);
+  }
+
+  /* 흉년 대비. 겨울(수확 0.2)과 봄을 넘기지 못하고 곳간이 비는 일이 잦아서 세 가지 규칙을 둔다.
+   *  비축: 가을에 남는 식량을 곳간(t.store)에 쌓는다. 곳간 것은 잘 상하지 않고, 마을 식량이 바닥나면 푼다.
+   *  대비: 여름·가을에 겨울을 날 양이 모자라 보이면(t.worry) 농사로 옮기는 사람이 는다 (betterJob).
+   *  지원: 굶는 마을이 생기면 여유 있는 마을이 식량을 보낸다. 같은 나라가 먼저 나선다. */
+  const FOOD = { keep: 15, winter: 40, low: 4, refill: 8, hungry: 3, spare: 15 }; // 한 사람당 식량(일)
+  function granaries(w, towns, pops) {
+    const T = (t) => w.towns[t.id].name;
+    for (const t of towns) {
+      const pop = pops[t.id];
+      t.store = (t.store || 0) * 0.9995;
+      if (w.season === "가을" && t.food > pop * FOOD.keep) { const k = (t.food - pop * FOOD.keep) * 0.05; t.food -= k; t.store += k; }
+      if (t.food < pop * FOOD.low && t.store >= 1) {
+        const k = Math.min(t.store, pop * FOOD.refill - t.food);
+        t.store -= k; t.food += k;
+        if (!t.storeOpen) { t.storeOpen = true; w.record("granary_open", `${T(t)}에서 곳간을 열어 가을에 비축해 둔 식량을 풀었다`, { town: t.id, imp: 4, wr: 0.2, data: { food: Math.round(k) } }); }
+      } else if (t.food > pop * FOOD.refill * 1.5) t.storeOpen = false;
+      const worry = (w.season === "여름" || w.season === "가을") && t.food + t.store < pop * FOOD.winter;
+      if (worry && !t.worry) w.record("food_worry", `${T(t)} 사람들이 겨울 양식을 걱정하기 시작했다. 밭으로 나가는 사람이 늘 것이다`, { town: t.id, imp: 2, wr: 0.1 });
+      t.worry = worry;
+    }
+    for (const t of towns) {
+      if (t.food + t.store >= pops[t.id] * FOOD.hungry || w.day - (t.aidDay ?? -99) < 10) continue;
+      const donors = towns.filter((d) => d !== t && d.food > pops[d.id] * FOOD.spare)
+        .sort((a, b) => (b.nation === t.nation) - (a.nation === t.nation) || (b.food / pops[b.id]) - (a.food / pops[a.id]));
+      const d = donors[0];
+      if (!d) continue;
+      const k = Math.min((d.food - pops[d.id] * FOOD.spare) * 0.25, pops[t.id] * FOOD.refill - t.food);
+      if (k < 1) continue;
+      d.food -= k; t.food += k; t.aidDay = w.day;
+      const same = d.nation === t.nation;
+      w.record("food_aid", `굶주리는 ${T(t)}에 ${T(d)}에서 식량 ${Math.round(k)}을 실어 보냈다${same ? "" : `. ${nameOfNation(w, d.nation)}의 호의다`}`, { town: t.id, imp: same ? 4 : 5, wr: same ? 0.2 : 0.4, data: { from: d.id, to: t.id, food: Math.round(k) } });
+    }
   }
 
   function upkeep(w) {
@@ -1566,7 +1605,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
   root.Asteria = { SAVE_VERSION, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

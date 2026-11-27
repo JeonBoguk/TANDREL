@@ -62,6 +62,7 @@ Asteria.extend({
 - `w.assets{id}`: 자산. 지금은 주민 집 `house:마을:번호` = `{kind, town, hid, owner, style(roof·wall·floor), mods(dx·dw·dh·grown)}`. 인물은 사는 집 `n.house`를 가진다. 배정·승계는 engine.js의 `settleIn`, `joinHousehold`, `pickHouse`, `passHouses`. 마을마다 집 수는 `CONTENT.housesPerTown`(game.js `BUILD_DEF`와 맞출 것)
 - 인물의 혈통·외형: `n.heritage{종족: 비율}`(아이는 부모 평균 `blendHeritage`), `n.look{skin, hair, style, eye}`(태어날 때 정해짐, 아이는 `inheritLook`으로 부모를 닮음. 그림은 `render.js lookOf`가 이 값을 쓴다), `n.birthplace{town, nation, day}`, `n.culture`(나라 id, 어른이 될 때 사는 나라).
 - 기술: `n.skills{지식 id: {lv, xp, from}}`. lv 0은 익히는 중, 1 기초·2 능숙·3 숙련·4 명인(`SKILL_LV`의 xp). `knows(n,k)`는 lv ≥ 1. 직업은 `setJob(n, id)`로 바꾼다(teaches를 `from:"job"`으로 익힘, 전직해도 남음). 경험은 `addXp`(일 `rWork`, 혼자 익히기 `practice`). 직업 솜씨는 수입에 `mastery(n)`으로 곱한다. 친한 사람에게 퍼지는 것은 직업 밖에서 익힌 기술뿐(`sharedSkills`).
+- 식량: 마을의 `t.food`(오늘 먹을 것)와 `t.store`(가을에 비축한 곳간). 규칙은 engine.js `granaries`와 `FOOD` 기준(한 사람당 일수). `t.worry`는 겨울 양식 걱정(농부가 밭에 남음, `betterJob`).
 - 어른: 종족의 `adultAge`(기본 16)에 이르면 `comeOfAge`가 `n.grown = true`로 바꾼다. 판정은 `Asteria.isAdult(n)`.
 - `w.worldId`: 세계 식별자(새 세계를 만들 때 정함). 창작물·기록이 어느 세계 것인지 가리킨다.
 - 사건의 `data`: 문장과 별개인 구조화 값. `w.record(kind, text, { …, data: { from, to } })`. 저장 배열의 11번째 칸(있을 때만).
