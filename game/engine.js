@@ -726,7 +726,8 @@
     const town = w.towns[tid], adults = w.residents(tid, true);
     const open = w.openJobs(), total = open.reduce((s, j) => s + j.weight, 0);
     // 이 마을에 알맞은 일꾼 수. 농사처럼 많이 먹을 것을 만드는 일은 마을 어른의 4할쯤이 해야 모두가 먹고산다
-    const want = Math.max(1, adults.length * (job.weight / total));
+    // 세계에서 생긴 직업(weight 0)은 드문 일이라 마을에 한 사람도 다 필요하지 않다
+    const want = job.weight ? Math.max(1, adults.length * (job.weight / total)) : 0.4;
     const have = adults.filter((x) => x.job === job.id).length + extra;
     let f = clamp((want + 1) / (have + 1), 0.35, 2.2);
     if (job.food) { // 곡식값이 오르거나 곳간이 비어 가면 먹을 것을 만드는 일이 귀해진다
@@ -992,7 +993,9 @@
     if (!JOBS[n.job].food && ((w.foodPrice(home) >= 4 && n.traits.ambition < 0.8) || (home.worry && n.traits.ambition < 0.5 && expectedIncome(w, JOBS[n.job], n.town) < 3))) return JOBS.farmer;
     const cur = expectedIncome(w, JOBS[n.job], n.town);
     // 돈을 들여 차리는 일(가게·공방)로 옮겨 간다. 돈이 안 드는 일로는 먹을 것을 만드는 일(농사)만 옮겨 간다
-    const opts = w.openJobs().filter((j) => j.id !== n.job && (j.entry_cost > 0 || j.food) && j.entry_cost <= n.gold * 0.8 && (!j.needKnow || knows(n, j.needKnow)) && expectedIncome(w, j, n.town, 1) > cur * 1.3);
+    // 먹을 것을 만드는 사람은 곳간이 넉넉할 때만 세계에서 생긴 드문 직업(weight 0)으로 옮긴다
+    const plenty = w.foodPrice(home) === 1 && !home.worry;
+    const opts = w.openJobs().filter((j) => j.id !== n.job && (j.entry_cost > 0 || j.food) && j.entry_cost <= n.gold * 0.8 && (!j.needKnow || knows(n, j.needKnow)) && (j.weight || !JOBS[n.job].food || plenty) && expectedIncome(w, j, n.town, 1) > cur * 1.3);
     return opts.length ? maxBy(opts, (j) => expectedIncome(w, j, n.town, 1)) : null;
   }
   function uJob(n, w) {
@@ -1576,7 +1579,8 @@
     w.defs = w.defs || { jobs: [], works: [] };
     for (const K of CONTENT.knowledge) {
       if (!K.demand || CONTENT.jobs.some((j) => (j.teaches || []).includes(K.id)) || !demandMet(w, K.demand)) continue;
-      const who = w.alive().filter((n) => isAdult(n) && knows(n, K.id) && n.controller !== "player" && !n.at_war && n.jail === 0 && !n.role);
+      const who = w.alive().filter((n) => isAdult(n) && knows(n, K.id) && n.controller !== "player" && !n.at_war && n.jail === 0 && !n.role
+        && (!JOBS[n.job].food || (w.foodPrice(w.towns[n.town]) === 1 && !w.towns[n.town].worry))); // 먹을 것을 만드는 사람은 곳간이 넉넉할 때만
       if (!who.length) continue;
       const n = maxBy(who, (x) => x.traits.ambition + x.traits.kindness * 0.5 + w.rng.next() * 0.3);
       const { job, work } = makeJobDef(w, K);
