@@ -47,6 +47,7 @@
         talk: "기도하러 오는 사람이 늘었어요. 다들 마음이 불안한가 봐요." },
     ],
     nations: { asteria: "탄드렐 왕국", ironhold: "철산 연맹", silvaren: "실바렌 숲의 나라" },
+    housesPerTown: 5, // 마을마다 주민 집 수 (game.js BUILD_DEF의 hid 1~5와 맞춘다)
     /* 마을: pos는 지도 타일 좌표(마을 중심), roads는 길로 이어진 마을. 지도는 마을 위치에 맞춰 넓어진다. */
     towns: [
       { id: "lumen", name: "루멘", nation: "asteria", population: 14, races: { human: 0.8, elf: 0.1, beastkin: 0.1 }, pos: [76, 62], roads: ["millbrook", "granok", "greytower", "silvaren"] },
@@ -163,7 +164,7 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 4;
+  const SAVE_VERSION = 5;
   const newWorldId = (seed) => `w${(seed >>> 0).toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1679616).toString(36).padStart(4, "0")}`;
   const MIGRATIONS = {
     // v2 → v3: 세계 식별자. 사건의 data는 없던 칸이라 그대로 비어 있다
@@ -188,6 +189,24 @@
         N.ended = heir ? heir.indep.day : d.day;
       }
       return { ...d, towns, nations, version: 4 };
+    },
+    // v4 → v5: 주민 집. 사는 집이 id 공식(1 + id % 5)이던 것을 인물 필드(house)로, 집 꾸밈(houseStyle)을 자산으로
+    4: (d) => {
+      const assets = {}, H = CONTENT.housesPerTown;
+      for (const town of Object.keys(d.towns)) for (let h = 1; h <= H; h++) { const id = houseId(town, h); assets[id] = { id, kind: "house", town, hid: h, owner: null, style: {}, mods: {} }; }
+      for (const [key, st] of Object.entries(d.houseStyle || {})) {
+        const [town, hid] = key.split(":"), a = assets[houseId(town, hid)];
+        if (!a) continue;
+        const { dx, dw, dh, grown, ...style } = st;
+        a.style = style; a.mods = Object.fromEntries(Object.entries({ dx, dw, dh, grown }).filter(([, v]) => v !== undefined));
+      }
+      const npcs = d.npcs.map((n) => ({ ...n, house: n.house !== undefined ? n.house : n.controller === "player" ? null : houseId(n.at_war ? n.home || n.town : n.town, 1 + (n.id % 5)) }));
+      for (const a of Object.values(assets)) { // 주인: 그 집에 사는 가장 나이 많은 어른
+        const res = npcs.filter((n) => n.alive && n.house === a.id && n.age_days >= ADULT * DPY).sort((x, y) => y.age_days - x.age_days);
+        a.owner = res.length ? res[0].id : null;
+      }
+      const { houseStyle, ...rest } = d;
+      return { ...rest, npcs, assets, version: 5 };
     },
   };
   function migrate(d) {
@@ -214,6 +233,7 @@
       /* 나라: 마을은 나라의 이름이 아니라 id를 가진다(town.nation). 이름·세운 때·세운 사람·갈라져 나온 나라는 여기에 */
       this.nations = {};
       for (const t of Object.values(this.towns)) ensureNation(this, t.nation);
+      this.assets = {};         // 집 같은 자산 { "house:lumen:3": {kind, town, hid, owner, style, mods} }
       this.worldId = null;      // 세계 식별자 (newWorld에서 정한다. 창작물·기록이 어느 세계 것인지 가리킨다)
       this.npcs = [];
       this.events = [];
@@ -320,9 +340,10 @@
         rel: {}, mem: [], known: new Set(), spouse: null, parents: [], children: [], goal: null, fame: 0,
         at_war: false, service_left: 0, role: null, jail: 0, job_cooldown: 0, flags: new Set(),
         controller: "ai", vowed: {}, lover: null, outside: false,
-        dream: null, stat: { help: 0, towns: [tid] },
+        dream: null, stat: { help: 0, towns: [tid] }, house: null,
       };
       this.npcs.push(n);
+      settleIn(this, n, pickHouse(this, tid));
       return n;
     }
     populate() {
@@ -339,7 +360,7 @@
         const singles = this.rng.shuffle(people.slice());
         for (let i = 0; i + 1 < singles.length; i += 2) {
           const a = singles[i], b = singles[i + 1];
-          if (this.rng.next() < 0.3) { a.spouse = b.id; b.spouse = a.id; a.rel[b.id] = 70; b.rel[a.id] = 70; }
+          if (this.rng.next() < 0.3) { a.spouse = b.id; b.spouse = a.id; a.rel[b.id] = 70; b.rel[a.id] = 70; settleIn(this, b, a.house); }
         }
       }
       for (const t of Object.values(this.towns)) t.seeded = true;
@@ -412,6 +433,7 @@
       if (n.fame >= 10) imp = Math.max(imp, 7);
       const ev = this.record(kind, `${jo(n.name, "이/가")} ${how} 세상을 떠났다`,
         { actor: killer, target: n.id, town: n.town, imp, sent: killer !== null ? -20 : 0, cause, wr: 0.5, notify: mourners });
+      passHouses(this, n, ev); // 그 사람이 주인이던 집은 같은 집 식구에게 넘어간다 (배우자 → 자녀 → 다른 식구)
       if (demon) for (const mid of mourners) { const m = this.npcs[mid]; m.flags.add("demon_grudge"); m.traits.bravery = Math.min(1, m.traits.bravery + 0.1); }
       if (killer !== null) {
         const k = this.npcs[killer];
@@ -430,11 +452,12 @@
       return ev;
     }
     move(n, tid, withFamily = true) {
-      const old = n.town;
+      const old = n.town, house = n.controller === "player" ? null : pickHouse(this, tid);
       n.town = tid;
+      if (house) settleIn(this, n, house);
       if (withFamily) for (const fid of family(n)) {
         const f = this.npcs[fid];
-        if (f.alive && f.town === old && !f.at_war && f.controller !== "player" && (fid === n.spouse || !isAdult(f))) f.town = tid;
+        if (f.alive && f.town === old && !f.at_war && f.controller !== "player" && (fid === n.spouse || !isAdult(f))) { f.town = tid; if (house) settleIn(this, f, house); }
       }
     }
 
@@ -471,7 +494,7 @@
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, ext: this.ext || null, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
-        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], racesSeen: this.racesSeen || null, houseStyle: this.houseStyle || {}, innMods: this.innMods || {},
+        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
       });
     }
@@ -496,7 +519,7 @@
       for (const n of w.npcs) if (n.goal && !w.events[n.goal.origin]) n.goal = null;
       w.chronicle = d.chronicle.filter((id) => w.events[id]);
       w.war = { ...d.war, refused: new Set(d.war.refused || []) };
-      w.droughtUntil = d.droughtUntil; w.worldLog = d.worldLog || {}; w.jobsOpen = d.jobsOpen || []; w.racesSeen = d.racesSeen || null; w.houseStyle = d.houseStyle || {}; w.innMods = d.innMods || {};
+      w.droughtUntil = d.droughtUntil; w.worldLog = d.worldLog || {}; w.jobsOpen = d.jobsOpen || []; w.racesSeen = d.racesSeen || null; w.assets = d.assets || {}; w.innMods = d.innMods || {};
 
       w.usedNames = new Set(d.usedNames);
       w.initialPop = d.initialPop;
@@ -642,6 +665,7 @@
         }
       } else if (n.lover === m.id && opinion(n, m.id) >= 60 && opinion(m, n.id) >= 55 && w.rng.next() < 0.3) {
         n.spouse = m.id; m.spouse = n.id; n.lover = m.lover = null; adjust(n, m.id, 15); adjust(m, n.id, 15);
+        joinHousehold(w, m, n.house); // 한 집에 산다 (아이들도 함께)
         w.record("marriage", `${jo(n.name, "과/와")} ${jo(m.name, "이/가")} ${w.towns[n.town].name}에서 결혼했다`, { actor: n.id, target: m.id, town: n.town, imp: 5, sent: 5, wr: 0.6 });
       }
     }
@@ -986,6 +1010,7 @@
       const race = mix && w.rng.next() < 0.5 ? mix.id : w.rng.choice([n.race, m.race]);
       const c = w.spawn(n.town, { race, job: w.rng.choice([n.job, m.job]), ageYears: 0 });
       c.age_days = 0; c.gold = 0; c.parents = [n.id, m.id];
+      if (n.house) settleIn(w, c, n.house); // 부모 집에서 자란다
       for (const p of [n, m]) {
         p.children.push(c.id); p.rel[c.id] = 80; c.rel[p.id] = 80;
         for (const k of Object.keys(c.traits)) c.traits[k] = clamp((c.traits[k] + p.traits[k]) / 2, 0, 1);
@@ -1006,6 +1031,7 @@
       text += `. 어린 시절의 원수 ${jo(w.npcs[n.goal.target].name, "을/를")} 결코 잊지 않았다`;
       imp = 6;
     }
+    if (n.house) settleIn(w, n, n.house); // 주인 없는 집이면 주인이 된다
     w.record("adulthood", text, { actor: n.id, town: n.town, imp, cause: n.goal ? n.goal.vow : null, wr: 0.2, data: { job: n.job, inherited: how === "부모의 일을 이어받아" } });
   }
 
@@ -1038,6 +1064,60 @@
       if (d.dream && DREAMS[d.dream]) { const dd = DREAMS[d.dream]; n.dream = { id: d.dream, since: w.day, best: 0, ...(dd.init ? dd.init(n, w) : {}), ...(d.dreamData || {}) }; }
       else if (isAdult(n)) pickDream(n, w, true);
       if (!silent) w.record("arrival", `${RACES[n.race].name} ${JOBS[n.job].name} ${jo(n.name, "이/가")} ${w.towns[d.town].name}에 정착했다`, { actor: n.id, town: d.town, imp: 3, wr: 0.3 });
+    }
+  }
+
+  // ================================================================ 집 (자산)
+  /* 마을마다 주민 집이 housesPerTown채 있다. 집은 자산(w.assets)이고 주인(owner)이 있다. 인물은 사는 집(n.house)을 가진다.
+   * 태어나면 부모 집, 결혼하면 한 집, 이사하면 새 마을의 가장 한산한 집. 주인이 죽거나 떠나면 같은 집 식구에게 넘어간다. */
+  const houseId = (town, hid) => `house:${town}:${hid}`;
+  function ensureHouses(w, town) {
+    w.assets = w.assets || {};
+    for (let h = 1; h <= CONTENT.housesPerTown; h++) { const id = houseId(town, h); if (!w.assets[id]) w.assets[id] = { id, kind: "house", town, hid: h, owner: null, style: {}, mods: {} }; }
+  }
+  const houseResidents = (w, id) => w.npcs.filter((x) => x.alive && x.house === id);
+  /** 이 마을에서 가장 한산한 집 */
+  function pickHouse(w, town) {
+    ensureHouses(w, town);
+    let best = null, bc = Infinity;
+    for (let h = 1; h <= CONTENT.housesPerTown; h++) { const id = houseId(town, h), c = houseResidents(w, id).length; if (c < bc) { bc = c; best = id; } }
+    return best;
+  }
+  const liveOwner = (w, a) => a.owner !== null && a.owner !== undefined && w.npcs[a.owner] && w.npcs[a.owner].alive;
+  /** 주인이 떠나거나 죽으면: 같은 집에 남은 어른에게 (배우자 → 나이 많은 자녀 → 나이 많은 식구) */
+  function heirOf(w, n, a) {
+    const mates = houseResidents(w, a.id).filter((x) => x.id !== n.id && isAdult(x) && x.controller !== "player");
+    if (!mates.length) return null;
+    return mates.find((x) => x.id === n.spouse) || mates.filter((x) => n.children.includes(x.id)).sort((x, y) => y.age_days - x.age_days)[0] || mates.sort((x, y) => y.age_days - x.age_days)[0];
+  }
+  function leaveHouse(w, n) {
+    const a = n.house && w.assets[n.house];
+    if (!a || a.owner !== n.id) return;
+    const heir = heirOf(w, n, a);
+    if (heir) a.owner = heir.id; // 아무도 없으면 빈집이지만 주인은 그대로 (떠나도 집은 그 사람 것)
+  }
+  /** n이 집 id에 들어가 산다. 주인 없는 집이면 어른인 n이 주인이 된다 */
+  function settleIn(w, n, id) {
+    if (!id) return;
+    if (n.house !== id) leaveHouse(w, n);
+    n.house = id;
+    const a = w.assets[id];
+    if (a && isAdult(n) && n.controller !== "player" && !liveOwner(w, a)) a.owner = n.id;
+  }
+  /** 결혼: 배우자와 그 어린 자녀가 이 집으로 옮겨 온다 */
+  function joinHousehold(w, m, id) {
+    if (!id || m.controller === "player") return;
+    const old = m.house;
+    settleIn(w, m, id);
+    for (const c of m.children.map((x) => w.npcs[x])) if (c && c.alive && !isAdult(c) && c.house === old) settleIn(w, c, id);
+  }
+  /** 죽은 사람이 주인이던 집을 넘긴다 */
+  function passHouses(w, n, ev = null) {
+    for (const a of Object.values(w.assets || {})) {
+      if (a.owner !== n.id) continue;
+      const heir = heirOf(w, n, a);
+      a.owner = heir ? heir.id : null;
+      if (heir) w.record("inherit", `${jo(heir.name, "이/가")} ${n.name}의 집을 물려받았다`, { actor: heir.id, target: n.id, town: a.town, imp: 2, wr: 0, cause: ev ? ev.id : null, data: { asset: a.id } });
     }
   }
 
@@ -1211,6 +1291,7 @@
     let home = w.towns[n.home];
     if (home.fallen) home = w.rng.choice(Object.values(w.towns).filter((t) => !t.fallen));
     n.town = home.id;
+    if (n.controller !== "player" && (!n.house || w.assets[n.house].town !== home.id)) settleIn(w, n, pickHouse(w, home.id));
     n.fame += 2;
     n.gold += w.rng.randint(20, 50);
     w.record("return", text || `${jo(n.name, "이/가")} 참전 용사가 되어 ${jo(home.name, "으로/로")} 돌아왔다`, { actor: n.id, town: home.id, imp, wr: 0.4 });
@@ -1376,6 +1457,7 @@
     const n = w.spawn(town, { race, job, ageYears: 20, name });
     w.usedNames.add(name);
     n.controller = "player";
+    leaveHouse(w, n); n.house = null; // 플레이어는 여관 방(내 집)에 산다
     n.gold = 8; // 빈손으로 시작한다
     w.playerId = n.id;
     w.record("arrival", `${RACES[race].name} ${JOBS[job].name} ${jo(name, "이/가")} ${w.towns[town].name}에서 새 삶을 시작했다`, { actor: n.id, town, imp: 5, wr: 0.5 });
@@ -1383,6 +1465,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, migrate, nationName: nameOfNation, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, migrate, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

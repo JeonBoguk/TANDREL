@@ -173,7 +173,7 @@
   function homeMods(w) {
     const e = w && w.ext && w.ext.home ? w.ext.home : {}, out = {};
     for (const [town, h] of Object.entries(e)) if (h.dx || h.dw || h.dh) out[town] = { dx: h.dx || 0, dw: h.dw || 0, dh: h.dh || 0 };
-    for (const [key, h] of Object.entries((w && w.houseStyle) || {})) if (h.dx || h.dw || h.dh) out[key] = { dx: h.dx || 0, dw: h.dw || 0, dh: h.dh || 0 };
+    for (const a of Object.values((w && w.assets) || {})) { const h = a.mods || {}; if (a.kind === "house" && (h.dx || h.dw || h.dh)) out[`${a.town}:${a.hid}`] = { dx: h.dx || 0, dw: h.dw || 0, dh: h.dh || 0 }; }
     for (const [town, h] of Object.entries((w && w.innMods) || {})) { const o = out[town] = out[town] || { dx: 0, dw: 0, dh: 0 }; o.dx += h.dx || 0; o.dw += h.dw || 0; o.dh += h.dh || 0; }
     return out;
   }
@@ -200,18 +200,24 @@
   /** 주민 집을 넓힐 수 있는 방법들 (최대 두 번) */
   function houseExpandOptions(w, town, hid) {
     const bd = MAP.buildings.find((b) => b.town === town && b.kind === "house" && b.hid === hid);
-    const cur = ((w.houseStyle || {})[`${town}:${hid}`] || {});
+    const cur = (houseAsset(w, town, hid) || {}).mods || {};
     if (!bd || (cur.grown || 0) >= 2) return [];
     return EXPAND_STEPS.filter((m) => canExpand(w, bd, m));
   }
   /** 주민 집 공사를 실제로 반영한다 (지붕·벽·넓히기) */
   function applyHouseWork(w, town, hid, job) {
-    const key = `${town}:${hid}`; w.houseStyle = w.houseStyle || {};
-    const h = w.houseStyle[key] = { ...(w.houseStyle[key] || {}) };
+    const a = houseAsset(w, town, hid);
+    if (!a) return;
+    const h = a.mods = a.mods || {};
     if (job.kind === "expand") { h.dx = (h.dx || 0) + (job.mod.dx || 0); h.dw = (h.dw || 0) + (job.mod.dw || 0); h.dh = (h.dh || 0) + (job.mod.dh || 0); h.grown = (h.grown || 0) + 1; if (w.onMapChange) w.onMapChange(true); else rebuildMap(w); }
-    else h[job.kind] = job.style;
+    else (a.style = a.style || {})[job.kind] = job.style;
   }
-  const houseOfNpc = (n) => ({ town: n.town, hid: 1 + (n.id % 5) });
+  /** 주민 집 자산 (마을·번호로) */
+  const houseAsset = (w, town, hid) => { A.pickHouse(w, town); return w.assets[A.houseId(town, hid)] || null; };
+  /** 이 사람이 사는 집 {town, hid}. 집이 없으면(플레이어 등) hid 0 */
+  const houseOfNpc = (n) => { const m = /^house:(.+):(\d+)$/.exec(n.house || ""); return m ? { town: m[1], hid: +m[2] } : { town: n.town, hid: 0 }; };
+  /** 가구를 놓는 자리 (건물 번호는 지도를 다시 만들면 바뀔 수 있어서 쓰지 않는다) */
+  const furnKey = (bd) => `${bd.kind}:${bd.town}:${bd.hid || 0}`;
   /** 내가 목수로서 받은 주민 집 공사를 한다 */
   function doBuildWork(w, mid) {
     const e = ext(w), p = w.player, m = e.missions.find((x) => x.id === mid);
@@ -245,7 +251,7 @@
     let st = null;
     if (bd.kind === "inn" && w.innMods && w.innMods[bd.town]) st = w.innMods[bd.town];
     if (bd.kind === "inn" && w.player && w.player.home === bd.town && w.ext && w.ext.home && w.ext.home[bd.town]) st = { ...(st || {}), ...w.ext.home[bd.town] };
-    if (bd.kind === "house" && w.houseStyle) st = w.houseStyle[`${bd.town}:${bd.hid}`];
+    if (bd.kind === "house") { const a = (w.assets || {})[A.houseId(bd.town, bd.hid)]; if (a) st = { ...(a.style || {}) }; }
     if (st) { out.roofKey = st.roof; out.wallKey = st.wall; if (st.roof && S.roof[st.roof]) out.roof = S.roof[st.roof].c; if (st.wall && S.wall[st.wall]) out.wall = S.wall[st.wall].c; if (st.floor && S.floor[st.floor]) out.floor = S.floor[st.floor].c; }
     const r = w.ext && w.ext.reno; if (bd.kind === "inn" && r && r.town === bd.town) out.scaffold = true;
     return out;
@@ -295,7 +301,7 @@
     if (def.kind === "expand") {
       h.dx = (h.dx || 0) + (def.dx || 0); h.dw = (h.dw || 0) + (def.dw || 0); h.dh = (h.dh || 0) + (def.dh || 0); h.done.push(def.id); h.grown = (h.grown || 0) + 1;
       const bd = MAP.buildings.find((x) => x.town === r.town && x.kind === "inn");
-      if (bd && def.dx && e.furn && e.furn[bd.id]) for (const f of e.furn[bd.id]) f.rx -= def.dx; // 벽이 밀려난 만큼 가구 자리를 옮긴다
+      if (bd && def.dx && e.furn && e.furn[furnKey(bd)]) for (const f of e.furn[furnKey(bd)]) f.rx -= def.dx; // 벽이 밀려난 만큼 가구 자리를 옮긴다
     } else h[def.kind] = def.style;
     e.reno = null;
     b.fame += 1; adjust(b, p.id, 6); adjust(p, b.id, 6);
@@ -393,13 +399,13 @@
   /** 이 건물 안에 놓인 것들: 원래 가구 + (내 집이면) 내가 놓은 가구 */
   function furnitureIn(w, bd) {
     const base = (FURN[bd.kind] || []).map(([rx, ry, type]) => ({ rx, ry, type, block: true }));
-    const mine = w && w.ext && w.ext.furn && w.ext.furn[bd.id] ? w.ext.furn[bd.id].map((f) => ({ rx: f.rx, ry: f.ry, type: ITEMS[f.id] ? ITEMS[f.id].furniture : "crate", item: f.id, block: !(ITEMS[f.id] && ITEMS[f.id].walk) })) : [];
+    const mine = w && w.ext && w.ext.furn && w.ext.furn[furnKey(bd)] ? w.ext.furn[furnKey(bd)].map((f) => ({ rx: f.rx, ry: f.ry, type: ITEMS[f.id] ? ITEMS[f.id].furniture : "crate", item: f.id, block: !(ITEMS[f.id] && ITEMS[f.id].walk) })) : [];
     return [...base, ...mine];
   }
   const canEnter = (w, bd) => ENTER.has(bd.kind) || !!inviteAt(w, bd) || !!breakinAt(w, bd);
   // ================================================================ 침입과 도둑질
   function breakinAt(w, bd) { const b = w && w.ext && w.ext.breakin; return b && bd && b.bd === bd.id && absMin(w) < b.until ? b : null; }
-  const residentsOf = (w, bd) => w.alive().filter((n) => n.town === bd.town && 1 + (n.id % 5) === bd.hid && n.controller !== "player" && !n.at_war && n.jail === 0);
+  const residentsOf = (w, bd) => { const id = A.houseId(bd.town, bd.hid); return w.alive().filter((n) => n.house === id && n.controller !== "player" && !n.at_war && n.jail === 0); };
   /** 지금 집 안에서 자고 있는 식구들 */
   const sleepersIn = (w, bd) => residentsOf(w, bd).filter((n) => { const k = walkers.get(n.id); return k ? k.inside : isNight(w); });
   /** 거리에서 나를 보는 사람들 */
@@ -595,6 +601,7 @@
       e0.mw = MW;
     }
     if (root.Story) root.Story.setup(w);
+    if (e0.furn) for (const k of Object.keys(e0.furn)) if (/^\d+$/.test(k)) { const bd = MAP.buildings[+k]; if (bd) e0.furn[furnKey(bd)] = e0.furn[k]; delete e0.furn[k]; } // 옛 저장: 건물 번호 → 고정 키
     if (!e0.codex && w.player) { e0.codex = {}; for (const id of Object.keys(e0.inv)) note(w, id, null, "", true); } // 도감이 생기기 전의 저장
     const p = w.player;
     if (p && p.energy === undefined) p.energy = 100;
@@ -861,16 +868,17 @@
     if (n.at_war) { const c = placeOf(FRONT, "camp"); return [c.x + ((n.id % 7) - 3), c.y + 2 + (n.id % 3)]; }
     const h = hour(w), hs = h2(n.id, w.day, 7), t = n.town;
     const [cx, cy] = TOWN_POS[t];
-    const houseOf = () => { const b = MAP.buildings.find((q) => q.town === t && q.kind === "house" && q.hid === 1 + (n.id % 5)); return [b.door[0], b.door[1], true]; };
+    const hh = houseOfNpc(n);
+    const houseOf = () => { const b = MAP.buildings.find((q) => q.town === hh.town && q.kind === "house" && q.hid === hh.hid); if (b) return [b.door[0], b.door[1], true]; const pl = placeOf(t, "inn"); return [pl.x, pl.y, true]; };
     if (n.jail > 0) { const g = placeOf(t, "guild"); return [g.x, g.y, true]; }
     // 손님을 초대한 날: 약속 시간에는 집 안에서 기다린다
     // 집주인은 가운데, 같은 집 식구들은 저마다 빈자리에서 손님을 맞는다
-    const vm = w.ext && (w.ext.missions || []).find((m) => !m.done && m.type === "visit" && m.town === n.town && m.hid === 1 + (n.id % 5) && m.day === w.day && h >= m.start - 0.5 && h < m.until);
+    const vm = w.ext && (w.ext.missions || []).find((m) => !m.done && m.type === "visit" && m.town === hh.town && m.hid === hh.hid && m.day === w.day && h >= m.start - 0.5 && h < m.until);
     if (vm) {
       const hb = MAP.buildings.find((b) => b.town === vm.town && b.kind === "house" && b.hid === vm.hid);
       if (hb) {
         if (vm.to === n.id) return hostSpot(hb);
-        const mates = w.residents(n.town, true).filter((x) => x.id !== vm.to && 1 + (x.id % 5) === vm.hid && x.controller !== "player").map((x) => x.id);
+        const mates = w.residents(n.town, true).filter((x) => x.id !== vm.to && x.house === n.house && x.controller !== "player").map((x) => x.id);
         const free = []; const fur = furnitureIn(w, hb), [ex, ey] = entryOf(hb), [hx, hy] = hostSpot(hb);
         for (let ry = 1; ry < hb.h; ry++) for (let rx = 0; rx < hb.w; rx++) { const x = hb.x + rx, y = hb.y + ry; if ((x === ex && y === ey) || (x === hx && y === hy) || fur.some((f) => f.block && f.rx === rx && f.ry === ry)) continue; free.push([x, y]); }
         const i = mates.indexOf(n.id);
@@ -1040,7 +1048,7 @@
     // 집 안: 가구 놓기·치우기
     const inBd = insideBuilding(w);
     if (inBd && homeBuilding(w) && inBd.id === homeBuilding(w).id && MAP.solid[MAP.I(tx, ty)] === inBd.id) {
-      const rx = tx - inBd.x, ry = ty - inBd.y, list = (e.furn = e.furn || {})[inBd.id] = e.furn[inBd.id] || [];
+      const rx = tx - inBd.x, ry = ty - inBd.y, list = (e.furn = e.furn || {})[furnKey(inBd)] = e.furn[furnKey(inBd)] || [];
       const here = list.findIndex((f) => f.rx === rx && f.ry === ry);
       if (tool.furniture) {
         if (ry < 1 || here >= 0 || furnitureIn(w, inBd).some((f) => f.rx === rx && f.ry === ry) || (tx === entryOf(inBd)[0] && ty === entryOf(inBd)[1])) return "거기엔 놓을 수 없다.";
@@ -1456,7 +1464,7 @@
         text = `${jo(host.name, "이/가")} 정성껏 차린 저녁을 함께 먹었다. ${JOBS[host.job].id === "cook" ? "요리사의 솜씨라 그런지 기가 막혔다." : "소박하지만 따뜻한 밥이었다."}`;
       } else if (what === "look") {
         inv.looked = true; adjust(host, p.id, 3);
-        const st = (w.houseStyle || {})[`${bd.town}:${bd.hid}`] || {}, S = A.CONTENT.styles, bits = [];
+        const ha = houseAsset(w, bd.town, bd.hid) || {}, st = { ...(ha.style || {}), grown: (ha.mods || {}).grown }, S = A.CONTENT.styles, bits = [];
         if (st.roof && S.roof[st.roof]) bits.push(S.roof[st.roof].name + " 지붕"); if (st.wall && S.wall[st.wall]) bits.push(S.wall[st.wall].name);
         if (st.grown) bits.push("넓힌 방");
         text = bits.length ? `${bits.join(", ")}이 눈에 띈다. 칭찬하자 ${jo(host.name, "이/가")} 쑥스러운 듯 웃었다.` : `작지만 깔끔한 집이다. ${jo(host.name, "이/가")} "누추하죠?" 하며 웃었다.`;
@@ -1610,7 +1618,7 @@
   }
 
   const G = {
-    sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,

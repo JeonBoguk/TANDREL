@@ -59,7 +59,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | 기억·소문 | ✅ | `remember()`, `n.mem`, `n.known`, 감쇠, `rSocial`의 소문 전파 |
 | 식량 경제·노동시장 | ✅ | `town.food`, `foodPrice`, `upkeep`(밥값→생산자), `seasonal`, 상인, 상단 |
 | 물건 경제 | ◐ | 물건은 플레이어만. 가게 가격 고정, 재고 없음, 판매 시 금화가 새로 생김 |
-| 집 | ◐ | 주민 집 = `1 + (n.id % 5)` 공식(7곳에 중복). 소유자 없음 |
+| 집 | ✅ (2단계) | `w.assets` + `n.house`. 주인·승계 있음. 플레이어 집은 아직 여관 방(`ext.home`) |
 | 가구 | ◐ | `ext.furn[bd.id]`, `bd.id` = 맵 생성 순서(불안정) |
 | 창작물 | ✗ | 디자인·제작자·버전 없음 |
 | 세계 식별자 | ✗ → S0 | `worldId` 없음(저장 칸 id는 UI에만) |
@@ -99,7 +99,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | Relationship | `n.rel` 유지 + `n.relKind{id}`(친구·경쟁·스승·제자·지도자). 두 번째 축은 쓰는 규칙이 생길 때 |
 | Event/Memory/History | 하나로 유지 + `ev.data`, 인물별 색인 |
 | Economy | 유지 + 마을 재고(`town.stock`)와 가격 |
-| Asset | **새로**: `w.assets{id:{kind, owner, town, …}}`, `n.home` = assetId |
+| Asset | **주민 집은 구현됨**: `w.assets{id:{kind, owner, town, hid, style, mods}}`, 거주지 `n.house`(`n.home`은 고향 마을 id로 그대로). 플레이어 집·가게는 다음 단계 |
 | Creation | **새로**: `w.designs{id:{kind, creatorId, originWorldId, version, data}}`. 물건은 `"outfit:d_7"`처럼 디자인을 가리킴 |
 
 ## 6. 단계별 로드맵

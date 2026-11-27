@@ -616,7 +616,9 @@
   function invite(w, n, from, until) {
     const e = EX(w);
     if (e.missions.some((m) => !m.done && m.type === "visit" && m.to === n.id)) return null;
-    return addMission(w, { type: "visit", to: n.id, town: n.town, hid: 1 + (n.id % 5), day: w.day, reward: 0, start: Math.max(from, Math.floor(G.hour(w) * 2) / 2), until });
+    const hh = G.houseOfNpc(n);
+    if (!hh.hid) return null;
+    return addMission(w, { type: "visit", to: n.id, town: hh.town, hid: hh.hid, day: w.day, reward: 0, start: Math.max(from, Math.floor(G.hour(w) * 2) / 2), until });
   }
   function askVisit(w, s) {
     tick5(s);

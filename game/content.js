@@ -16,12 +16,13 @@
 
   /** 주민이 목수에게 맡길 공사 하나를 정한다: 돈이 넉넉하면 집을 넓히고, 아니면 지붕이나 벽을 바꾼다 */
   A.buildJob = function (w, n) {
-    const G = root.Game, town = n.town, hid = 1 + (n.id % 5), S = A.CONTENT.styles;
+    const G = root.Game, { town, hid } = G.houseOfNpc(n), S = A.CONTENT.styles;
+    if (!hid) return null;
     if (n.gold > 160 && G) {
       const opts = G.houseExpandOptions(w, town, hid);
       if (opts.length) { const mod = w.rng.choice(opts), fee = Math.round(w.rng.uniform(90, 140)); return { kind: "expand", mod, town, hid, fee, needs: { wood: 12, stone: 6 }, work: 8, desc: `집을 ${mod.name} 넓히기` }; }
     }
-    const kind = w.rng.choice(["roof", "wall"]), cur = (w.houseStyle || {})[`${town}:${hid}`] || {};
+    const kind = w.rng.choice(["roof", "wall"]), cur = (G.houseAsset(w, town, hid) || {}).style || {};
     const style = w.rng.choice(Object.keys(S[kind]).filter((k) => k !== cur[kind])); // 지금과 다른 것으로
     if (!style) return null;
     return { kind, style, town, hid, fee: Math.round(w.rng.uniform(30, 60)), needs: kind === "roof" ? { wood: 4 } : { stone: 4 }, work: 4, desc: `${kind === "roof" ? "지붕을" : "벽을"} ${jo(S[kind][style].name, "으로/로")}` };
@@ -218,14 +219,14 @@
           // 플레이어가 목수라면 플레이어도 일감을 받는 목수 중 하나다
           const builders = w.alive().filter((n) => n.job === "builder" && !n.at_war && n.jail === 0 && (n.controller !== "player" || (G && n.alive && !n.outside)));
           const b = c.rng.choice(builders); if (!b) return;
-          const clients = w.residents(b.town, true).filter((n) => n.id !== b.id && n.gold > 60 && n.controller !== "player");
+          // 집을 고치는 건 그 집 주인이다
+          const clients = w.residents(b.town, true).filter((n) => n.id !== b.id && n.gold > 60 && n.controller !== "player" && n.house && (w.assets[n.house] || {}).owner === n.id);
           if (!clients.length) return;
           const n = c.rng.choice(clients);
           const job = A.buildJob(w, n); if (!job) return;
           if (b.controller === "player") { if (S && S.offerBuild && c.rng.next() < 0.35 && !(G.ext(w).missions || []).some((m) => !m.done && m.type === "build")) S.offerBuild(w, n, job); return; }
           n.gold -= job.fee; b.gold += job.fee; b.fame += job.kind === "expand" ? 2 : 1; c.adjust(n, b.id, 6);
           if (G) G.applyHouseWork(w, job.town, job.hid, job);
-          else if (job.kind !== "expand") { const key = `${job.town}:${job.hid}`; w.houseStyle = w.houseStyle || {}; w.houseStyle[key] = { ...(w.houseStyle[key] || {}), [job.kind]: job.style }; }
           w.record("renovate", `${jo(n.name, "이/가")} 목수 ${b.name}에게 금화 ${job.fee}닢을 주고 집을 고쳤다 (${job.desc})`, { actor: n.id, target: b.id, town: n.town, imp: job.kind === "expand" ? 4 : 3, sent: 2, wr: 0.5 });
         } },
       { id: "dragon_contact", // 누군가 용의 언어를 알거나, 아주 드물게, 용족이 처음으로 나타난다

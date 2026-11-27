@@ -205,6 +205,30 @@
       t.check(JSON.stringify(w2.founded || []) === JSON.stringify(t.w.founded || []) && w2.player.name === t.p().name, "나라와 내 인물이 그대로다");
       t.check(json.length < 4.5e6, `저장 크기 ${(json.length / 1024).toFixed(0)}KB`);
     } },
+    { id: "houses", name: "집은 사는 사람과 주인이 있는 자산이다", run(t) {
+      const W = t.w, people = W.alive().filter((n) => n.controller !== "player" && !n.at_war);
+      t.check(people.every((n) => n.house && W.assets[n.house] && W.assets[n.house].town === n.town), "모든 주민이 자기 마을의 집에 산다");
+      const kids = people.filter((n) => !A.isAdult(n) && n.parents.some((p) => W.npcs[p].alive && W.npcs[p].town === n.town && !W.npcs[p].at_war));
+      t.check(kids.every((c) => c.parents.some((p) => W.npcs[p].house === c.house)), `아이 ${kids.length}명은 부모와 같은 집에서 자란다`);
+      const bd = G.MAP.buildings.find((b) => b.town === t.town() && b.kind === "house" && G.residentsOf(W, b).length);
+      t.check(bd && G.residentsOf(W, bd).every((n) => n.house === A.houseId(bd.town, bd.hid)), "집 안 사람들 = 그 집에 사는 사람들");
+      // 이사: 배우자와 어린 자녀가 함께 새 마을의 집으로
+      const mover = people.find((n) => n.spouse !== null && W.npcs[n.spouse].alive && W.npcs[n.spouse].town === n.town && !W.npcs[n.spouse].at_war);
+      if (mover) {
+        const dest = Object.values(W.towns).find((x) => x.id !== mover.town && !x.fallen), sp = W.npcs[mover.spouse];
+        W.move(mover, dest.id);
+        t.check(W.assets[mover.house].town === dest.id && sp.house === mover.house, `${mover.name} 부부가 ${dest.name}의 한 집으로 이사했다`);
+      }
+      // 주인이 죽으면 같은 집 어른에게
+      const a = Object.values(W.assets).find((x) => x.owner !== null && W.npcs[x.owner].alive && W.npcs[x.owner].controller !== "player" && W.alive().some((m) => m.house === x.id && m.id !== x.owner && A.isAdult(m)));
+      if (a) {
+        const old = W.npcs[a.owner]; W.die(old, "시험 삼아", {});
+        const ev = W.lifeOf(a.owner).filter((e) => e.kind === "inherit").pop();
+        t.check(a.owner !== old.id && W.npcs[a.owner].house === a.id && ev && ev.data.asset === a.id, `${old.name}의 집을 ${W.npcs[a.owner].name}이 물려받았다`);
+      }
+      const w2 = A.World.deserialize(W.serialize());
+      t.check(JSON.stringify(w2.assets) === JSON.stringify(W.assets) && w2.npcs.every((n, i) => n.house === W.npcs[i].house), "저장 뒤에도 집과 주인이 같다");
+    } },
     { id: "records", name: "세계 식별자·사건 기록·옛 저장 이전", run(t) {
       t.check(typeof t.w.worldId === "string" && t.w.worldId.length > 6, `세계 식별자 ${t.w.worldId}`);
       // 직업을 바꾸면 이전·새 직업이 문장이 아니라 값으로 남는다
@@ -224,10 +248,15 @@
       delete d.worldId; delete d.nations; d.version = 2; d.events = d.events.map((e) => (Array.isArray(e) ? e.slice(0, 10) : e));
       for (const tw of Object.values(d.towns)) { tw.nation = nm(tw.nation); if (tw.indep) tw.indep.from = nm(tw.indep.from); }
       for (const f of d.founded || []) delete f.nation;
+      // v4 이전: 집은 id 공식, 집 꾸밈은 houseStyle
+      const styled = Object.values(t.w.assets)[0]; styled.style = { roof: "blue" };
+      d.houseStyle = { [`${styled.town}:${styled.hid}`]: { roof: "blue" } }; delete d.assets; for (const n of d.npcs) delete n.house;
       const w3 = A.World.deserialize(d);
       t.check(w3.worldId && w3.worldId !== t.w.worldId && w3.npcs.length === t.w.npcs.length, `옛 저장 이전 → 새 식별자 ${w3.worldId}`);
       const names = (w) => Object.values(w.towns).map((x) => `${x.id}:${A.nationName(w, x.nation)}`).sort().join();
       t.check(names(w3) === names(t.w) && Object.values(w3.towns).every((x) => w3.nations[x.nation]), "옛 저장의 나라 이름이 id로 바뀌어도 마을마다 같은 나라다");
+      const npc = w3.npcs.find((n) => n.alive && n.controller !== "player" && !n.at_war);
+      t.check(npc.house === A.houseId(npc.town, 1 + (npc.id % 5)) && w3.assets[A.houseId(styled.town, styled.hid)].style.roof === "blue", "옛 저장의 집 배정과 집 꾸밈이 그대로 옮겨진다");
     } },
   ];
 
