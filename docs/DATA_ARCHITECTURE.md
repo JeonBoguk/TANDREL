@@ -44,7 +44,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | 성장 속도·마법 친화 | ✗ | `ADULT = 16` 모든 종족 공통 |
 | Species/Heritage/Culture/Nationality/Identity | ✗ | `n.race` 하나. 국적은 `town.nation`(**이름 문자열**)으로 간접 |
 | 직업 | ✅ | `CONTENT.jobs` 한 줄에 경제·화면·일터·기술·대화·지식·출현 조건 |
-| 복수 직업 | ✗ | `n.job` 하나 |
+| 복수 직업 | ◐ | 주 직업 `n.job` + 부업 `n.side` (깊이 익힌 옛 일, 플레이어는 일터에서 선택) |
 | 지식 | ✅ (5a) | `n.skills{id:{lv,xp,from}}`. 직업을 가지면 `setJob`이 teaches를 익힘(`from:"job"`), 전직해도 남는다 |
 | 숙련 | ✅ (5a) | 같은 `n.skills`의 `xp`·`lv`. 일(`rWork`)·혼자 익히기(`practice`) 모두 `addXp`. 수입에 `mastery(n)` |
 | NPC 전업 | ✅ | `uJob/betterJob/rJob`, `jobDemand`, `expectedIncome`, `job_cooldown` |

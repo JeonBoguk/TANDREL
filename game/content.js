@@ -54,7 +54,7 @@
         likes: "dish", ask: ["mushroom", 4, "오늘 특선 요리에 쓸 버섯이 모자라요."],
         talk: { 봄: "봄나물이 올라오면 국물이 달라져요. 손님들이 금방 알아채요.", 여름: "더울 땐 시원한 걸 찾죠. 딸기를 얹은 디저트가 잘 나가요.", 가을: "가을은 요리사의 계절이에요. 호박 수프 냄새 맡아 봤어요?", 겨울: "추운 날엔 다들 스튜를 찾아요. 고기가 늘 모자라요." } },
       // 옛 직업이 가르칠 수 있는 지식 (같은 id면 기존 정의에 덧붙는다)
-      { id: "farmer", teaches: ["farming_tools", "weaving"] }, { id: "blacksmith", teaches: ["farming_tools", "woodwork", "smithing"] },
+      { id: "farmer", teaches: ["farming", "farming_tools", "weaving"] }, { id: "blacksmith", teaches: ["farming_tools", "woodwork", "smithing"] },
       { id: "merchant", teaches: ["weaving"] }, { id: "alchemist", teaches: ["herbal"] }, { id: "priest", teaches: ["herbal"] }, { id: "baker", teaches: ["baking"] }, { id: "cook", teaches: ["cooking"] },
       // ---------------------------------------------------------- 수요가 생기면 나타나는 직업 (emerge). 누가 언제 처음 시작하느냐는 세계마다 다르다
       { id: "builder", teaches: ["woodwork"], needKnow: "woodwork", name: "목수", income: [2.0, 5.0], entry_cost: 30, weight: 0.7, color: "#a0703a", icon: "🔨", workplace: "guild", look: { hat: "cap", apron: "#7a5230" },
@@ -115,11 +115,21 @@
      * w는 단계의 무게(품질에 미치는 몫). 단계가 없는 업무는 '반나절 일하기'처럼 바로 끝난다(sim: shift) */
     works: [
       { id: "fields_help", job: "farmer", name: "공동 밭일 거들기", hint: "마을 곳간을 채우고 품삯을 받는다" },
-      { id: "forge_hoe", job: "blacksmith", name: "괭이 벼리기", mins: 120, energy: 14, needs: { wood: 2, stone: 3 }, gives: { hoe: 1 }, skill: "smithing", hint: "대장간 불로 괭이를 벼린다",
+      { id: "tend_field", job: "farmer", name: "밭 가꾸기", specName: "곡식 농사꾼", mins: 240, energy: 18, client: null, skill: "farming", hint: "땅을 고르고 씨를 뿌리고 김을 매고 거둔다",
+        steps: [{ name: "땅 고르기", tool: "rhythm", p: { beats: 8, bpm: 84 } }, { name: "씨뿌리기", tool: "measure", p: { target: 0.5, speed: 0.4, label: "씨앗" } },
+          { name: "김매기", tool: "observe", p: { rounds: 2 } }, { name: "거두기", tool: "timing", p: { zone: [0.55, 0.72], speed: 0.9, label: "알맞게 익었을 때" }, w: 1.5 }],
+        effects: { food: 1, gold: [0.5, 2], record: { kind: "harvest", text: "{me:이/가} 가꾼 {town}의 밭이 유난히 잘 여물었다", imp: 2, p: 0.05 } } },
+      { id: "patrol", job: "guard", name: "순찰 돌기", mins: 180, energy: 16, client: null, hint: "수상한 것을 살피고, 덤비는 자를 제압한다",
+        steps: [{ name: "수상한 것 살피기", tool: "observe", p: { rounds: 2 } }, { name: "제압하기", tool: "react", p: { rounds: 4 }, w: 1.5 }],
+        effects: { gold: [1, 3], fame: 1, record: { kind: "patrol", text: "{me:이/가} 순찰을 돌다 {town}에 숨어든 좀도둑을 붙잡았다", imp: 3, p: 0.05 } } },
+      { id: "escort", job: "mercenary", name: "길손 호위", mins: 240, energy: 20, client: "foreign", hint: "먼 길을 가는 사람을 지켜 준다",
+        steps: [{ name: "길 살피기", tool: "observe", p: { rounds: 1 } }, { name: "막아서기", tool: "react", p: { rounds: 5 }, w: 2 }, { name: "발맞추기", tool: "rhythm", p: { beats: 6, bpm: 100 } }],
+        effects: { gold: [3, 8], rel: 6, record: { kind: "escort", text: "{me:이/가} {client:을/를} 노리던 산적들을 물리치고 무사히 데려다주었다", imp: 3, p: 0.08 } } },
+      { id: "forge_hoe", job: "blacksmith", name: "괭이 벼리기", specName: "농기구 대장장이", mins: 120, energy: 14, needs: { wood: 2, stone: 3 }, gives: { hoe: 1 }, skill: "smithing", hint: "대장간 불로 괭이를 벼린다",
         steps: [{ name: "가열", tool: "gauge", p: { zone: [0.62, 0.8], secs: 5, label: "쇠의 빛깔" } },
           { name: "망치질", tool: "rhythm", p: { beats: 8, bpm: 92 }, w: 1.5 },
           { name: "담금질", tool: "timing", p: { zone: [0.7, 0.82], speed: 1.1, label: "물에 담글 때" } }] },
-      { id: "forge_axe", job: "blacksmith", name: "도끼 벼리기", mins: 150, energy: 16, needs: { wood: 2, stone: 4 }, gives: { axe: 1 }, skill: "smithing", hint: "날이 선 도끼를 만든다",
+      { id: "forge_axe", job: "blacksmith", name: "도끼 벼리기", specName: "도끼 장인", mins: 150, energy: 16, needs: { wood: 2, stone: 4 }, gives: { axe: 1 }, skill: "smithing", hint: "날이 선 도끼를 만든다",
         steps: [{ name: "가열", tool: "gauge", p: { zone: [0.66, 0.82], secs: 6, label: "쇠의 빛깔" } },
           { name: "망치질", tool: "rhythm", p: { beats: 10, bpm: 100 }, w: 1.5 },
           { name: "날 세우기", tool: "grind", p: { n: 16, secs: 6 } },
@@ -134,10 +144,10 @@
           { name: "불 조절", tool: "gauge", p: { zone: [0.45, 0.65], secs: 6, label: "불 세기" }, w: 1.5 },
           { name: "간 맞추기", tool: "measure", p: { target: 0.45, speed: 0.4, label: "소금" } }] },
       // 봉사하는 일: 손님(client)에게 하고, 결과(effects)는 물건이 아니라 체력·마음·금화·소식
-      { id: "treat", job: "doctor", name: "진료하기", mins: 90, energy: 8, client: "sick", skill: "medicine", hint: "아픈 사람을 살피고 약을 지어 준다",
+      { id: "treat", job: "doctor", name: "진료하기", specName: "진료 의원", mins: 90, energy: 8, client: "sick", skill: "medicine", hint: "아픈 사람을 살피고 약을 지어 준다",
         steps: [{ name: "증상 살피기", tool: "observe", p: { rounds: 3 } }, { name: "안심시키기", tool: "talk", p: { rounds: 2 } }, { name: "약 달기", tool: "measure", p: { target: 0.5, speed: 0.45, label: "약재" }, w: 1.5 }],
         effects: { heal: 4, gold: [2, 6], rel: 8, fame: 1, record: { kind: "cure", text: "{me:이/가} 앓아누운 {client:을/를} 정성껏 돌봐 일으켜 세웠다", imp: 3, p: 0.3 } } },
-      { id: "brew_tonic", job: "doctor", name: "탕약 짓기", mins: 120, energy: 8, needs: { herb: 3, mushroom: 1 }, gives: { fever_tonic: 1 }, skill: "medicine", hint: "환자가 없는 날엔 약을 지어 둔다",
+      { id: "brew_tonic", job: "doctor", name: "탕약 짓기", specName: "약제사", mins: 120, energy: 8, needs: { herb: 3, mushroom: 1 }, gives: { fever_tonic: 1 }, skill: "medicine", hint: "환자가 없는 날엔 약을 지어 둔다",
         steps: [{ name: "약재 고르기", tool: "observe", p: { rounds: 2 } }, { name: "달이기", tool: "gauge", p: { zone: [0.5, 0.68], secs: 6, label: "불 세기" }, w: 1.5 }, { name: "덜어 담기", tool: "measure", p: { target: 0.6, speed: 0.45, label: "탕약" } }] },
       { id: "bless", job: "priest", name: "축복 기도", mins: 60, energy: 5, client: "any", hint: "찾아온 사람을 위해 기도한다",
         steps: [{ name: "이야기 듣기", tool: "talk", p: { rounds: 2 } }, { name: "기도문 외우기", tool: "memory", p: { len: 4 } }, { name: "촛불 지키기", tool: "gauge", p: { zone: [0.35, 0.55], secs: 5, label: "촛불" } }],
@@ -362,6 +372,7 @@
     /* 지식은 사람이 지닌다. 직업이 가르쳐 주는 지식(teaches)은 그 직업 사람에게 배울 수 있고,
      * lost(비술)는 아무도 모른다: 유적·흙더미의 두루마리, 적의 땅, 또는 위기 속의 깨달음으로만 세상에 나온다. 아는 사람은 친구에게 퍼뜨린다. */
     knowledge: [
+      { id: "farming", domain: ["nature", "body"], name: "농사", desc: "땅을 고르고 씨를 뿌려 곡식을 거둔다" },
       { id: "farming_tools", domain: ["craft"], name: "농기구 만들기", desc: "괭이와 물뿌리개를 만든다" },
       // 직업의 손기술: 그 직업으로 일하며 익히고, 업무의 품질을 정한다
       { id: "smithing", domain: ["craft", "heat"], name: "대장일", desc: "쇠를 달구고 두드려 연장을 벼린다" },

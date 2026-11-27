@@ -520,7 +520,7 @@ function winInfo() {
   if (!playing()) return [h("p", null, "캐릭터가 없다.")];
   const p = W.player, e = G.ext(W), fam = S.familyList(W, p);
   return [h("div", { class: "grid2" },
-    h("div", null, h("div", { class: "row" }, portraitCanvas(p, 72), h("div", null, h("div", { style: "font-family:var(--ui);font-size:20px" }, p.name), h("div", { class: "muted" }, `${A.RACES[p.race].name} · ${W.jobName(p)} · ${A.age(p)}세`), h("div", { class: "gold" }, `₲ ${Math.floor(p.gold)} · 명성 ${p.fame}`))),
+    h("div", null, h("div", { class: "row" }, portraitCanvas(p, 72), h("div", null, h("div", { style: "font-family:var(--ui);font-size:20px" }, p.name), h("div", { class: "muted" }, `${A.RACES[p.race].name} · ${W.jobName(p)}${p.side && A.JOBS[p.side] ? ` · 부업 ${A.JOBS[p.side].name}` : ""} · ${A.age(p)}세`), h("div", { class: "gold" }, `₲ ${Math.floor(p.gold)} · 명성 ${p.fame}`))),
       h("h3", null, "성격"), h("div", { class: "traits" }, [["탐욕", "greed"], ["선량", "kindness"], ["용기", "bravery"], ["야망", "ambition"]].map(([l, k]) => [h("span", null, l), h("span", { class: "tb" }, h("span", { style: `width:${p.traits[k] * 100}%` }))])),
       h("h3", null, "직업 기술"), h("div", null, G.SKILL[p.job].name),
       h("h3", null, "아는 것"), (() => { const ks = A.CONTENT.knowledge.filter((k) => A.knows(p, k.id)); return ks.length ? h("div", { class: "chips" }, ks.map((k) => { const lv = A.skillLv(p, k.id); return h("button", { type: "button", class: "chip" + (k.lost ? " accent" : ""), onclick: () => openWin("codex", "k:" + k.id) }, k.name, lv >= 2 ? h("span", { class: "muted" }, ` ${A.SKILL_LV_NAME[lv]}`) : null); })) : h("p", { class: "small muted", style: "margin:0" }, "없음"); })()),
@@ -770,7 +770,7 @@ function bioCard(n) {
   return h("div", { class: "bio" },
     h("div", { class: "biohead" }, portraitCanvas(n, 76),
       h("div", { style: "min-width:0;flex:1" },
-        h("div", { class: "bioname" }, n.name, h("span", { class: "muted small" }, ` ${A.RACES[n.race].name} ${W.jobName(n)} · ${A.age(n)}세 · 명성 ${n.fame}`)),
+        h("div", { class: "bioname" }, n.name, h("span", { class: "muted small" }, ` ${A.RACES[n.race].name} ${W.jobName(n)}${n.side && A.JOBS[n.side] && A.isAdult(n) ? `(부업 ${A.JOBS[n.side].name})` : ""} · ${A.age(n)}세 · 명성 ${n.fame}`)),
         h("div", { class: "small" }, status),
         n.title ? h("div", { class: "small", style: "color:var(--gold)" }, n.title) : null,
         n.pioneer ? h("div", { class: "small", style: "color:var(--gold)" }, `이 세계 최초의 ${A.JOBS[n.pioneer].name}`) : null,

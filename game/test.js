@@ -251,7 +251,7 @@
       const W = t.w, p = t.p(), fields = t.placeOf("fields"), market = t.placeOf("market");
       A.setJob(p, "farmer"); t.standAt(fields.x, fields.y);
       const fm = G.buildingMenu(W, fields), ids = fm.map((v) => v.id);
-      t.check(ids.length === new Set(ids).size && fm.filter((v) => v.work).length === 1, `밭의 일: ${fm.filter((v) => v.work).map((v) => v.label).join(", ")}`);
+      t.check(ids.length === new Set(ids).size && fm.filter((v) => v.work).length === 2 && fm.some((v) => v.id === "wk:tend_field"), `밭의 일: ${fm.filter((v) => v.work).map((v) => v.label).join(", ")}`);
       p.energy = 100; const g0 = p.gold, r0 = G.doBuilding(W, fields, "work");
       t.check(p.gold > g0, `예전 이름(work)으로도 일한다: ${r0.text}`);
       // 빵 굽기: 계량 → 반죽 → 발효 → 굽기
@@ -350,6 +350,40 @@
       const adv = W.spawn(t.town(), { race: "human", job: "adventurer", ageYears: 30 }); const r0 = W.rng.next;
       let found = false; for (let i = 0; i < 3000 && !found; i++) { adv.health = 10; A._.rWork(adv, W); found = ["rune", "elixir", "medicine", "dragon_tongue"].some((k) => A.knows(adv, k)); }
       t.check(found, found ? W.events.filter((e) => e && e.kind === "discovery" && e.actor === adv.id).pop().text : "유적에서 아무것도 못 찾았다");
+    } },
+    { id: "joblife", name: "직업은 전문화되고, 사라졌다가 되살아나며, 한 사람이 부업을 가진다", run(t) {
+      const W = t.w, town = t.town();
+      // 전문화: 숙련 대장장이가 셋 이상이면 한 가지 업무만 하는 전문 직업이 갈라진다
+      const smiths = [0, 1, 2, 3].map(() => { const n = W.spawn(town, { race: "dwarf", job: "blacksmith", ageYears: 60 }); A.addXp(n, "smithing", 900); return n; });
+      const r0 = W.rng.next; W.rng.next = () => 0.01; W.day = W.day - (W.day % 30) + 7; A.jobLife(W); W.rng.next = r0;
+      const sev = W.events.filter((e) => e && e.data && e.data.spec).pop(), spec = sev && A.JOBS[sev.data.job], who = sev && W.npcs[sev.actor];
+      t.check(spec && spec.spec === "blacksmith" && A.worksOf(spec.id).length === 1 && who.job === spec.id && who.side === "blacksmith", sev ? sev.text : "전문화 없음");
+      t.check(spec && A.worksOf(spec.id)[0].steps.every((s) => s.p.hard < 0), "전문 직업은 단계가 수월하다");
+      // 소멸과 부활: 아무도 없고 수요도 없이 2년이 지나면 사라진다
+      const vet = W.spawn(town, { race: "human", job: "merchant", ageYears: 40 }); A.learn(vet, "field_surgery");
+      W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2; A.genesis(W);
+      const FS = A.JOBS.w_field_surgery;
+      if (FS) {
+        for (const n of W.npcs) if (n.job === FS.id) { n.job = "merchant"; n.pioneer = null; }
+        W.war.active = false; W.jobSeen[FS.id] = W.day - 300; W.day = W.day - (W.day % 30) + 37; A.jobLife(W);
+        t.check(!W.jobOpen(FS.id) && W.events.some((e) => e && e.kind === "job_gone" && e.data.job === FS.id), W.events.filter((e) => e && e.kind === "job_gone").pop().text);
+        W.war.active = true; W.day += 30; A.jobLife(W);
+        t.check(W.jobOpen(FS.id), W.events.filter((e) => e && e.kind === "job_revived").pop().text);
+      }
+      W.war.active = was;
+      // 부업: 손에 익은 옛 일은 직업을 바꿔도 부업으로 남는다
+      const b = W.spawn(town, { race: "human", job: "baker", ageYears: 40 }); A.addXp(b, "baking", 300); b.gold = 500; b.job_cooldown = 0;
+      const j = W.openJobs().find((x) => x.entry_cost > 0 && x.id !== "baker" && !x.needKnow && !x.food) || A.JOBS.merchant;
+      A.addXp(b, "baking", 600); b.dream = { id: "rich", job: j.id, since: W.day }; const rr = W.rng.next; W.rng.next = () => 0.1; A._.rJob(b, W); W.rng.next = rr;
+      if (b.job !== "baker") t.check(b.side === "baker", `${b.name}: ${A.JOBS[b.job].name}${A.jo(A.JOBS[b.job].name, "이/가").slice(A.JOBS[b.job].name.length)} 되었지만 빵 굽기는 부업으로`);
+      // 플레이어도 아는 기술로 부업을 삼는다
+      const p = t.p(); A.setJob(p, "farmer"); A.learn(p, "baking"); const m = t.placeOf("market"); t.standAt(m.x, m.y);
+      const sideOpt = G.buildingMenu(W, m).find((v) => v.id === "side:baker");
+      t.check(!!sideOpt, "제빵을 알면 시장에서 빵집 일을 부업으로 삼을 수 있다");
+      G.doBuilding(W, m, "side:baker"); G.give(W, "wheat", 2);
+      t.check(p.side === "baker" && G.buildingMenu(W, m).some((v) => v.id === "wk:bake" && v.ok), "부업의 업무(빵 굽기)가 메뉴에 나온다");
+      // 빠졌던 업무: 농부의 밭 가꾸기, 경비병 순찰, 용병 호위 (피하고 받아치기)
+      for (const id of ["tend_field", "patrol", "escort"]) { const wk = A.CONTENT.works.find((x) => x.id === id); t.check(wk && G.workReady({ ...wk, sim: "steps" }), `${wk.name}: ${wk.steps.map((s) => s.name).join(" → ")}`); }
     } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);

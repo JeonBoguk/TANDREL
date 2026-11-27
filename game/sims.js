@@ -39,7 +39,7 @@
     return () => { on = false; };
   }
   const bar = (g, x, y, w, h, color) => { g.fillStyle = color; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
-  const label = (g, text, x, y, color, align = "left") => { g.fillStyle = color; g.font = "13px " + (css("--font") || "sans-serif"); g.textAlign = align; g.fillText(text, x, y); };
+  const label = (g, text, x, y, color, align = "left", size = 13) => { g.fillStyle = color; g.font = `${size}px ` + (css("--font") || "sans-serif"); g.textAlign = align; g.fillText(text, x, y); };
   /** 구간을 솜씨만큼 넓힌다 */
   const widen = ([a, b], ease) => { const m = (a + b) / 2, h = ((b - a) / 2) * ease; return [clamp(m - h, 0, 1), clamp(m + h, 0, 1)]; };
 
@@ -197,6 +197,29 @@
         }
       });
     } },
+    // ---------------------------------------------------------------- 피하고 받아치기 (전투와 대응)
+    react: { name: "피하고 받아치기", how: "공격이 오는 쪽(← → ↑)을 보고 반대로 피한 뒤, 틈이 보이면 Space로 받아친다", play(ctx) {
+      const S = stage(ctx.box, 130), rounds = ctx.p.rounds || 4, win = 0.75 * ctx.ease;
+      const dirs = [["L", "←"], ["R", "→"], ["U", "↑"]], away = { L: "R", R: "L", U: "D" };
+      let r = 0, sum = 0, phase = "warn", t0 = 0, cur = null, msg = "", dodge = 0;
+      const next = () => { cur = dirs[Math.floor(Math.random() * 3)]; phase = "warn"; t0 = performance.now(); msg = ""; };
+      const score = (s) => { sum += s; r++; if (r >= rounds) setTimeout(() => ctx.done(sum / rounds), 300); else setTimeout(next, 450); phase = "rest"; };
+      ctx.side((s) => { if (phase !== "warn") return; const dt = (performance.now() - t0) / 1000; if (s === away[cur[0]] || (cur[0] === "U" && s === "D")) { dodge = clamp(1 - Math.max(0, dt - 0.3) / win, 0.3, 1); phase = "counter"; t0 = performance.now(); msg = "피했다! 틈을 노린다"; } else { msg = "맞았다"; score(0); } });
+      ctx.press((down) => { if (!down) return; if (phase === "counter") { const dt = (performance.now() - t0) / 1000; const ok = dt > 0.35 && dt < 0.35 + win; msg = ok ? "받아쳤다!" : "헛손질"; score(dodge * (ok ? 1 : 0.5)); } });
+      // 화면 왼쪽·오른쪽·위쪽을 누르면 그쪽으로 피한다, 가운데 아래는 받아치기
+      S.c.addEventListener("pointerdown", (e) => { e.stopPropagation(); e.preventDefault(); const b = S.c.getBoundingClientRect(), x = (e.clientX - b.left) / b.width, y = (e.clientY - b.top) / b.height;
+        if (phase === "counter") { ctx.pressNow(); return; } ctx.sideNow(y < 0.33 ? "D" : x < 0.5 ? "L" : "R"); });
+      next();
+      return loop(() => {
+        const { g, W, H, col } = S, now = (performance.now() - t0) / 1000;
+        g.clearRect(0, 0, W, H); bar(g, 0, 0, W, H, col.bg);
+        if (phase === "warn" && now > win + 0.3) { msg = "맞았다"; score(0); }
+        if (phase === "counter" && now > 0.35 + win + 0.3) { msg = "틈을 놓쳤다"; score(dodge * 0.4); }
+        if (cur && phase === "warn") { label(g, cur[1], W / 2, 78, col.bad, "center", 44); bar(g, W / 2 - 60, 90, 120 * clamp(1 - now / (win + 0.3), 0, 1), 4, col.warn); }
+        if (phase === "counter") { const open = now > 0.35 && now < 0.35 + win; bar(g, W / 2 - 30, 50, 60, 30, open ? col.zone : col.line); label(g, open ? "지금!" : "…", W / 2, 70, col.text, "center"); }
+        label(g, msg, W / 2, 118, col.dim, "center"); label(g, `${r} / ${rounds}`, W - 12, 20, col.dim, "right");
+      });
+    } },
     // ---------------------------------------------------------------- 말 고르기 (사람 대하기)
     talk: { name: "말 고르기", how: "손님의 기색을 보고 알맞은 말투를 고른다", play(ctx) {
       const n = ctx.client, rounds = ctx.p.rounds || 2, tr = n ? n.traits : { kindness: 0.6, bravery: 0.5, ambition: 0.5, greed: 0.4 };
@@ -285,6 +308,8 @@
       else if (e.key === "Enter") { e.preventDefault(); st.enterCb && st.enterCb(); }
       else if (/^(arrowleft|a)$/i.test(e.key)) { e.preventDefault(); st.sideCb && st.sideCb("L"); }
       else if (/^(arrowright|d)$/i.test(e.key)) { e.preventDefault(); st.sideCb && st.sideCb("R"); }
+      else if (/^(arrowup|w)$/i.test(e.key)) { e.preventDefault(); st.sideCb && st.sideCb("U"); }
+      else if (/^(arrowdown|s)$/i.test(e.key)) { e.preventDefault(); st.sideCb && st.sideCb("D"); }
     };
     st.keyUp = (e) => { if (e.key === " " || e.code === "Space") { e.stopImmediatePropagation(); press(false); } };
     root.addEventListener("keydown", st.keyDown, true); root.addEventListener("keyup", st.keyUp, true);
@@ -298,6 +323,7 @@
       const lvEase = ease * ([1.25, 1, 0.8][(s.p || {}).level ?? 1] || 1); // 단계 난이도(직업 만들기에서 고른 것)
       st.cleanup = hand.play({ box: body, p: s.p || {}, lv, ease: lvEase, client: extra.client || null, vocab: extra.vocab || null,
         press: (cb) => { st.pressCb = cb; }, side: (cb) => { st.sideCb = cb; }, onEnter: (cb) => { st.enterCb = cb; },
+        pressNow: () => st.pressCb && st.pressCb(true), sideNow: (s) => st.sideCb && st.sideCb(s),
         done: (score) => { if (finished || cur !== st) return; finished = true; if (st.cleanup) st.cleanup(); scores[st.i] = clamp(score, 0, 1); st.i++; if (st.i >= steps.length) { chips(); end({ scores }); } else setTimeout(() => cur === st && begin(), 350); } });
     }
     function end(res) { if (cur !== st) return; stop(); onEnd(res); }

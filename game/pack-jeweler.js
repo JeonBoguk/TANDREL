@@ -22,11 +22,11 @@
       gem_ring: { name: "보석 반지", sell: 60, art: ["coin", "#d8b850"], hint: "아주 비싸게 팔린다" },
     },
     works: [
-      { id: "cut_gem", job: "jeweler", name: "원석 다듬기", mins: 120, energy: 10, needs: { rough_gem: 1 }, gives: { gem: 1 }, skill: "gemcraft", hint: "원석을 쪼개고 깎아 보석으로",
+      { id: "cut_gem", job: "jeweler", name: "원석 다듬기", specName: "보석 연마공", mins: 120, energy: 10, needs: { rough_gem: 1 }, gives: { gem: 1 }, skill: "gemcraft", hint: "원석을 쪼개고 깎아 보석으로",
         steps: [{ name: "결 읽고 쪼개기", tool: "timing", p: { zone: [0.42, 0.5], speed: 1.3, label: "정을 칠 때" } },
           { name: "깎기", tool: "trace", p: { shape: "zigzag" }, w: 1.5 },
           { name: "연마", tool: "grind", p: { n: 18, secs: 7 } }] },
-      { id: "set_ring", job: "jeweler", name: "반지 만들기", mins: 180, energy: 12, needs: { gem: 1, old_coin: 2 }, gives: { gem_ring: 1 }, skill: "gemcraft", hint: "옛 동전을 녹여 테를 만들고 보석을 물린다",
+      { id: "set_ring", job: "jeweler", name: "반지 만들기", specName: "반지 장인", mins: 180, energy: 12, needs: { gem: 1, old_coin: 2 }, gives: { gem_ring: 1 }, skill: "gemcraft", hint: "옛 동전을 녹여 테를 만들고 보석을 물린다",
         steps: [{ name: "동전 녹이기", tool: "gauge", p: { zone: [0.7, 0.86], secs: 5, label: "불 세기" } },
           { name: "테 두르기", tool: "trace", p: { shape: "arc" } },
           { name: "보석 물리기", tool: "timing", p: { zone: [0.46, 0.54], speed: 0.9, label: "누를 때" }, w: 1.5 }] },

@@ -204,6 +204,7 @@
     ["measure", 0.04, ["craft", "knowledge", "care"]], ["trace", 0.1, ["craft", "art"]], ["grind", 0.05, ["craft", "body"]],
     ["talk", 0.04, ["social", "language", "care"], "kindness"], ["observe", 0.06, ["knowledge", "care", "nature"]],
     ["memory", 0.08, ["knowledge", "language", "magic"]], ["match", 0.07, ["language", "knowledge", "magic"]],
+    ["react", 0.08, ["body", "war"], "bravery"],
   ]) registerTool(id, baseAuto(hard, trait), doms);
   /** 품질 단계: 점수(0~1) → 이름·결과 배수 */
   const GRADES = [{ id: "rough", name: "거친", at: 0, mult: 0.5 }, { id: "plain", name: "보통", at: 0.4, mult: 1 }, { id: "good", name: "좋은", at: 0.7, mult: 1.25 }, { id: "master", name: "걸작", at: 0.9, mult: 1.5 }];
@@ -490,7 +491,7 @@
       return t;
     }
     /** 이 세계에 있는 직업인가 (emerge가 붙은 직업은 누군가 처음 시작해야 생긴다) */
-    jobOpen(id) { const j = JOBS[id]; return !!j && (!j.emerge || (this.jobsOpen || []).includes(id)); }
+    jobOpen(id) { const j = JOBS[id]; return !!j && !j.ended && (!j.emerge || (this.jobsOpen || []).includes(id)); }
     openJobs() { return CONTENT.jobs.filter((j) => this.jobOpen(j.id)); }
     pickJob(town) {
       const ids = Object.keys(JOBS).filter((id) => this.jobOpen(id));
@@ -676,7 +677,7 @@
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, land: this.land || {}, session: this.session || {}, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
-        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
+        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, jobSeen: this.jobSeen || {}, racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
       });
     }
@@ -685,7 +686,7 @@
       if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
       d = migrate(d);
       const w = new World(d.seed);
-      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w);
+      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w); w.jobSeen = d.jobSeen || {};
       w.worldId = d.worldId;
       w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
@@ -751,7 +752,9 @@
     let earn = w.rng.uniform(job.income[0], job.income[1]) * jobDemand(w, job, n.town) * mastery(n);
     for (const k of job.teaches || []) addXp(n, k, 1); // 일할수록 솜씨가 는다
     // 단계가 있는 업무를 하는 직업은 플레이어와 같은 단계를 거친다 (점수는 솜씨·성격으로 계산). 품질이 벌이와 이름을 정한다
-    const crafts = n.controller === "player" ? [] : worksOf(n.job).filter((x) => x.steps && workAutoReady(x) && (!x.client || workClient(w, n, x)));
+    // 부업이 있으면 네 번에 한 번쯤은 부업의 일을 한다
+    const doing = n.side && JOBS[n.side] && w.rng.next() < 0.25 ? n.side : n.job;
+    const crafts = n.controller === "player" ? [] : worksOf(doing).filter((x) => x.steps && workAutoReady(x) && (!x.client || workClient(w, n, x)));
     if (crafts.length) {
       const served = crafts.filter((x) => x.client); // 기다리는 손님이 있으면 손님부터
       const wk = w.rng.choice(served.length ? served : crafts), q = workQuality(wk, autoScores(n, wk, w.rng)), g = gradeOf(q);
@@ -1010,6 +1013,8 @@
     const j = betterJob(n, w);
     if (!j) return;
     const old = JOBS[n.job].name, from = n.job;
+    const oldLv = Math.max(0, ...((JOBS[n.job] || {}).teaches || []).map((k) => skillLv(n, k)));
+    if (oldLv >= 3 && worksOf(n.job).some((x) => x.steps) && w.rng.next() < 0.4) n.side = n.job; // 깊이 익힌 옛 일은 부업으로 남기도 한다
     if (j.id === "farmer") {
       setJob(n, "farmer"); n.job_cooldown = 120;
       const famine = w.foodPrice(w.towns[n.town]) >= 4;
@@ -1018,6 +1023,7 @@
       return;
     }
     n.gold -= j.entry_cost; setJob(n, j.id); n.job_cooldown = 240; n.fame += 1;
+    if (n.side === n.job) n.side = null;
     const what = j.start_text || `${jo(j.name, "이/가")} 되었다`;
     w.record("career", `${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 모은 금화 ${j.entry_cost}닢으로 ${what}`, { actor: n.id, town: n.town, imp: 5, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
   }
@@ -1092,6 +1098,7 @@
     emergeJobs(w);
     knowledgeBirth(w);
     genesis(w);
+    jobLife(w);
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
     w.qi = 0;
@@ -1591,6 +1598,54 @@
     }
   }
 
+  // ================================================================ 직업의 생애: 전문화와 소멸
+  /* 한 달에 한 번 본다.
+   *  전문화: 업무가 둘 이상인 직업에 솜씨가 '숙련' 이상인 사람이 셋 이상이면, 그중 한 사람이 한 가지 업무만 파고드는 전문 직업을 연다.
+   *          전문 직업은 그 업무 하나만 하고, 단계가 조금 수월하다(더 잘한다). 이름은 업무의 specName (없으면 "업무 이름 + 전문가").
+   *  소멸: 세계에서 생긴 직업·드러난 직업에 1년(120일 × 2) 넘게 아무도 없고 수요도 없으면 사라진다. 수요가 다시 생기면 되살아난다. */
+  function jobLife(w) {
+    if (w.day % 30 !== 7) return;
+    w.jobSeen = w.jobSeen || {}; w.defs = w.defs || { jobs: [], works: [] };
+    const holders = {};
+    for (const n of w.alive()) if (isAdult(n)) (holders[n.job] = holders[n.job] || []).push(n);
+    for (const j of CONTENT.jobs) if (holders[j.id]) w.jobSeen[j.id] = w.day;
+    // 전문화
+    for (const j of CONTENT.jobs.filter((x) => w.jobOpen(x.id) && !x.spec)) {
+      const crafts = worksOf(j.id).filter((x) => x.steps);
+      if (crafts.length < 2) continue;
+      const main = (j.teaches || [])[0], skilled = (holders[j.id] || []).filter((n) => n.controller !== "player" && main && skillLv(n, main) >= 3);
+      if (skilled.length < 4 || w.rng.next() > 0.12) continue;
+      const wk = crafts.find((x) => !JOBS["s_" + x.id]);
+      if (!wk) continue;
+      const id = "s_" + wk.id, name = wk.specName || `${wk.name} 전문가`;
+      const job = { ...j, id, name, spec: j.id, weight: 0, shift: false, emerge: undefined, born: w.day, look: { ...(j.look || {}) }, gen: undefined };
+      delete job.emerge; delete job.gen; delete job.skill;
+      const work = { ...wk, id: id + "_work", job: id, sim: undefined, steps: wk.steps.map((s) => ({ ...s, p: { ...(s.p || {}), hard: -0.06 } })) };
+      delete work.sim; delete work.gen;
+      w.defs.jobs.push(job); w.defs.works.push(work); applyDefs(w);
+      const n = maxBy(skilled, (x) => skillLv(x, main) + x.traits.ambition);
+      n.side = j.id; setJob(n, id); n.pioneer = id; n.fame += 3;
+      w.record("job_born", `${JOBS[j.id].name} 중에서도 ‘${wk.name}’만 파고든 ${jo(n.name, "이/가")} 이 세계 최초의 ‘${name}’${jo(name, "이/가").slice(name.length)} 되었다. 한 가지 일을 깊이 하는 사람이 나타났다`, { actor: n.id, town: n.town, imp: 5, wr: 0.5, data: { job: id, from: j.id, spec: true } });
+    }
+    // 소멸과 부활
+    for (const j of CONTENT.jobs) {
+      if (!j.gen && !j.emerge) continue;
+      const K = j.from ? KNOW(j.from) : null;
+      let need = K && K.demand ? demandMet(w, K.demand) : null;
+      if (j.emerge) { try { need = j.emerge.demand(w) >= 1; } catch (e) { need = null; } }
+      // 미리 정의된 직업(emerge)은 모든 세계가 함께 쓰는 정의라, 이 세계의 열린 목록에서만 뺀다 (다시 수요가 생기면 emergeJobs가 연다)
+      const open = j.emerge ? (w.jobsOpen || []).includes(j.id) : !j.ended;
+      if (open && !holders[j.id] && w.day - (w.jobSeen[j.id] ?? j.born ?? 0) > DPY * 2 && need !== true) {
+        if (j.emerge) w.jobsOpen = w.jobsOpen.filter((x) => x !== j.id);
+        else { j.ended = w.day; const d = (w.defs.jobs || []).find((x) => x.id === j.id); if (d) d.ended = w.day; }
+        w.record("job_gone", `이 세계에 ‘${j.name}’ 일을 하는 사람이 더는 남지 않았다. 사람들은 그 일을 옛이야기로 기억한다`, { imp: 4, wr: 0.3, data: { job: j.id } });
+      } else if (j.gen && j.ended && need === true && w.alive().some((n) => isAdult(n) && knows(n, j.from))) {
+        j.ended = null; const d = (w.defs.jobs || []).find((x) => x.id === j.id); if (d) d.ended = null; w.jobSeen[j.id] = w.day;
+        w.record("job_revived", `잊혔던 ‘${j.name}’ 일이 다시 필요해졌다. ${K.name}${jo(K.name, "을/를").slice(K.name.length)} 아는 사람이 그 일을 되살릴 것이다`, { imp: 4, wr: 0.3, data: { job: j.id } });
+      }
+    }
+  }
+
   function emergeJobs(w) {
     w.jobsOpen = w.jobsOpen || [];
     for (const j of CONTENT.jobs) {
@@ -1861,7 +1916,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
+  root.Asteria = { SAVE_VERSION, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

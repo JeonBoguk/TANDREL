@@ -1389,7 +1389,7 @@
   /** 업무를 마친다. scores: 단계별 점수(직접 조작) 또는 null(맡기기 → 자동, 조금 서툴다). grade를 직접 주면 단계 없이 그 품질로 */
   function finishWork(w, pl, wk, scores, grade, townArg) {
     const p = w.player, town = townArg || w.towns[pl.town];
-    if (typeof wk === "string") wk = A.worksOf(p.job).find((x) => x.id === wk);
+    if (typeof wk === "string") wk = [...A.worksOf(p.job), ...(p.side ? A.worksOf(p.side) : [])].find((x) => x.id === wk);
     if (!wk) return { text: "할 수 없는 일이다" };
     const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n));
     if (lack.length) return { text: "재료가 모자라다" };
@@ -1526,13 +1526,17 @@
       }
       return v;
     }
-    for (const wk of A.worksOf(p.job).filter((x) => x.place === pl.kind)) {
+    const myWorks = [...A.worksOf(p.job), ...(p.side && p.side !== p.job ? A.worksOf(p.side).filter((x) => x.steps) : [])];
+    for (const wk of myWorks.filter((x) => x.place === pl.kind)) {
       const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n)).map(([id, n]) => `${ITEMS[id].name} ${n - (e.inv[id] || 0)}`);
       const client = wk.client ? A.workClient(w, p, wk) : null;
       add({ id: "wk:" + wk.id, label: wk.steps ? `${wk.name} · ${wk.steps.length}단계` : wk.name, min: wk.mins, e: wk.energy, hint: [wk.hint, client ? `손님 ${client.name}` : "", wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
         ok: workReady(wk) && !lack.length && (!wk.client || !!client), why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : wk.client && !client ? "지금 이 마을엔 이 일을 맡길 손님이 없다" : "아직 할 수 없는 일이다", work: wk, client });
     }
     const jobsHere = A.CONTENT.jobs.filter((j) => (j.workplace || "square") === pl.kind && w.jobOpen(j.id) && jobReady(j)).map((j) => j.id);
+    // 부업: 이 일터의 직업 기술을 안다면, 지금 직업은 그대로 두고 그 일도 맡는다
+    for (const j of jobsHere) if (j !== p.job && j !== p.side && (JOBS[j].teaches || []).some((k) => A.knows(p, k)) && A.worksOf(j).some((x) => x.steps && workReady(x)))
+      add({ id: "side:" + j, label: `${JOBS[j].name} 일을 부업으로 삼기`, min: 0, e: 0, hint: `${JOBS[p.job].name} 일은 그대로 하면서 ${JOBS[j].name}의 업무도 맡는다` });
     for (const j of jobsHere) if (j !== p.job) {
       const c = JOBS[j].entry_cost, nk = JOBS[j].needKnow, known = !nk || A.knows(p, nk);
       add({ id: "job:" + j, label: `${JOBS[j].name}${c ? ` 되기 (금화 ${c})` : " 되기"}`, min: 60, e: 5, hint: "직업을 바꾼다", ok: p.gold >= c && known, why: !known ? `‘${A.KNOW(nk).name}’${jo(A.KNOW(nk).name, "을/를").slice((A.KNOW(nk).name).length)} 알아야 한다` : `금화 ${c}닢이 필요하다` });
@@ -1652,6 +1656,7 @@
     const town = w.towns[pl.town];
     let text = "";
     if (id === "jobmake") return { jobmake: true };
+    if (id.startsWith("side:")) { p.side = id.slice(5); return finish(w, `이제 ${JOBS[p.side].name} 일을 부업으로 한다.`, 0, 0); }
     if (id.startsWith("wk:") && def.work.steps) return { sim: def.work }; // 조작 화면을 연다 (ui → Sims.run → finishWork)
     if (id.startsWith("wk:")) {
       text = SIMS[def.work.sim](w, def.work, { town, pl });
