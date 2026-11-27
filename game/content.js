@@ -104,6 +104,14 @@
       scroll_dragon: { name: "알 수 없는 문자의 두루마리", icon: "📜", teaches: "dragon_tongue", sell: 50 },
     },
     /* 만들기. station 없음 = 맨손으로 어디서나, "home" = 내 집 앞, "workbench" = 내 집 작업대 */
+    /* 직업의 일 (건물 메뉴에 나온다). sim: shift = 반나절 일해 품삯·식량, make = 재료로 물건을 만든다(솜씨가 좋을수록 더 나온다) */
+    works: [
+      { id: "fields_help", job: "farmer", name: "공동 밭일 거들기", sim: "shift", hint: "마을 곳간을 채우고 품삯을 받는다" },
+      { id: "bake", job: "baker", name: "빵 굽기", mins: 120, energy: 8, needs: { wheat: 2 }, gives: { bread: 3 }, sim: "make", hint: "밀로 빵을 굽는다" },
+      { id: "stew", job: "cook", name: "스튜 끓이기", mins: 90, energy: 6, needs: { meat: 1, turnip: 1 }, gives: { meal: 2 }, sim: "make", hint: "고기와 순무로 스튜를 끓인다" },
+      { id: "brew_salve", job: "alchemist", name: "연고 달이기", mins: 90, energy: 6, needs: { herb: 2, fiber: 1 }, gives: { salve: 2 }, skill: "herbal", sim: "make", hint: "약초로 연고를 달인다" },
+      { id: "forge_hoe", job: "blacksmith", name: "괭이 벼리기", mins: 120, energy: 12, needs: { wood: 2, stone: 3 }, gives: { hoe: 1 }, skill: "farming_tools", sim: "make", hint: "대장간 불로 괭이를 벼린다" },
+    ],
     recipes: [
       { id: "stone_axe", out: "stone_axe", needs: { branch: 3, stone: 2, fiber: 3 }, mins: 30, energy: 4, hint: "나무를 벨 수 있다" },
       { id: "stone_spear", out: "stone_spear", needs: { branch: 3, stone: 1, fiber: 2 }, mins: 25, energy: 3, hint: "짐승을 사냥한다" },

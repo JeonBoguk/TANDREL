@@ -247,6 +247,33 @@
       const w3 = A.World.deserialize(old); G.setup(w3);
       t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
     } },
+    { id: "works", name: "직업마다 일터에서 하는 일이 있고, 솜씨가 좋을수록 많이 만든다", run(t) {
+      const W = t.w, p = t.p(), fields = t.placeOf("fields"), market = t.placeOf("market");
+      A.setJob(p, "farmer"); t.standAt(fields.x, fields.y);
+      const fm = G.buildingMenu(W, fields), ids = fm.map((v) => v.id);
+      t.check(ids.length === new Set(ids).size && fm.filter((v) => v.work).length === 1, `밭의 일: ${fm.filter((v) => v.work).map((v) => v.label).join(", ")}`);
+      p.energy = 100; const g0 = p.gold, r0 = G.doBuilding(W, fields, "work");
+      t.check(p.gold > g0, `예전 이름(work)으로도 일한다: ${r0.text}`);
+      A.setJob(p, "baker"); t.standAt(market.x, market.y); p.energy = 100;
+      t.check(!G.buildingMenu(W, market).find((v) => v.id === "wk:bake").ok, "밀이 없으면 빵을 못 굽는다");
+      G.give(W, "wheat", 2); const b0 = t.e().inv.bread || 0, r1 = G.doBuilding(W, market, "wk:bake");
+      t.check((t.e().inv.bread || 0) - b0 === 3 && !t.e().inv.wheat, r1.text);
+      // 솜씨: 연고 달이기 (약초학 숙련이면 2 → 3개)
+      const temple = t.placeOf("temple");
+      if (temple) {
+        A.setJob(p, "alchemist"); t.standAt(temple.x, temple.y); p.energy = 100;
+        for (let i = 0; i < 400; i++) A.addXp(p, "herbal", 1);
+        G.give(W, "herb", 2); G.give(W, "fiber", 1); const s0 = t.e().inv.salve || 0, r2 = G.doBuilding(W, temple, "wk:brew_salve");
+        t.check((t.e().inv.salve || 0) - s0 === 3, `${r2.text}`);
+      }
+      // 등록표: 처리가 등록되지 않은 일은 할 수 없고, 등록하면 된다
+      A.extend({ works: [{ id: "test_sing", job: "baker", name: "노래 부르기", mins: 30, energy: 2, sim: "test_sing" }] });
+      A.setJob(p, "baker"); t.standAt(market.x, market.y);
+      t.check(!G.buildingMenu(W, market).find((v) => v.id === "wk:test_sing").ok, "등록되지 않은 처리는 아직 할 수 없다");
+      G.registerSim("test_sing", () => "노래를 불렀다.");
+      t.check(G.doBuilding(W, market, "wk:test_sing").text === "노래를 불렀다.", "처리를 등록하자 할 수 있다");
+      A.CONTENT.works = A.CONTENT.works.filter((x) => x.id !== "test_sing"); delete G.SIMS.test_sing;
+    } },
     { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
       const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);
       while (W.season !== "가을") G.tick(W, 24 * 60);

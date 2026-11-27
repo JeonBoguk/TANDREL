@@ -1364,6 +1364,28 @@
     return null;
   }
 
+  // ================================================================ 직업의 일: 처리 등록표
+  /* 일(works)의 sim 이름 → 처리 함수 (w, work, {town, pl}) → 결과 문장. 새 처리는 Game.registerSim(id, fn)으로 더한다.
+   * 화면이 따로 필요한 일(미니게임 등)도 여기 등록하고, 함수 안에서 창을 열면 된다. */
+  const SIMS = {
+    shift(w, wk, { town }) {
+      const p = w.player, g0 = p.gold, f0 = town.food;
+      rWork(p, w);
+      return `열심히 일해 금화 ${(p.gold - g0).toFixed(1)}닢을 벌었다.${town.food > f0 + 0.5 ? ` 곳간에 식량 ${jo(String(Math.round(town.food - f0)), "을/를")} 보탰다.` : ""}`;
+    },
+    make(w, wk, { town }) {
+      const p = w.player;
+      for (const [id, n] of Object.entries(wk.needs || {})) take(w, id, n);
+      const lv = wk.skill ? Math.max(1, A.skillLv(p, wk.skill)) : 1, got = [];
+      for (const [id, n] of Object.entries(wk.gives || {})) { const k = n + Math.floor(n * 0.25 * (lv - 1)); give(w, id, k, wk.name, town.name); got.push(`${ITEMS[id].name} ${k}개`); }
+      if (wk.skill) A.addXp(p, wk.skill, 2);
+      return `${wk.name}: ${got.join(", ")}를 만들었다.${lv >= 2 ? ` (${A.SKILL_LV_NAME[lv]}한 솜씨)` : ""}`;
+    },
+  };
+  function registerSim(id, fn) { SIMS[id] = fn; }
+  /** 플레이어가 이 직업을 가질 수 있는가: 등록된 처리로 할 수 있는 일이 하나는 있어야 한다 */
+  const jobReady = (j) => A.worksOf(j.id).some((x) => SIMS[x.sim]);
+
   // ================================================================ 건물 안에서
   function seedsOnSale(w) { return Object.entries(CROPS).filter(([, c]) => c.seasons.includes(w.season)).map(([k]) => SEED_OF[k]); }
   function sellPrice(w, id) { const p = w.player; return Math.max(1, Math.round(ITEMS[id].sell * (p.job === "merchant" ? 1.3 : 1))); }
@@ -1378,9 +1400,13 @@
       }
       return v;
     }
-    const workPlace = Object.fromEntries(A.CONTENT.jobs.map((j) => [j.id, j.workplace || "square"]));
-    const jobsHere = Object.entries(workPlace).filter(([j, k]) => k === pl.kind && w.jobOpen(j)).map(([j]) => j);
-    if (workPlace[p.job] === pl.kind) add({ id: "work", label: "반나절 일하기 (4시간)", min: 240, e: 20, hint: `${JOBS[p.job].name}로서 일한다` });
+    for (const wk of A.worksOf(p.job).filter((x) => x.place === pl.kind)) {
+      const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n)).map(([id, n]) => `${ITEMS[id].name} ${n - (e.inv[id] || 0)}`);
+      const hrs = wk.mins % 60 ? `${Math.floor(wk.mins / 60)}시간 ${wk.mins % 60}분` : `${wk.mins / 60}시간`;
+      add({ id: "wk:" + wk.id, label: `${wk.name} (${hrs})`, min: wk.mins, e: wk.energy, hint: [wk.hint, wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
+        ok: !!SIMS[wk.sim] && !lack.length, why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : "아직 할 수 없는 일이다", work: wk });
+    }
+    const jobsHere = A.CONTENT.jobs.filter((j) => (j.workplace || "square") === pl.kind && w.jobOpen(j.id) && jobReady(j)).map((j) => j.id);
     for (const j of jobsHere) if (j !== p.job) {
       const c = JOBS[j].entry_cost, nk = JOBS[j].needKnow, known = !nk || A.knows(p, nk);
       add({ id: "job:" + j, label: `${JOBS[j].name}${c ? ` 되기 (금화 ${c})` : " 되기"}`, min: 60, e: 5, hint: "직업을 바꾼다", ok: p.gold >= c && known, why: !known ? `‘${A.KNOW(nk).name}’${jo(A.KNOW(nk).name, "을/를").slice((A.KNOW(nk).name).length)} 알아야 한다` : `금화 ${c}닢이 필요하다` });
@@ -1442,7 +1468,6 @@
       if (p.home === pl.town) add({ id: "sleep:home", label: "잠자기", min: 0, e: 0, hint: "다음 날 아침까지. 일찍 잘수록 개운하다" }, { id: "rest", label: "쉬기 (1시간)", min: 60, e: -12, hint: "기력을 조금 되찾는다" }, { id: "family", label: "가족과 시간 보내기 (1시간)", min: 60, e: 0, hint: "같은 마을에 있는 가족과 가까워진다" });
       else add({ id: "sleep:inn", label: "여관에서 묵기 (금화 3)", min: 0, e: 0, hint: "다음 날 아침까지", ok: p.gold >= 3 }, { id: "settle", label: "이 마을에 방 얻기", min: 60, e: 5, hint: "이곳이 내 집이 된다" });
     }
-    if (pl.kind === "fields") add({ id: "work", label: "공동 밭일 거들기 (4시간)", min: 240, e: 20, hint: "마을 곳간을 채우고 품삯을 받는다", ok: p.job === "farmer", why: "농부만 품삯을 받을 수 있다" });
     if (pl.kind === "camp" && w.war.active) add({ id: "enlist", label: "전쟁에 참전하기", min: 0, e: 0, hint: "전선에서 싸운다" });
     return v;
   }
@@ -1451,6 +1476,7 @@
     const why = blockedReason(w);
     if (why) return { text: why };
     if (id.startsWith("sleep:")) { sleep(w, id.slice(6)); return { text: null, slept: true }; }
+    if (id === "work") { const m = buildingMenu(w, pl).find((a) => a.work && a.work.sim === "shift"); if (m) id = m.id; } // 예전 이름 (자동 진행)
     const def = buildingMenu(w, pl).find((a) => a.id === id);
     if (id.startsWith("craft:") && def && def.ok) return { text: craft(w, id.slice(6)) };
     if (id.startsWith("build:") && def && def.ok) return { text: doBuildWork(w, +id.slice(6)) };
@@ -1497,10 +1523,8 @@
     if (!def || !def.ok) return { text: def && def.why ? def.why : "지금은 할 수 없다" };
     const town = w.towns[pl.town];
     let text = "";
-    if (id === "work") {
-      const g0 = p.gold, f0 = town.food;
-      rWork(p, w);
-      text = `열심히 일해 금화 ${(p.gold - g0).toFixed(1)}닢을 벌었다.${town.food > f0 + 0.5 ? ` 곳간에 식량 ${jo(Math.round(town.food - f0), "을/를")} 보탰다.` : ""}`;
+    if (id.startsWith("wk:")) {
+      text = SIMS[def.work.sim](w, def.work, { town, pl });
     } else if (id.startsWith("job:")) {
       const j = JOBS[id.slice(4)], old = JOBS[p.job].name, from = p.job;
       p.gold -= j.entry_cost; A.setJob(p, j.id);
@@ -1635,7 +1659,7 @@
   }
 
   const G = {
-    houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    SIMS, registerSim, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,

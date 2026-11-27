@@ -30,12 +30,14 @@ Asteria.extend({
   races: [{ id, name, lifespan, adultAge, magic, traitsGenetic, traits, look: { skin: [...], hair: [...], ears, horns, tail, beard } }],
   jobs: [{ id, name, income, entry_cost, color, look: { hat, apron, trim }, workplace, teaches, skill }],
   dreams: [...], worldEvents: [...], items: {...}, recipes: [...], knowledge: [...],
+  works: [{ id, job, name, place, mins, energy, needs, gives, skill, sim, hint }],
   towns: [...], npcs: [...], loot: [...], renovations: [...], eventKinds: {...},
 });
 ```
 
 - 저장된 세계에도 새 마을·주민이 들어온다(`syncContent`).
 - 직업의 `look.hat`은 인물 그림의 모자 조각으로 이어진다 (`render.js`의 `HAT16`). 새 모자는 `art/person16.js`의 `HATS`에.
+- 직업의 일은 `works`에 적는다. `sim`은 처리 이름으로, game.js의 `SIMS` 등록표(`shift`: 반나절 일하기, `make`: 재료 → 물건)에 있어야 한다. 새 처리는 `Game.registerSim(id, (w, work, {town, pl}) => 결과 문장)`. 처리가 등록된 일이 없는 직업은 플레이어에게 열리지 않는다(`Game.jobReady`). 목록은 `Asteria.worksOf(직업)`.
 - 직업별로 손에 드는 것은 `render.js`의 `PROP16`.
 
 ## 플레이어로 사는 동안의 상태

@@ -62,6 +62,9 @@
     demonLords: ["마왕 그라즈무스", "마왕 벨리아스", "마왕 노크투르", "마왕 이자벨라", "마왕 모르드레크"],
     items: {},        // game.js의 아이템 표에 더해진다
     recipes: [],      // 만들기 (content.js)
+    /* 직업의 일: {id, job, name, place(기본: 직업 일터), mins, energy, needs, gives, skill, sim, hint}.
+     * sim은 game.js 등록표(Game.SIMS)의 처리 이름. 따로 적지 않은 직업은 '반나절 일하기'(sim: shift)가 붙는다 */
+    works: [],
     renovations: [],  // 목수에게 맡기는 집 공사 (content.js)
     styles: { roof: {}, wall: {}, floor: {} }, // 공사로 고를 수 있는 지붕·벽·바닥
     /* 아직 아무 나라도 없는 땅. 야심 있는 주민이 이 중 한 곳에 새 나라를 세운다 (지도 타일 좌표) */
@@ -85,7 +88,7 @@
   /** 콘텐츠 팩을 더한다. 같은 id가 있으면 덮어쓰고(필드 병합), 없으면 새로 붙인다.
    *  pack: { races, jobs, dreams, worldEvents, items, eventKinds, demonLords } */
   function extend(pack) {
-    for (const key of ["races", "jobs", "dreams", "worldEvents", "towns", "recipes", "npcs", "knowledge", "loot", "renovations"]) {
+    for (const key of ["races", "jobs", "dreams", "worldEvents", "towns", "recipes", "works", "npcs", "knowledge", "loot", "renovations"]) {
       for (const x of pack[key] || []) {
         const i = CONTENT[key].findIndex((y) => y.id === x.id);
         if (i >= 0) CONTENT[key][i] = { ...CONTENT[key][i], ...x }; else CONTENT[key].push(x);
@@ -182,6 +185,15 @@
   const sharedSkills = (n) => knownSkills(n).filter((k) => n.skills[k].from !== "job");
   /** 직업을 바꾼다. 새 직업이 가르치는 기술을 익힌다(이전 직업에서 익힌 것은 그대로 남는다) */
   function setJob(n, id) { n.job = id; for (const k of (JOBS[id] && JOBS[id].teaches) || []) learn(n, k, "job"); }
+  /** 이 직업이 하는 일 목록. 일터(place)는 따로 적지 않으면 직업의 일터 */
+  function worksOf(jobId) {
+    const j = JOBS[jobId];
+    if (!j) return [];
+    const place = j.workplace || "square";
+    const list = CONTENT.works.filter((x) => x.job === jobId).map((x) => ({ place, mins: 240, energy: 20, sim: "shift", ...x }));
+    if (!list.some((x) => x.sim === "shift")) list.unshift({ id: "shift_" + jobId, job: jobId, name: "반나절 일하기", place, mins: 240, energy: 20, sim: "shift", hint: `${jo(j.name, "으로/로")}서 일한다` });
+    return list;
+  }
   /** 직업 솜씨: 직업이 가르치는 기술 중 가장 높은 단계. 수입에 곱한다 */
   function mastery(n) { const t = (JOBS[n.job] && JOBS[n.job].teaches) || []; const lv = t.length ? Math.max(...t.map((k) => skillLv(n, k))) : 1; return 1 + 0.06 * Math.max(0, lv - 1); }
   const A_adjust = (n, id, d) => adjust(n, id, d);
@@ -1606,6 +1618,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, worksOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);
