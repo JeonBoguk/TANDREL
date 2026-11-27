@@ -1455,7 +1455,7 @@
   /** 수요가 쌓이면 누군가 처음으로 새 일을 시작한다. 그 뒤로 그 직업은 이 세계의 직업이 된다 */
   // ================================================================ 세계 안에서 새 직업이 생긴다 (genesis)
   /* 미리 정의된 직업이 없어도, 세계에 수요가 생기고 그 수요를 채울 지식을 아는 사람이 있으면 직업이 새로 생긴다.
-   *  수요: 지식의 demand (데이터) — { race: 종족 } 그 종족이 이 세계에 있다 · { events: [종류], within: 일, n } 최근 사건 · { sick: n } 아픈 사람 수
+   *  수요: 지식의 demand (데이터) — { race: 종족 } 그 종족이 이 세계에 있다 · { events: [종류], within: 일, n } 최근 사건 · { sick: n } 아픈 사람 수 · { war: true } 전쟁 중
    *  이름·일터·업무 단계·결과는 지식의 분야(domain)로 정한다. 업무 단계는 그 분야에 어울리는 조작 부품(TOOL_DOMAINS)으로 조립한다.
    *  만든 정의는 함수가 없는 데이터라 w.defs에 저장되고, 이 세계에만 있다 (다른 세계를 불러오면 사라진다). */
   const GEN = {
@@ -1470,6 +1470,7 @@
     effects: {
       language: { gold: [2, 6], bond: 4, rel: 6, fame: 1, record: { kind: "interpret", text: "{me:이/가} {race}과 {town} 사람들 사이에서 말을 옮겼다. 서로의 뜻이 통하기 시작했다", imp: 4, p: 0.3 } },
       care: { heal: 4, gold: [2, 5], rel: 8, record: { kind: "cure", text: "{me:이/가} {client:을/를} 돌봐 일으켜 세웠다", imp: 3, p: 0.3 } },
+      magic: { gold: [3, 7], rel: 3, fame: 2, record: { kind: "service", text: "{me:이/가} {client}에게 {work}의 힘을 빌려주었다", imp: 3, p: 0.25 } },
       _: { gold: [2, 6], rel: 4, fame: 1, record: { kind: "service", text: "{me:이/가} {work}에서 솜씨를 보였다", imp: 3, p: 0.2 } },
     },
   };
@@ -1478,6 +1479,7 @@
     if (d.race) return seenRace(w, d.race) && w.alive().some((n) => n.race === d.race);
     if (d.events) return recent(w, d.events, d.within || 120) >= (d.n || 1);
     if (d.sick) return w.alive().filter((n) => n.health < 6).length >= d.sick;
+    if (d.war) return !!(w.war && w.war.active);
     return false;
   }
   /** 저장된 세계 정의(w.defs)를 콘텐츠에 올린다. 이전 세계의 정의는 지운다 */

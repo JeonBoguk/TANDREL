@@ -369,8 +369,8 @@
       { id: "weaving", domain: ["craft", "art"], name: "짜기", desc: "풀섬유로 바구니와 깔개를 짠다", practice: { stat: "fiber", n: 30, text: "풀을 꼬고 엮다 보니 손이 저절로 움직인다." } },
       { id: "herbal", domain: ["nature", "knowledge"], name: "약초학", desc: "약초로 연고를 만든다", practice: { stat: "herb", n: 12, text: "약초와 버섯을 수없이 만지다 보니 어떤 게 약이 되는지 알 것 같다." } },
       { id: "medicine", domain: ["care", "knowledge"], name: "의술", desc: "병을 고치는 탕약을 짓는다. 의사가 되려면 필요하다", lost: true },
-      { id: "rune", domain: ["magic", "craft"], noun: "룬", name: "룬 새기기", desc: "돌에 룬을 새겨 무기를 강하게 한다", lost: true },
-      { id: "elixir", domain: ["magic", "knowledge"], noun: "비약", name: "비약 조합", desc: "기력과 체력을 단번에 되찾는 비약을 만든다", lost: true },
+      { id: "rune", domain: ["magic", "craft"], noun: "룬", demand: { war: true }, name: "룬 새기기", desc: "돌에 룬을 새겨 무기를 강하게 한다", lost: true },
+      { id: "elixir", domain: ["care", "magic"], noun: "비약", demand: { sick: 4 }, name: "비약 조합", desc: "기력과 체력을 단번에 되찾는 비약을 만든다", lost: true },
       { id: "dragon_tongue", name: "용의 언어", desc: "먼 곳의 누군가와 말이 통하게 된다", lost: true,
         domain: ["language"], noun: "용언", lang: "dragonkin", vocab: ["불", "하늘", "약속", "길", "물", "산", "벗", "값", "비늘", "알"],
         demand: { race: "dragonkin" } }, // 용족이 이 세계에 나타나면, 이 말을 아는 사람에게 일이 생긴다 (genesis)

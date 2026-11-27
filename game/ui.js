@@ -912,7 +912,8 @@ function winJobMake() {
         h("label", null, "이름", txt(d.name, 10, (v) => { d.name = v; }, "예: 향 조향사")),
         h("label", null, "바탕 기술", sel(d.skill, known, (v) => { d.skill = v; }, "바탕 기술")),
         h("label", null, "일터", sel(d.place, J.places, (v) => { d.place = v; }, "일터")),
-        h("label", null, "모자", sel(d.hat, J.hats, (v) => { d.hat = v; }, "모자"))),
+        h("label", null, "모자", sel(d.hat, J.hats, (v) => { d.hat = v; }, "모자")),
+        h("label", null, "손에 드는 것", sel(d.prop || "", J.props, (v) => { d.prop = v; }, "손에 드는 것"))),
       h("div", { class: "jmrow" }, h("span", { class: "small muted" }, "색"), h("div", { class: "swatches" }, J.colors.map((c) => h("button", { type: "button", class: "swatch", style: `background:${c}`, "aria-pressed": String(d.color === c), "aria-label": c, onclick: () => { d.color = c; re(); } }))))) 
       : h("p", { class: "muted small" }, `${A.JOBS[d.addTo].name}에 업무를 하나 더 짠다.`),
     h("section", { class: "jm" }, h("h3", null, "업무"),

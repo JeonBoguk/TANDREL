@@ -313,6 +313,9 @@
       // 이 세계에 저장되고, 다른 세계엔 없다
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check(A.JOBS.w_dragon_tongue && w2.npcs[sage.id].job === "w_dragon_tongue", "불러와도 남아 있다");
+      // 다른 지식의 수요: 전쟁이 나면 룬을 아는 사람이 일을 얻는다
+      const rk = W.spawn(town, { race: "dwarf", job: "farmer", ageYears: 60 }); A.learn(rk, "rune"); W.war = W.war || {}; const wasWar = W.war.active; W.war.active = true;
+      A.genesis(W); t.check(A.JOBS.w_rune && A.JOBS.w_rune.name === "룬 술사" && G.jobReady(A.JOBS.w_rune), `전쟁 중 룬: ${A.JOBS.w_rune && A.JOBS.w_rune.name}`); W.war.active = wasWar;
       A.newWorld(99, "다른 세계");
       t.check(!A.JOBS.w_dragon_tongue, "새 세계에는 없다");
       A.applyDefs(W);
@@ -324,7 +327,7 @@
       t.check(!!G.doBuilding(W, guild, "jobmake").jobmake, "고르면 직업 만들기 창이 열린다");
       const d = G.jobDraft(W, null);
       t.check(G.checkJobDraft(W, d).length >= 2, `빈 초안은 등록할 수 없다: ${G.checkJobDraft(W, d).join(" / ")}`);
-      Object.assign(d, { name: "바구니 장인", skill: "weaving", place: "market", hat: "straw" });
+      Object.assign(d, { name: "바구니 장인", skill: "weaving", place: "market", hat: "straw", prop: "basket" });
       Object.assign(d.work, { name: "큰 바구니 짜기", mins: 120, kind: "make", needs: { fiber: 2 }, gives: { gem: 3 } });
       d.work.steps = [{ name: "풀 고르기", tool: "observe", level: 0 }, { name: "엮기", tool: "rhythm", level: 1 }, { name: "마무리", tool: "trace", level: 2 }];
       t.check(G.checkJobDraft(W, d).some((x) => /넘는다/.test(x)), "풀섬유로 보석을 만드는 일은 균형 규칙에 걸린다");
@@ -339,6 +342,7 @@
       t.check(wkTry.steps.length === 3 && wkTry.steps[2].p.hard > 0 && G.workReady({ ...wkTry, sim: "steps" }), "시험용 업무가 만들어진다");
       const r = G.createJob(W, d), J = r.job;
       t.check(r.ok && A.JOBS[J.id] && p.job === J.id && p.gold === 40 && J.creator === p.id, r.text);
+      t.check(J.look.hat === "straw" && J.look.prop === "basket", "모자와 손에 든 것이 직업 그림에 남는다");
       const born = W.events.filter((e) => e && e.kind === "job_born" && e.data && e.data.made).pop();
       t.check(!!born, born ? born.text : "소식 없음");
       const market = t.placeOf("market"); t.standAt(market.x, market.y); p.energy = 100; G.give(W, "fiber", 8);

@@ -1420,6 +1420,7 @@
     cost: 20, maxSteps: 5,
     places: [["market", "시장"], ["forge", "대장간"], ["temple", "신전"], ["guild", "길드"], ["inn", "여관"], ["tavern", "주점"], ["fields", "밭"]],
     hats: [["", "없음"], ["straw", "밀짚모자"], ["chef", "요리 모자"], ["cap", "챙 모자"], ["bandana", "두건"], ["hood", "후드"], ["witch", "고깔모자"], ["helmet", "투구"], ["circlet", "화관"]],
+    props: [["", "없음"], ["hammer", "망치"], ["staff", "지팡이"], ["sword", "검"], ["basket", "바구니"], ["book", "책"]],
     colors: ["#c8603a", "#d8b84a", "#6a9a4a", "#4a9a8a", "#5a7ad8", "#9a7ad8", "#d89ab8", "#e4e6e8", "#8a6a5a"],
     mins: [30, 60, 90, 120, 180, 240],
     levels: [["쉬움", -0.04], ["보통", 0], ["어려움", 0.08]],
@@ -1448,7 +1449,7 @@
   }
   function jobDraft(w, addTo) {
     const p = w.player, sk = A.knownSkills(p)[0] || null, J = addTo ? JOBS[addTo] : null;
-    return { addTo: addTo || null, name: J ? J.name : "", skill: J ? J.teaches[0] : sk, place: J ? J.workplace : "market", hat: J ? (J.look || {}).hat || "" : "cap", color: J ? J.color : JOBMAKE.colors[0],
+    return { addTo: addTo || null, name: J ? J.name : "", skill: J ? J.teaches[0] : sk, place: J ? J.workplace : "market", hat: J ? (J.look || {}).hat || "" : "cap", prop: J ? (J.look || {}).prop || "" : "", color: J ? J.color : JOBMAKE.colors[0],
       work: { name: "", mins: 120, kind: "make", needs: {}, gives: {}, serve: "pay", client: "", steps: [{ name: "", tool: "gauge", level: 1 }] }, tried: false };
   }
   /** 초안 검사: 고쳐야 할 것들의 목록 (비면 등록할 수 있다) */
@@ -1500,7 +1501,7 @@
     }
     const id = `p${w.defs.jobs.length + 1}_${w.day}`, nm = d.name.trim();
     const job = { id, name: nm, income: [1.5, 4.5], entry_cost: JOBMAKE.cost, weight: 0, shift: false, teaches: [d.skill], needKnow: d.skill,
-      color: d.color, workplace: d.place, look: d.hat ? { hat: d.hat } : {}, born: w.day, creator: p.id, from: d.skill };
+      color: d.color, workplace: d.place, look: { ...(d.hat ? { hat: d.hat } : {}), ...(d.prop ? { prop: d.prop } : {}) }, born: w.day, creator: p.id, from: d.skill };
     const wk = draftWork(d, id, id + "_w1");
     w.defs.jobs.push(job); w.defs.works.push(wk); A.applyDefs(w);
     p.gold -= JOBMAKE.cost;
