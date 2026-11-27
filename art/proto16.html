@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><title>16px 시안</title><style>body{margin:0;background:#16191C}canvas{image-rendering:pixelated;display:block;width:1024px;height:576px}</style></head>
+<body><canvas id="c"></canvas><script type="module">
+import { render } from "./main16.js"; const c = document.getElementById("c"); const t0 = performance.now();
+function tick(n) { render(c, Math.max(0, (n - t0) / 1000)); requestAnimationFrame(tick); } requestAnimationFrame(tick);
+</script></body></html>

@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>모자 목록</title><style>body{margin:0;background:#16191C}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas><script type="module">
+import { personFrame, RAMPS as R, HATS, PROPS } from "./person16.js";
+const s = 5, base = { skin: R.skin.fair, hair: R.hair.blond, hairStyle: "long", shirt: R.cloth.cream, pants: R.cloth.blue, over: "vest", vest: R.cloth.brown };
+const items = [...Object.keys(HATS).map((h) => ({ hat: h })), ...Object.keys(PROPS).map((p) => ({ prop: p, hairStyle: "short", hair: R.hair.brown }))];
+const cols = 4, cw = 3 * 21 + 4, ch = 44;
+const c = document.getElementById("c"); c.width = cols * cw * s; c.height = Math.ceil(items.length / cols) * ch * s;
+const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+const toC = (b) => { const cv = document.createElement("canvas"); cv.width = b.w; cv.height = b.h; cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(b.px.buffer.slice(0)), b.w, b.h), 0, 0); return cv; };
+items.forEach((it, i) => {
+  const gx = (i % cols) * cw, gy = Math.floor(i / cols) * ch;
+  x.fillStyle = "#7ea25a"; x.fillRect((gx + 1) * s, (gy + 1) * s, (cw - 2) * s, (ch - 2) * s);
+  ["down", "right", "up"].forEach((d, k) => x.drawImage(toC(personFrame({ ...base, ...it }, d, 0)), (gx + 2 + k * 21) * s, (gy + 2) * s, 20 * s, 40 * s));
+});
+</script></body></html>

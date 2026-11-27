@@ -1,0 +1,221 @@
+/* 테스트 단계: 내 캐릭터를 NPC처럼 대신 움직여 기능들이 제대로 도는지 점검한다.
+ * 각 점검은 지금 세계의 '복사본'에서 새로 태어난 테스트 인물로 진행하므로, 실제 세계와 저장에는 영향이 없다.
+ * 새 기능을 만들면 여기에 { id, name, run(t) }를 하나 더하면 된다. t.check(조건, 설명)으로 확인한다. */
+(function (root) {
+  "use strict";
+  const A = root.Asteria, G = root.Game, S = root.Story;
+  const dist = (a, b, c, d) => Math.hypot(a - c, b - d);
+
+  // ---------------------------------------------------------------- 도우미
+  function helpers(w) {
+    const p = () => w.player, e = () => G.ext(w);
+    const town = () => p().home;
+    const placeOf = (kind, t = town()) => G.MAP.places.find((q) => q.town === t && q.kind === kind);
+    const npcs = (f = () => true) => w.residents(town(), true).filter((n) => n.controller !== "player" && n.jail === 0 && f(n));
+    const findTile = (pred, near) => {
+      let best = null, bd = 1e9;
+      for (let y = 0; y < G.MH; y++) for (let x = 0; x < G.MW; x++) if (pred(x, y)) { const d = near ? dist(x, y, near[0], near[1]) : 0; if (d < bd) { bd = d; best = [x, y]; if (!near) return best; } }
+      return best;
+    };
+    const standAt = (x, y) => { w.ppos = { x: x + 0.5, y: y + 0.5 }; };
+    const standBelow = (x, y) => { w.ppos = { x: x + 0.5, y: y + 1.5 }; G.ext(w).facing = "up"; };
+    const tickTo = (hour) => { const h = G.hour(w); const mins = Math.round(((hour - h + 24) % 24) * 60); if (mins > 0) G.tick(w, mins); };
+    const overlaps = () => {
+      const B = G.MAP.buildings; let bad = 0;
+      for (const a of B) for (const b of B) if (a !== b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) bad++;
+      for (const a of B) { const [dx, dy] = a.door; if (G.MAP.solid[G.MAP.I(dx, dy)] >= 0) bad++; }
+      return bad;
+    };
+    const talkPick = (n, labels) => {
+      const s = S.talk(w, n.id);
+      for (const l of labels) { const o = s.options.find((x) => x.label.startsWith(l)); if (!o) return { s, ok: false, missing: l }; o.go(); }
+      S.endTalk(w, s);
+      return { s, ok: true };
+    };
+    const ensureBuilder = () => {
+      let b = w.alive().find((n) => n.job === "builder" && n.controller !== "player" && n.town === town());
+      if (!b) { b = npcs((n) => A.isAdult(n))[0]; b.job = "builder"; A.learn(b, "woodwork"); w.jobsOpen = [...new Set([...(w.jobsOpen || []), "builder"])]; }
+      return b;
+    };
+    return { p, e, town, placeOf, npcs, findTile, standAt, standBelow, tickTo, overlaps, talkPick, ensureBuilder };
+  }
+
+  // ---------------------------------------------------------------- 점검 목록
+  const SCENARIOS = [
+    { id: "start", name: "빈손으로 태어난다", run(t) {
+      const inv = Object.keys(t.e().inv);
+      t.check(inv.every((k) => ["hand", "skill", "bread"].includes(k)), `처음 가방: ${inv.join(", ")}`);
+      t.check(t.p().gold <= 10, `처음 금화 ${Math.floor(t.p().gold)}닢`);
+      t.check(t.e().wanted.level === 0 && t.e().missions.length === 0, "수배·미션 없이 시작");
+    } },
+    { id: "gather", name: "맨손으로 나뭇가지·돌멩이·풀섬유 모으기", run(t) {
+      const home = G.TOWN_POS[t.town()];
+      const tree = t.findTile((x, y) => [G.O.OAK, G.O.PINE].includes(G.objAt(t.w, x, y)) && !G.townAt(x, y) && G.walkable(t.w, x, y + 1), home);
+      t.standBelow(...tree); t.e().sel = 0; G.useAt(t.w, ...tree);
+      const rock = t.findTile((x, y) => G.objAt(t.w, x, y) === G.O.ROCK && G.walkable(t.w, x, y + 1), home);
+      t.standBelow(...rock); G.useAt(t.w, ...rock);
+      const grass = t.findTile((x, y) => G.grassy(t.w, x, y), home);
+      t.standBelow(...grass); G.useAt(t.w, ...grass);
+      const inv = t.e().inv;
+      t.check(inv.branch > 0, `나뭇가지 ${inv.branch || 0}`); t.check(inv.stone > 0, `돌멩이 ${inv.stone || 0}`); t.check(inv.fiber > 0, `풀섬유 ${inv.fiber || 0}`);
+    } },
+    { id: "craft", name: "돌도끼 만들기와 작업대 세우기", run(t) {
+      G.give(t.w, "branch", 13); G.give(t.w, "stone", 8); G.give(t.w, "fiber", 7);
+      G.craft(t.w, "stone_axe"); t.check(t.e().inv.stone_axe === 1, "돌도끼를 만들었다");
+      const inn = G.MAP.buildings.find((b) => b.town === t.town() && b.kind === "inn"); t.standAt(inn.door[0], inn.door[1] + 1);
+      const r = G.craft(t.w, "workbench"); t.check(t.e().stations && t.e().stations.workbench === t.town(), `작업대: ${r}`);
+      const st = G.stationPlaces(t.w)[0]; t.check(!!st, "집 옆에 작업대가 보인다");
+      if (st) t.check(G.buildingMenu(t.w, st).some((v) => v.id.startsWith("craft:")), "작업대를 누르면 만들 것이 나온다");
+    } },
+    { id: "codex", name: "도감은 얻은 것만 쌓인다", run(t) {
+      const c = () => t.e().codex || {};
+      t.check(["bread", "branch", "stone", "fiber"].every((id) => c()[id]) && Object.keys(c()).length === 4, `처음 도감: ${Object.keys(c()).join(", ")}`);
+      t.check(!c().apple && !c().elixir, "얻어 보지 않은 것은 없다");
+      const home = G.TOWN_POS[t.town()];
+      const ap = t.findTile((x, y) => G.objAt(t.w, x, y) === G.O.APPLE && G.forageReady(t.w, x, y) && G.walkable(t.w, x, y + 1), home);
+      if (ap) { t.standBelow(...ap); t.e().sel = 0; G.useAt(t.w, ...ap); }
+      if (ap && t.e().inv.apple) t.check(c().apple && c().apple.ways[0].how === "사과나무에서 따기" && c().apple.ways[0].at.length === 1, `사과: ${JSON.stringify(c().apple)}`);
+      G.give(t.w, "meat", 1, "토끼 사냥", "들판");
+      t.check(G.catOf("meat") === "food" && G.catOf("stone_spear") === "weapon" && G.catOf("hoe") === "tool", "분류");
+      const vis = G.knownRecipes(t.w).map((r) => r.id);
+      t.check(vis.includes("stone_axe") && !vis.includes("elixir") && !vis.includes("rune_spear"), "모르는 비술의 만드는 법은 보이지 않는다");
+    } },
+    { id: "throw", name: "돌멩이를 던져 토끼 잡기", run(t) {
+      G.give(t.w, "stone", 8);
+      const x = Math.floor(t.w.ppos.x), y = Math.floor(t.w.ppos.y);
+      G.animals.push({ id: 99999, type: "rabbit", x: x + 3.5, y: y + 0.6, hp: 2, vx: 0, vy: 0, t: 99, state: "idle", hurt: 0, cd: 0 });
+      let msg = ""; for (let i = 0; i < 8 && !t.e().inv.meat; i++) { const a = G.animals.find((q) => q.id === 99999); if (!a) break; a.vx = a.vy = 0; msg = G.throwAt(t.w, a.x, a.y, "stone"); }
+      t.check((t.e().inv.meat || 0) > 0, `고기 ${t.e().inv.meat || 0} (${msg})`);
+    } },
+    { id: "market", name: "시장에서 팔기", run(t) {
+      const m = t.placeOf("market"); t.standAt(m.x, m.y);
+      G.give(t.w, "apple", 5); const g0 = t.p().gold;
+      const r = G.doBuilding(t.w, m, "sell:apple"); t.check(t.p().gold > g0, `${r.text} (금화 ${Math.floor(g0)} → ${Math.floor(t.p().gold)})`);
+    } },
+    { id: "dream", name: "주민에게 꿈 물어보기", run(t) {
+      const n = t.npcs((x) => A.isAdult(x) && x.dream)[0];
+      if (!n) { t.note("꿈을 가진 주민이 없어 건너뜀"); return; }
+      n.rel[t.p().id] = 30; const r = t.talkPick(n, ["꿈이 뭐예요?"]);
+      t.check(r.ok && S.knowsDream(t.w, n), `${n.name}의 꿈: ${A.dreamName(n)}`);
+    } },
+    { id: "learn", name: "지식 배우기 (주민·두루마리·혼자 익히기)", run(t) {
+      const n = t.npcs((x) => A.isAdult(x) && ((A.JOBS[x.job].teaches || []).some((k) => !A.knows(t.p(), k))))[0];
+      if (n) { n.rel[t.p().id] = 50; const k = A.JOBS[n.job].teaches.find((q) => !A.knows(t.p(), q)); const r = t.talkPick(n, ["무언가 가르쳐", "‘" + A.KNOW(k).name]); t.check(r.ok && A.knows(t.p(), k), `${n.name}에게 ‘${A.KNOW(k).name}’ 배움`); }
+      G.give(t.w, "scroll_rune", 1); G.readScroll(t.w, "scroll_rune"); t.check(A.knows(t.p(), "rune"), "두루마리로 ‘룬 새기기’ 익힘");
+      for (let i = 0; i < 12; i++) G.practice(t.w, "chop"); t.check(A.knows(t.p(), "woodwork"), "나무를 12번 베어 ‘목공’을 혼자 익힘");
+    } },
+    { id: "visit", name: "초대받아 주민 집에 놀러 가기", run(t) {
+      t.tickTo(18);
+      const n = t.npcs((x) => A.isAdult(x) && x.jail === 0 && !A.family(t.p()).has(x.id))[0]; n.rel[t.p().id] = 60;
+      t.talkPick(n, ["집에 놀러"]);
+      const m = t.e().missions.find((x) => x.type === "visit"); t.check(!!m, "초대 미션이 생겼다");
+      if (!m) return;
+      const bd = G.MAP.buildings.find((b) => b.town === m.town && b.kind === "house" && b.hid === m.hid);
+      t.check(G.canEnter(t.w, bd), "초대 시간에는 들어갈 수 있다");
+      const [ex, ey] = G.entryOf(bd); t.standAt(ex, ey); G.tick(t.w, 1);
+      t.check(m.visited, "집 안에 들어가 환영받았다");
+      const pl = G.MAP.places.find((q) => q.b === bd.id);
+      t.check(G.buildingMenu(t.w, pl).some((v) => v.id === "visit:tea"), "안에서 차 마시기를 할 수 있다");
+      G.tick(t.w, 6 * 60); t.check(!G.insideBuilding(t.w) && m.done, "시간이 지나면 문밖으로 배웅받는다");
+    } },
+    { id: "reno", name: "목수에게 내 집 공사 맡기기", run(t) {
+      const b = t.ensureBuilder(); t.p().gold = 2000;
+      const o = G.renoOptions(t.w).find((x) => x.r.kind === "expand");
+      t.check(!!o, "넓힐 방향이 있다"); if (!o) return;
+      const inn0 = G.MAP.buildings.find((x) => x.town === t.town() && x.kind === "inn"), size0 = inn0.w * inn0.h;
+      G.orderReno(t.w, b, "expand", o.r.mod); t.e().reno.until = t.w.day; G.renoDawn(t.w);
+      const inn = G.MAP.buildings.find((x) => x.town === t.town() && x.kind === "inn");
+      t.check(inn.w * inn.h > size0, `집 크기 ${size0} → ${inn.w * inn.h}칸`);
+      t.check(t.overlaps() === 0, "건물끼리 겹치거나 문이 막히지 않는다");
+    } },
+    { id: "builder", name: "내가 목수가 되어 주민 집 공사하기", run(t) {
+      A.learn(t.p(), "woodwork"); t.p().job = "builder"; t.w.jobsOpen = [...new Set([...(t.w.jobsOpen || []), "builder"])];
+      const n = t.npcs((x) => A.isAdult(x))[0]; n.gold = 400; n.rel[t.p().id] = 30;
+      t.talkPick(n, ["집에 고칠 데", "맡겨 주세요"]);
+      const m = t.e().missions.find((x) => x.type === "build"); t.check(!!m, "공사 의뢰를 받았다"); if (!m) return;
+      G.give(t.w, "wood", 20); G.give(t.w, "stone", 12); const g0 = t.p().gold;
+      for (let i = 0; i < 6 && !m.done; i++) { t.p().energy = 100; G.doBuildWork(t.w, m.id); }
+      t.check(m.done && t.p().gold > g0, `공사 완료, 품삯 ${Math.floor(t.p().gold - g0)}닢`);
+      t.check(t.overlaps() === 0, "건물끼리 겹치거나 문이 막히지 않는다");
+    } },
+    { id: "burglary", name: "밤에 남의 집 몰래 들어가기", run(t) {
+      t.tickTo(23.5);
+      const bd = G.MAP.buildings.find((b) => b.town === t.town() && b.kind === "house" && G.residentsOf(t.w, b).length);
+      const pl = G.MAP.places.find((q) => q.b === bd.id); t.standAt(pl.x, pl.y); G.walkers.clear();
+      let r = ""; for (let i = 0; i < 6 && !G.breakinAt(t.w, bd) && !t.e().wanted.level; i++) { t.p().energy = 100; r = G.doBuilding(t.w, pl, "steal:breakin").text; }
+      if (t.e().wanted.level) { t.check(true, `문을 따다 들켜 수배됨 (${r})`); return; }
+      t.check(!!G.breakinAt(t.w, bd), `문을 따고 들어갔다 (${r})`);
+      const g0 = t.p().gold; r = G.doBuilding(t.w, pl, "steal:rummage").text;
+      t.check(t.p().gold > g0 || t.e().wanted.level > 0 || /가져갈|빵/.test(r), `서랍 뒤지기: ${r}`);
+    } },
+    { id: "crime", name: "범죄를 저지르면 수배된다", run(t) {
+      const n = t.npcs((x) => A.isAdult(x))[0]; t.standAt(G.TOWN_POS[t.town()][0], G.TOWN_POS[t.town()][1]);
+      G.crime(t.w, "assault", n, 2, `${t.p().name}이(가) ${n.name}을(를) 때렸다`);
+      t.check(t.e().wanted.level >= 1, `수배 ★${t.e().wanted.level}`);
+    } },
+    { id: "rebirth", name: "죽고 다시 시작하면 새로운 세계에서 처음부터", run(t) {
+      t.e().wanted = { town: t.town(), level: 3, lastSeen: 0 }; G.give(t.w, "sword", 1);
+      const n0 = t.w.alive().find((x) => x.controller !== "player" && A.isAdult(x)); for (const c of t.w.alive().filter((x) => x !== n0 && x.controller !== "player").slice(0, 3)) c.follows = n0.id; n0.gold = 300; A.foundNation(n0, t.w); // 옛 세계엔 역사가 쌓여 있다
+      const oldDay = t.w.day, oldNations = new Set(Object.values(t.w.towns).map((x) => x.nation)).size;
+      t.w.die(t.p(), "시험 삼아", {});
+      // 기본: 새로운 세계 (태어나기 창의 '새로운 세계에서 처음부터'와 같은 길)
+      const w2 = A.freshWorld(4242, "새 아스테리아"); G.setup(w2);
+      G.newLife(w2, { name: "두번째", race: "human", job: "farmer", town: A.CONTENT.towns[0].id });
+      const e2 = G.ext(w2);
+      const oldFounded = new Set((t.w.founded || []).map((f) => f.nationName));
+      t.check(w2.day <= A.DPY + 1 && !(w2.founded || []).some((f) => oldFounded.has(f.nationName) && f.day > A.DPY), `새 세계는 ${w2.date()}부터, 옛 세계(${t.w.date(oldDay)}, 나라 ${oldNations}개)의 역사를 물려받지 않는다`);
+      t.check(e2.wanted.level === 0 && !e2.inv.sword && e2.missions.length === 0, "수배·가방·미션이 새로 시작한다");
+      t.check(w2.player && w2.player.name === "두번째" && !w2.npcs.some((n) => n.name === t.p().name && n.controller === "player"), "새 인물로 태어났다");
+      // 고를 수 있는 길: 이 세계에서 이어 살기
+      G.setup(t.w); G.newLife(t.w, { name: "세번째", race: "human", job: "farmer", town: Object.keys(t.w.towns)[0] });
+      t.check(t.e().wanted.level === 0 && !t.e().inv.sword, "‘이 세계에서 이어 살기’를 골라도 내 수배·가방은 이어지지 않는다");
+      t.check(new Set(Object.values(t.w.towns).map((x) => x.nation)).size === oldNations, "그때는 세계의 나라가 그대로 남는다");
+    } },
+    { id: "nation", name: "주민이 새 나라를 세운다", run(t) {
+      const n = t.w.alive().find((x) => x.controller !== "player" && A.isAdult(x) && !x.title);
+      for (const c of t.w.alive().filter((x) => x !== n && x.controller !== "player" && A.isAdult(x)).slice(0, 3)) c.follows = n.id;
+      n.gold = 300; const towns0 = Object.keys(t.w.towns).length, ev = A.foundNation(n, t.w);
+      t.check(ev && (ev.kind === "nation_founded" || ev.kind === "independence"), ev ? ev.text : "건국 실패");
+      if (ev && ev.kind === "nation_founded") t.check(Object.keys(t.w.towns).length === towns0 + 1 && G.MAP.sig.includes(ev.town), "지도에 새 마을이 생겼다");
+      t.check(t.overlaps() === 0, "건물끼리 겹치지 않는다");
+    } },
+    { id: "year", name: "세계가 1년 동안 스스로 흘러간다", run(t) {
+      const ev0 = t.w.events.length;
+      for (let i = 0; i < 120; i++) A.step(t.w);
+      G.rebuildMap(t.w);
+      const alive = t.w.alive();
+      t.check(alive.length > 20, `살아 있는 주민 ${alive.length}명`);
+      t.check(t.w.events.length > ev0 + 50, `1년 동안 사건 ${t.w.events.length - ev0}건`);
+      t.check(alive.every((n) => t.w.towns[n.town] && Number.isFinite(n.gold) && Number.isFinite(n.health)), "모든 주민의 마을·돈·체력이 정상이다");
+      t.check(t.overlaps() === 0, "건물끼리 겹치거나 문이 막히지 않는다");
+    } },
+    { id: "save", name: "저장했다 불러와도 같다", run(t) {
+      const json = t.w.serialize(), w2 = A.World.deserialize(json);
+      t.check(w2.alive().length === t.w.alive().length && w2.day === t.w.day, `주민 ${w2.alive().length}명, ${w2.date()}`);
+      t.check(JSON.stringify(w2.founded || []) === JSON.stringify(t.w.founded || []) && w2.player.name === t.p().name, "나라와 내 인물이 그대로다");
+      t.check(json.length < 4.5e6, `저장 크기 ${(json.length / 1024).toFixed(0)}KB`);
+    } },
+  ];
+
+  /** 모든 점검을 돌린다. base: 지금 세계를 저장한 JSON. 끝나면 결과 목록을 돌려준다 */
+  function runAll(base, only) {
+    const out = [];
+    for (const sc of SCENARIOS) {
+      if (only && !only.includes(sc.id)) continue;
+      const t0 = performance.now(), checks = [], notes = [];
+      let error = null;
+      try {
+        const w = A.World.deserialize(base);
+        G.setup(w);
+        if (w.player && w.player.alive) w.player.controller = "ai"; // 원래 인물은 NPC로 돌리고
+        G.newLife(w, { name: "테스터", race: "human", job: "farmer", town: Object.values(w.towns).find((x) => !x.fallen && !x.border).id });
+        const t = { w, ...helpers(w), check: (ok, msg) => checks.push({ ok: !!ok, msg }), note: (msg) => notes.push(msg) };
+        sc.run(t);
+      } catch (e) { error = (e && e.stack) || String(e); }
+      out.push({ id: sc.id, name: sc.name, ok: !error && checks.every((c) => c.ok), checks, notes, error, ms: Math.round(performance.now() - t0) });
+    }
+    return out;
+  }
+
+  root.AsteriaTest = { SCENARIOS, runAll };
+})(typeof window !== "undefined" ? window : globalThis);

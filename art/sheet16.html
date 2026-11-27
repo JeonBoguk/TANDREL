@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>캐릭터 시안</title><style>body{margin:0;background:#6f9258}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas><script type="module">
+import { SHEETS } from "./cast.js";
+const q = new URLSearchParams(location.search), s = +(q.get("s") || 5), mode = q.get("m") || "all";
+const c = document.getElementById("c"), x = c.getContext("2d");
+const toC = (b) => { const cv = document.createElement("canvas"); cv.width = b.w; cv.height = b.h; cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(b.px.buffer.slice(0)), b.w, b.h), 0, 0); return cv; };
+if (mode === "all") {
+  c.width = 21 * 17 * s; c.height = SHEETS.length * 41 * s; x.imageSmoothingEnabled = false;
+  x.fillStyle = "#7ea25a"; x.fillRect(0, 0, c.width, c.height);
+  SHEETS.forEach((S, r) => ["down", "left", "right", "up"].forEach((d, di) => S[d].forEach((b, fi) => x.drawImage(toC(b), (di * 4 + fi + di * 0.25) * 20 * s, r * 41 * s, 20 * s, 40 * s))));
+} else {
+  c.width = SHEETS.length * 21 * s; c.height = 42 * s; x.imageSmoothingEnabled = false; x.fillStyle = "#7ea25a"; x.fillRect(0, 0, c.width, c.height);
+  SHEETS.forEach((S, i) => x.drawImage(toC(S.down[0]), (i * 21 + 1) * s, 1 * s, 20 * s, 40 * s));
+}
+window.ready = 1;
+</script></body></html>
