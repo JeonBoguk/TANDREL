@@ -263,6 +263,24 @@ ul.mini { margin: 0; padding-left: 1em; font-size: var(--fs-2); }
 .paper ul { margin: 0; padding-left: 1.1em; }
 
 .born form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.jm { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.jm h3 { margin: 0; font-size: var(--fs-3); }
+.jm label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-2); color: var(--text-2); }
+.jmgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.jmrow { display: flex; flex-direction: column; gap: 4px; }
+.jmadd { display: flex; gap: 6px; flex-wrap: wrap; }
+.jmadd .num { width: 64px; }
+.jmstep { display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 90px auto; gap: 6px; align-items: center; }
+.jmstep .howline { grid-column: 2 / -1; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatch { width: var(--tap); height: var(--tap); border-radius: var(--r1); border: 2px solid var(--line); }
+.swatch[aria-pressed="true"] { border-color: var(--text); }
+.jmerr { margin: 0; padding-left: 18px; color: var(--warn); font-size: var(--fs-2); }
+.jmerr .ok { color: var(--ok); }
+.jmbtns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.jmtrial { border: 1px solid var(--line); border-radius: var(--r2); }
+.jmtrial:empty { display: none; }
+@media (max-width: 560px) { .jmstep { grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr); } .jmstep > b { grid-row: span 2; } }
 .born label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-2); color: var(--text-2); }
 .born .full { grid-column: 1 / -1; }
 .slots { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

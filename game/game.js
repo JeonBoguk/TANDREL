@@ -1413,6 +1413,85 @@
     return { text, q, grade: g };
   }
 
+  // ================================================================ 직업 만들기 (플레이어가 직업·업무를 짠다)
+  /* 초안(draft)은 데이터만 담는다. 검사(checkJobDraft)를 통과하고 한 번 시험해 본 뒤 등록(createJob)하면 w.defs에 저장된다.
+   * 균형: 만드는 일은 결과물의 값 ≤ 재료 값 + 품삯(시간). 봉사하는 일의 금화는 시간에 비례한다. */
+  const JOBMAKE = {
+    cost: 20, maxSteps: 5,
+    places: [["market", "시장"], ["forge", "대장간"], ["temple", "신전"], ["guild", "길드"], ["inn", "여관"], ["tavern", "주점"], ["fields", "밭"]],
+    hats: [["", "없음"], ["straw", "밀짚모자"], ["chef", "요리 모자"], ["cap", "챙 모자"], ["bandana", "두건"], ["hood", "후드"], ["witch", "고깔모자"], ["helmet", "투구"], ["circlet", "화관"]],
+    colors: ["#c8603a", "#d8b84a", "#6a9a4a", "#4a9a8a", "#5a7ad8", "#9a7ad8", "#d89ab8", "#e4e6e8", "#8a6a5a"],
+    mins: [30, 60, 90, 120, 180, 240],
+    levels: [["쉬움", -0.04], ["보통", 0], ["어려움", 0.08]],
+    serve: { // 봉사하는 일의 결과 꼴: 손님 조건과 결과
+      pay: { name: "품삯을 받는 일", client: "any", fx: (m) => ({ gold: [0.5, Math.round(m / 30 * 10) / 10], rel: 3 }) },
+      heal: { name: "아픈 사람 돌보기", client: "sick", fx: (m) => ({ heal: 3, gold: [0.5, Math.round(m / 50 * 10) / 10], rel: 6 }) },
+      bond: { name: "다른 사람들과 잇기", client: "foreign", fx: (m) => ({ bond: 3, gold: [0.5, Math.round(m / 50 * 10) / 10], rel: 4 }) },
+      cheer: { name: "마음을 돌보기", client: "any", fx: (m) => ({ rel: 8, gold: [0, Math.round(m / 60 * 10) / 10] }) },
+    },
+  };
+  const itemValue = (bag) => Object.entries(bag || {}).reduce((s, [id, n]) => s + ((ITEMS[id] && (ITEMS[id].sell || (ITEMS[id].price || 3) / 3)) || 1) * n, 0);
+  function jobDraft(w, addTo) {
+    const p = w.player, sk = A.knownSkills(p)[0] || null, J = addTo ? JOBS[addTo] : null;
+    return { addTo: addTo || null, name: J ? J.name : "", skill: J ? J.teaches[0] : sk, place: J ? J.workplace : "market", hat: J ? (J.look || {}).hat || "" : "cap", color: J ? J.color : JOBMAKE.colors[0],
+      work: { name: "", mins: 120, kind: "make", needs: {}, gives: {}, serve: "pay", client: "", steps: [{ name: "", tool: "gauge", level: 1 }] }, tried: false };
+  }
+  /** 초안 검사: 고쳐야 할 것들의 목록 (비면 등록할 수 있다) */
+  function checkJobDraft(w, d) {
+    const p = w.player, err = [], wd = d.work;
+    if (!d.addTo) {
+      const nm = (d.name || "").trim();
+      if (nm.length < 2 || nm.length > 10) err.push("직업 이름은 2~10자");
+      else if (A.CONTENT.jobs.some((j) => j.name === nm)) err.push("이미 있는 직업 이름이다");
+      if (!d.skill || !A.knows(p, d.skill)) err.push("바탕 기술은 내가 아는 것이어야 한다");
+      if (p.gold < JOBMAKE.cost) err.push(`등록하려면 금화 ${JOBMAKE.cost}닢이 필요하다`);
+    } else if (!JOBS[d.addTo] || JOBS[d.addTo].creator !== p.id) err.push("내가 만든 직업에만 업무를 더할 수 있다");
+    const wn = (wd.name || "").trim();
+    if (wn.length < 2 || wn.length > 12) err.push("업무 이름은 2~12자");
+    if (!wd.steps.length || wd.steps.length > JOBMAKE.maxSteps) err.push(`단계는 1~${JOBMAKE.maxSteps}개`);
+    if (wd.steps.some((s) => !toolReady(s.tool))) err.push("쓸 수 없는 조작 부품이 있다");
+    if (wd.kind === "make") {
+      const nv = itemValue(wd.needs), gv = itemValue(wd.gives), labor = wd.mins / 30;
+      if (!Object.keys(wd.gives).length) err.push("만들어 낼 물건을 고른다");
+      if (!Object.keys(wd.needs).length) err.push("재료를 하나는 고른다");
+      if (gv > nv + labor) err.push(`결과물 값(${Math.round(gv)})이 재료 값(${Math.round(nv)})과 품삯(${Math.round(labor)})을 넘는다`);
+      if (Object.keys(wd.gives).some((id) => wd.needs[id])) err.push("재료와 결과물이 같으면 안 된다");
+    }
+    return err;
+  }
+  /** 초안 → 업무 정의 (시험할 때도 쓴다) */
+  function draftWork(d, jobId, id) {
+    const wd = d.work, S = JOBMAKE.serve[wd.serve] || JOBMAKE.serve.pay;
+    const steps = wd.steps.map((s) => ({ name: (s.name || "").trim() || (HANDS[s.tool] || {}).name || s.tool, tool: s.tool, p: { level: s.level, hard: JOBMAKE.levels[s.level][1] } }));
+    const wk = { id, job: jobId, name: wd.name.trim(), mins: wd.mins, energy: Math.round(wd.mins / 12), skill: d.skill, steps, hint: "" };
+    if (wd.kind === "make") { wk.needs = { ...wd.needs }; wk.gives = { ...wd.gives }; }
+    else { wk.client = wd.client || S.client; wk.effects = S.fx(wd.mins); }
+    wk.place = d.place;
+    return wk;
+  }
+  /** 등록: 새 직업(또는 내 직업의 새 업무)을 이 세계에 남긴다 */
+  function createJob(w, d) {
+    const p = w.player, err = checkJobDraft(w, d);
+    if (err.length) return { ok: false, text: err[0], errors: err };
+    w.defs = w.defs || { jobs: [], works: [] };
+    if (d.addTo) {
+      const J = JOBS[d.addTo], wk = draftWork(d, J.id, `${J.id}_w${A.CONTENT.works.filter((x) => x.job === J.id).length + 1}`);
+      wk.place = J.workplace; w.defs.works.push(wk); A.applyDefs(w);
+      return { ok: true, text: `${J.name}의 새 업무 ‘${wk.name}’를 짰다.`, work: wk };
+    }
+    const id = `p${w.defs.jobs.length + 1}_${w.day}`, nm = d.name.trim();
+    const job = { id, name: nm, income: [1.5, 4.5], entry_cost: JOBMAKE.cost, weight: 0, shift: false, teaches: [d.skill], needKnow: d.skill,
+      color: d.color, workplace: d.place, look: d.hat ? { hat: d.hat } : {}, born: w.day, creator: p.id, from: d.skill };
+    const wk = draftWork(d, id, id + "_w1");
+    w.defs.jobs.push(job); w.defs.works.push(wk); A.applyDefs(w);
+    p.gold -= JOBMAKE.cost;
+    const old = JOBS[p.job] ? JOBS[p.job].name : "", from = p.job;
+    A.setJob(p, id); p.pioneer = id; p.fame += 3;
+    const K = A.KNOW(d.skill);
+    w.record("job_born", `${K.name}${jo(K.name, "을/를").slice(K.name.length)} 익힌 ${jo(p.name, "이/가")} 이 세계에 없던 일, ‘${nm}’${jo(nm, "을/를").slice(nm.length)} 스스로 만들었다`, { actor: p.id, town: p.town, imp: 7, wr: 0.8, data: { job: id, from, skill: d.skill, made: true } });
+    return { ok: true, text: `이제 나는 이 세계 최초의 ${nm}다.${old ? ` (${old} 일을 그만두었다)` : ""}`, job, work: wk };
+  }
+
   // ================================================================ 건물 안에서
   function seedsOnSale(w) { return Object.entries(CROPS).filter(([, c]) => c.seasons.includes(w.season)).map(([k]) => SEED_OF[k]); }
   function sellPrice(w, id) { const p = w.player; return Math.max(1, Math.round(ITEMS[id].sell * (p.job === "merchant" ? 1.3 : 1))); }
@@ -1485,6 +1564,8 @@
     if (pl.kind === "guild") {
       add({ id: "board", label: "의뢰 게시판 보기", min: 0, e: 0, hint: "사냥·채집·현상금 의뢰" });
       add({ id: "report", label: "범죄 신고하기", min: 30, e: 2, hint: "내가 아는 범죄를 고발한다" });
+      const mine = JOBS[p.job] && JOBS[p.job].creator === p.id;
+      add({ id: "jobmake", label: mine ? "내 직업에 업무 더하기" : "새 직업 만들기", min: 0, e: 0, hint: mine ? `${JOBS[p.job].name}의 일을 하나 더 짠다` : "아는 기술로 이 세계에 없던 일을 만든다", ok: A.knownSkills(p).length > 0, why: "바탕이 될 기술을 하나는 알아야 한다" });
       if (e.wanted.level > 0 && e.wanted.town === pl.town) add({ id: "surrender", label: `자수하기 (벌금 ${15 * e.wanted.level})`, min: 30, e: 0, hint: "감옥에 가지 않고 수배를 푼다", ok: p.gold >= 15 * e.wanted.level, why: "벌금이 모자라다" });
       if (w.war.active) add({ id: "enlist", label: "전쟁에 참전하기", min: 0, e: 0, hint: "몇 계절 동안 전선에서 싸운다" });
     }
@@ -1550,6 +1631,7 @@
     if (!def || !def.ok) return { text: def && def.why ? def.why : "지금은 할 수 없다" };
     const town = w.towns[pl.town];
     let text = "";
+    if (id === "jobmake") return { jobmake: true };
     if (id.startsWith("wk:") && def.work.steps) return { sim: def.work }; // 조작 화면을 연다 (ui → Sims.run → finishWork)
     if (id.startsWith("wk:")) {
       text = SIMS[def.work.sim](w, def.work, { town, pl });
@@ -1687,7 +1769,7 @@
   }
 
   const G = {
-    SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    JOBMAKE, jobDraft, checkJobDraft, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,

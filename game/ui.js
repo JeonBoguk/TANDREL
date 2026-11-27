@@ -453,6 +453,7 @@ function renderMenu() {
       if (r.board) { bmenu.pick = "board"; renderMenu(); return; }
       if (r.craft) { bmenu = null; renderTalk(); openWin("craft"); return; }
       if (r.report) { bmenu.pick = "report"; renderMenu(); return; }
+      if (r.jobmake) { const J = A.JOBS[p.job]; jmDraft = G.jobDraft(W, J && J.creator === p.id ? p.job : null); closeMenu(); openWin("jobmake"); return; }
       if (r.sim) { bmenu.pick = "sim"; bmenu.sim = r.sim; bmenu.result = null; renderMenu(); return; }
       bmenu.result = r.text; renderMenu(); renderHotbar(true); renderHud();
     } }, h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, v.label), h("span", null, v.ok ? `${v.hint || ""}${v.min ? ` · ${v.min >= 60 ? Math.floor(v.min / 60) + "시간" + (v.min % 60 ? ` ${v.min % 60}분` : "") : v.min + "분"}` : ""}` : v.why || "지금은 할 수 없다")));
@@ -503,8 +504,9 @@ function tabStrip() {
 function renderWin() {
   const box = $("#win");
   if (!win) { box.hidden = true; return; }
-  const titles = { codex: "도감", map: "탄드렐 전도", save: "저장·불러오기", help: "도움말", born: "탄드렐에 어서 와", test: "테스트 단계" };
-  const fn = { codex: winCodex, test: winTest, info: winInfo, bag: winBag, craft: winCraft, map: winMap, rel: winRel, news: winNews, story: winStory, paperList: winPapers, paper: winPaper, paperToday: winPaper, missions: winMissions, people: winPeople, towns: winTowns, nations: winNations, chron: winChron, save: winSave, help: winHelp, born: winBorn }[win];
+  if (win === "jobmake" && window.Sims && Sims.running() && $("#win .simwrap")) return; // 시험 중에는 다시 그리지 않는다
+  const titles = { jobmake: "직업 만들기", codex: "도감", map: "탄드렐 전도", save: "저장·불러오기", help: "도움말", born: "탄드렐에 어서 와", test: "테스트 단계" };
+  const fn = { codex: winCodex, test: winTest, info: winInfo, bag: winBag, craft: winCraft, map: winMap, rel: winRel, news: winNews, story: winStory, paperList: winPapers, paper: winPaper, paperToday: winPaper, missions: winMissions, people: winPeople, towns: winTowns, nations: winNations, chron: winChron, save: winSave, help: winHelp, born: winBorn, jobmake: winJobMake }[win];
   const g = GROUPS[groupOf(win)];
   box.hidden = false;
   const scroll = box.querySelector(".body") && box.dataset.win === win ? box.querySelector(".body").scrollTop : 0;
@@ -876,6 +878,66 @@ function winHelp() {
 /* 태어나기. 이 세계에 이미 내 인물이 있었다면(죽었거나 바꾸려는 경우) 기본은 '새로운 세계에서 처음부터'.
  * 새 세계는 새 저장 칸에 만든다(칸이 가득 차면 지금 칸을 덮는다). 원하면 '이 세계에서 이어 살기'도 고를 수 있다. */
 let bornMode = null;
+// ------------------------------------------------------------ 직업 만들기
+let jmDraft = null;
+function winJobMake() {
+  const p = W.player, d = jmDraft || (jmDraft = G.jobDraft(W, null)), wd = d.work, J = G.JOBMAKE;
+  const re = () => renderWin(), touch = () => { d.tried = false; const box = $("#jmErr"); if (box) box.replaceChildren(...errView()); };
+  const errView = () => { const er = G.checkJobDraft(W, d); return er.length ? er.map((x) => h("li", null, x)) : [h("li", { class: "ok" }, d.tried ? "등록할 수 있다" : "한 번 시험해 보면 등록할 수 있다")]; };
+  const sel = (val, opts, set, label) => h("select", { class: "field", "aria-label": label, onchange: (e) => { set(e.target.value); d.tried = false; re(); } }, opts.map(([v, l]) => h("option", { value: v, selected: String(val) === String(v) }, l)));
+  const txt = (val, max, set, ph) => h("input", { class: "field", value: val, maxlength: max, placeholder: ph, oninput: (e) => { set(e.target.value); touch(); } });
+  const known = A.knownSkills(p).map((k) => [k, A.KNOW(k).name]);
+  const tools = Object.keys(G.HANDS).filter(G.toolReady).map((t) => [t, G.HANDS[t].name]);
+  const items = Object.keys(G.ITEMS).filter((id) => G.codexHas(W, id)).map((id) => [id, G.ITEMS[id].name]);
+  const bagRow = (bag, label) => {
+    let pick = items[0] ? items[0][0] : "", n = 1;
+    return h("div", { class: "jmrow" }, h("span", { class: "small muted" }, label),
+      h("div", { class: "chips" }, Object.entries(bag).map(([id, k]) => h("button", { type: "button", class: "chip", onclick: () => { delete bag[id]; d.tried = false; re(); }, "aria-label": `${G.ITEMS[id].name} 빼기` }, `${G.ITEMS[id].name} ×${k} ✕`))),
+      items.length ? h("div", { class: "jmadd" }, h("select", { class: "field", "aria-label": label + " 고르기", onchange: (e) => { pick = e.target.value; } }, items.map(([v, l]) => h("option", { value: v }, l))),
+        h("input", { class: "field num", type: "number", min: 1, max: 9, value: 1, "aria-label": "개수", oninput: (e) => { n = Math.max(1, Math.min(9, +e.target.value || 1)); } }),
+        h("button", { type: "button", class: "wbtn", onclick: () => { if (pick) { bag[pick] = n; d.tried = false; re(); } } }, "더하기")) : h("span", { class: "small muted" }, "도감에 있는 물건만 고를 수 있다"));
+  };
+  const trialHost = h("div", { class: "jmtrial" });
+  const startTrial = () => {
+    const er = G.checkJobDraft(W, d).filter((x) => !/금화/.test(x));
+    if (er.length) { toast(er[0], "warn"); return; }
+    const wk = G.draftWork(d, "draft", "draft");
+    trialHost.hidden = false;
+    setTimeout(() => trialHost.scrollIntoView({ block: "nearest" }), 50);
+    Sims.run(trialHost, wk, A.workLv(p, wk), (res) => { if (res) { d.tried = true; d.trialQ = res.scores ? A.workQuality(wk, res.scores) : null; } trialHost.hidden = true; re(); }, { client: null, vocab: A.KNOW(d.skill).vocab || null });
+  };
+  return [
+    !d.addTo ? h("section", { class: "jm" }, h("h3", null, "직업"),
+      h("div", { class: "jmgrid" },
+        h("label", null, "이름", txt(d.name, 10, (v) => { d.name = v; }, "예: 향 조향사")),
+        h("label", null, "바탕 기술", sel(d.skill, known, (v) => { d.skill = v; }, "바탕 기술")),
+        h("label", null, "일터", sel(d.place, J.places, (v) => { d.place = v; }, "일터")),
+        h("label", null, "모자", sel(d.hat, J.hats, (v) => { d.hat = v; }, "모자"))),
+      h("div", { class: "jmrow" }, h("span", { class: "small muted" }, "색"), h("div", { class: "swatches" }, J.colors.map((c) => h("button", { type: "button", class: "swatch", style: `background:${c}`, "aria-pressed": String(d.color === c), "aria-label": c, onclick: () => { d.color = c; re(); } }))))) 
+      : h("p", { class: "muted small" }, `${A.JOBS[d.addTo].name}에 업무를 하나 더 짠다.`),
+    h("section", { class: "jm" }, h("h3", null, "업무"),
+      h("div", { class: "jmgrid" },
+        h("label", null, "업무 이름", txt(wd.name, 12, (v) => { wd.name = v; }, "예: 향 섞기")),
+        h("label", null, "걸리는 시간", sel(wd.mins, J.mins.map((m) => [m, m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? " 30분" : ""}` : `${m}분`]), (v) => { wd.mins = +v; }, "시간")),
+        h("label", null, "일의 종류", sel(wd.kind, [["make", "만드는 일 (재료 → 물건)"], ["serve", "봉사하는 일 (손님에게)"]], (v) => { wd.kind = v; }, "종류")),
+        wd.kind === "serve" ? h("label", null, "무엇을 하나", sel(wd.serve, Object.entries(J.serve).map(([k, s]) => [k, s.name]), (v) => { wd.serve = v; wd.client = ""; }, "봉사")) : h("span")),
+      wd.kind === "make" ? [bagRow(wd.needs, "재료"), bagRow(wd.gives, "만들어 내는 것"),
+        h("div", { class: "small muted" }, `값: 결과 ${Math.round(G.itemValue(wd.gives))} ≤ 재료 ${Math.round(G.itemValue(wd.needs))} + 품삯 ${Math.round(wd.mins / 30)}`)]
+        : wd.serve === "bond" ? h("label", { class: "jmone" }, "손님", sel(wd.client || "foreign", [["foreign", "다른 나라 사람"], ...A.racesInWorld(W).map((r) => ["race:" + r.id, r.name])], (v) => { wd.client = v; }, "손님")) : null),
+    h("section", { class: "jm" }, h("h3", null, `단계 ${wd.steps.length} / ${J.maxSteps}`),
+      wd.steps.map((s, i) => h("div", { class: "jmstep" }, h("b", null, String(i + 1)),
+        txt(s.name, 10, (v) => { s.name = v; }, G.HANDS[s.tool] ? G.HANDS[s.tool].name : "단계 이름"),
+        sel(s.tool, tools, (v) => { s.tool = v; }, "조작"), sel(s.level, J.levels.map(([l], k) => [k, l]), (v) => { s.level = +v; }, "난이도"),
+        h("button", { type: "button", class: "wbtn", disabled: wd.steps.length <= 1, "aria-label": `${i + 1}단계 빼기`, onclick: () => { wd.steps.splice(i, 1); d.tried = false; re(); } }, "빼기"),
+        h("div", { class: "small muted howline" }, G.HANDS[s.tool] ? G.HANDS[s.tool].how : ""))),
+      wd.steps.length < J.maxSteps ? h("button", { type: "button", class: "wbtn", onclick: () => { wd.steps.push({ name: "", tool: tools[0][0], level: 1 }); d.tried = false; re(); } }, "단계 더하기") : null),
+    h("section", { class: "jm" }, h("ul", { class: "jmerr", id: "jmErr" }, errView()), trialHost,
+      h("div", { class: "jmbtns" },
+        h("button", { type: "button", class: "wbtn", onclick: startTrial }, "시험해 보기"),
+        h("button", { type: "button", class: "wbtn gold", disabled: !d.tried || G.checkJobDraft(W, d).length > 0, onclick: () => {
+          const r = G.createJob(W, d); toast(r.text, r.ok ? "good" : "warn"); if (r.ok) { jmDraft = null; autosave(); closeWin(); renderAll(); } } }, d.addTo ? "업무 등록하기" : `등록하기 (금화 ${J.cost})`))),
+  ];
+}
 function winBorn() {
   const p = W.player, pastLife = !!p;
   const mode = pastLife ? bornMode || "new" : "here";

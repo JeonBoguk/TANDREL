@@ -295,7 +295,8 @@
       how.textContent = `${s.name}: ${hand.how}`;
       body.replaceChildren();
       let finished = false;
-      st.cleanup = hand.play({ box: body, p: s.p || {}, lv, ease, client: extra.client || null, vocab: extra.vocab || null,
+      const lvEase = ease * ([1.25, 1, 0.8][(s.p || {}).level ?? 1] || 1); // 단계 난이도(직업 만들기에서 고른 것)
+      st.cleanup = hand.play({ box: body, p: s.p || {}, lv, ease: lvEase, client: extra.client || null, vocab: extra.vocab || null,
         press: (cb) => { st.pressCb = cb; }, side: (cb) => { st.sideCb = cb; }, onEnter: (cb) => { st.enterCb = cb; },
         done: (score) => { if (finished || cur !== st) return; finished = true; if (st.cleanup) st.cleanup(); scores[st.i] = clamp(score, 0, 1); st.i++; if (st.i >= steps.length) { chips(); end({ scores }); } else setTimeout(() => cur === st && begin(), 350); } });
     }

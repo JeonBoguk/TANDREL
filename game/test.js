@@ -317,6 +317,41 @@
       t.check(!A.JOBS.w_dragon_tongue, "새 세계에는 없다");
       A.applyDefs(W);
     } },
+    { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
+      const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
+      A.setJob(p, "farmer"); p.gold = 60;
+      t.check(G.buildingMenu(W, guild).some((v) => v.id === "jobmake" && v.ok), "길드에서 ‘새 직업 만들기’");
+      t.check(!!G.doBuilding(W, guild, "jobmake").jobmake, "고르면 직업 만들기 창이 열린다");
+      const d = G.jobDraft(W, null);
+      t.check(G.checkJobDraft(W, d).length >= 2, `빈 초안은 등록할 수 없다: ${G.checkJobDraft(W, d).join(" / ")}`);
+      Object.assign(d, { name: "바구니 장인", skill: "weaving", place: "market", hat: "straw" });
+      Object.assign(d.work, { name: "큰 바구니 짜기", mins: 120, kind: "make", needs: { fiber: 2 }, gives: { gem: 3 } });
+      d.work.steps = [{ name: "풀 고르기", tool: "observe", level: 0 }, { name: "엮기", tool: "rhythm", level: 1 }, { name: "마무리", tool: "trace", level: 2 }];
+      t.check(G.checkJobDraft(W, d).some((x) => /넘는다/.test(x)), "풀섬유로 보석을 만드는 일은 균형 규칙에 걸린다");
+      d.work.gives = { basket: 1 }; d.work.needs = { fiber: 8 }; d.work.mins = 240;
+      t.check(G.checkJobDraft(W, d).length === 0, `규칙을 지키면 통과: ${G.checkJobDraft(W, d).join(" / ") || "문제 없음"}`);
+      const wkTry = G.draftWork(d, "draft", "draft");
+      t.check(wkTry.steps.length === 3 && wkTry.steps[2].p.hard > 0 && G.workReady({ ...wkTry, sim: "steps" }), "시험용 업무가 만들어진다");
+      const r = G.createJob(W, d), J = r.job;
+      t.check(r.ok && A.JOBS[J.id] && p.job === J.id && p.gold === 40 && J.creator === p.id, r.text);
+      const born = W.events.filter((e) => e && e.kind === "job_born" && e.data && e.data.made).pop();
+      t.check(!!born, born ? born.text : "소식 없음");
+      const market = t.placeOf("market"); t.standAt(market.x, market.y); p.energy = 100; G.give(W, "fiber", 8);
+      const m = G.buildingMenu(W, market).find((v) => v.id === "wk:" + J.id + "_w1");
+      t.check(m && m.ok, `시장 메뉴에 내 업무: ${m && m.label}`);
+      const b0 = t.e().inv.basket || 0, r2 = G.finishWork(W, market, J.id + "_w1", [0.6, 0.6, 0.6]);
+      t.check((t.e().inv.basket || 0) > b0, r2.text);
+      // 내 직업에 봉사하는 업무를 더한다
+      t.standAt(guild.x, guild.y);
+      t.check(G.buildingMenu(W, guild).some((v) => v.id === "jobmake" && /업무 더하기/.test(v.label)), "내가 만든 직업이면 ‘업무 더하기’");
+      const d2 = G.jobDraft(W, p.job); Object.assign(d2.work, { name: "바구니 고쳐 주기", mins: 60, kind: "serve", serve: "pay" }); d2.work.steps = [{ name: "말 걸기", tool: "talk", level: 1 }];
+      const r3 = G.createJob(W, d2);
+      t.check(r3.ok && A.worksOf(J.id).length === 2 && A.worksOf(J.id)[1].effects.gold, r3.text);
+      t.check(W.openJobs().some((j) => j.id === J.id) && J.needKnow === "weaving", "짜기를 아는 주민도 이 직업으로 옮겨 올 수 있다");
+      const w2 = A.World.deserialize(JSON.parse(W.serialize()));
+      t.check(A.JOBS[J.id] && A.worksOf(J.id).length === 2 && w2.npcs[p.id].job === J.id, "불러와도 남아 있다");
+      A.newWorld(77, "다른 세계"); t.check(!A.JOBS[J.id], "다른 세계에는 없다"); A.applyDefs(W);
+    } },
     { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
       const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);
       while (W.season !== "가을") G.tick(W, 24 * 60);
