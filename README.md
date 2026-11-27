@@ -36,7 +36,7 @@ cd game && python3 -m http.server 8766
 | `game/ui.js` | HUD·창·대화·제목 화면·저장 칸·터치 조작 |
 | `art/` | 도트 키트 원본(ES 모듈)과 시안 페이지들 |
 | `tools/` | 자동 테스트·스크린샷 스크립트 (Node + Playwright) |
-| `docs/` | 설계 문서 |
+| `docs/` | 설계 문서: DESIGN(규칙), ARCHITECTURE(구조), DATA_ARCHITECTURE(진단·목표), AFTERLIFE(사후 세계) |
 | `ROADMAP.md` | 한 일 / 할 일 / 아이디어 |
 
 ## 그림 키트 고치기

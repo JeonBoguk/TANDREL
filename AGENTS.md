@@ -8,6 +8,7 @@ Tandrel(탄드렐): 브라우저에서 도는 판타지 생활 시뮬레이션. 
 2. `docs/DESIGN.md`: 게임 방향, UI 규칙, 16px 그림 규칙, 문체 (**반드시 지킨다**)
 3. `docs/ARCHITECTURE.md`: 모듈 경계, 콘텐츠 더하는 법, 저장 형식
 4. `ROADMAP.md`: 한 일과 할 일
+5. 구조를 바꾸는 작업이면 `docs/DATA_ARCHITECTURE.md`, 죽음·사후 관련이면 `docs/AFTERLIFE.md`
 
 ## 작업 규칙
 
