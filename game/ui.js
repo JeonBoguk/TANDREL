@@ -304,7 +304,7 @@ function renderMini() {
   if (e.trackUntil > G.absMin(W)) for (const a of G.animals) marks.push({ x: a.x, y: a.y, color: "#ff6a5a", r: 1.6 });
   window.drawMap($("#minimap"), W, { marks, scale: 2 });
   const p = W.player;
-  let where = "아스테리아 전도";
+  let where = "탄드렐 전도";
   if (playing()) {
     const t = G.townAt(W.ppos.x, W.ppos.y), pl = nearPlace();
     const tile = G.MAP.tile[G.MAP.I(Math.floor(W.ppos.x), Math.floor(W.ppos.y))];
@@ -472,7 +472,7 @@ function tabStrip() {
 function renderWin() {
   const box = $("#win");
   if (!win) { box.hidden = true; return; }
-  const titles = { codex: "도감", map: "아스테리아 전도", save: "저장·불러오기", help: "도움말", born: "아스테리아에 어서 와", test: "테스트 단계" };
+  const titles = { codex: "도감", map: "탄드렐 전도", save: "저장·불러오기", help: "도움말", born: "탄드렐에 어서 와", test: "테스트 단계" };
   const fn = { codex: winCodex, test: winTest, info: winInfo, bag: winBag, craft: winCraft, map: winMap, rel: winRel, news: winNews, story: winStory, paperList: winPapers, paper: winPaper, paperToday: winPaper, missions: winMissions, people: winPeople, towns: winTowns, nations: winNations, chron: winChron, save: winSave, help: winHelp, born: winBorn }[win];
   const g = GROUPS[groupOf(win)];
   box.hidden = false;
@@ -617,7 +617,7 @@ function winPaper() {
   const pp = winArg, items = pp.items.map((id) => W.events[id]).filter(Boolean), top = items[0], bySec = {};
   for (const e of items.slice(1)) (bySec[S.paperSection(e.kind)] = bySec[S.paperSection(e.kind)] || []).push(e);
   return [h("article", { class: "paper" },
-    h("div", { class: "mast" }, h("h2", null, "아스테리아 조간"), pp.special ? h("div", { class: "special" }, pp.special) : null, h("div", null, h("span", null, W.date(pp.day)), h("span", null, `${pp.season}호`), h("span", null, pp.active ? `전황 · ${pp.lord}의 군대와 대치, 전선 ${pp.front}` : "전황 · 평화"))),
+    h("div", { class: "mast" }, h("h2", null, "탄드렐 조간"), pp.special ? h("div", { class: "special" }, pp.special) : null, h("div", null, h("span", null, W.date(pp.day)), h("span", null, `${pp.season}호`), h("span", null, pp.active ? `전황 · ${pp.lord}의 군대와 대치, 전선 ${pp.front}` : "전황 · 평화"))),
     top ? [h("div", { class: "sec" }, S.paperSection(top.kind)), h("h4", null, `${top.town ? "[" + W.towns[top.town].name + "] " : ""}${top.text}`)] : h("p", null, "간밤에 아스테리아는 조용했다."),
     Object.entries(bySec).map(([sec, es]) => [h("div", { class: "sec" }, sec), h("ul", null, es.map((e) => h("li", null, `${e.town ? "[" + W.towns[e.town].name + "] " : ""}${e.text}`)))]),
     (pp.local || []).length ? [h("div", { class: "sec" }, "우리 동네 단신"), h("ul", null, pp.local.map((id) => W.events[id]).filter(Boolean).map((e) => h("li", null, `[${W.towns[e.town].name}] ${e.text}`)))] : null,
@@ -869,7 +869,7 @@ function winBorn() {
       if (W.player && W.player.alive) autosave(); // 떠나는 세계는 제 칸에 남는다
       const seed = 1 + Math.floor(Math.random() * 999998);
       if (slotsList().length < MAX_SLOTS || !slotId) slotId = newSlotId();
-      setWorld(freshWorld(seed, "아스테리아"), `새 세계 · 시드 ${seed}`);
+      setWorld(freshWorld(seed, "탄드렐"), `새 세계 · 시드 ${seed}`);
       birth(opts);
     }, 20);
   });
@@ -898,7 +898,7 @@ function winSave() {
     h("h3", null, "파일로 주고받기"), h("div", { class: "row" }, h("button", { class: "wbtn", type: "button", disabled: !dlCap, onclick: exportFile }, "파일로 내보내기"), h("label", { class: "wbtn", for: "importIn" }, "파일에서 가져오기")), msg(fileMsg),
     h("h3", null, "이 브라우저"), h("div", { class: "stat" }, autoNote),
     h("div", { class: "row", style: "margin-top:6px" }, nm, sd, confirmKey === "new"
-      ? h("button", { class: "wbtn danger", type: "button", onclick: () => { confirmKey = null; const seed = Math.max(1, Math.min(999999, parseInt(sd.value, 10) || 1)); slotId = newSlotId(); setWorld(freshWorld(seed, nm.value.trim().slice(0, 20) || "아스테리아"), `새 세계 · 시드 ${seed}`); } }, "정말 새로 만들기")
+      ? h("button", { class: "wbtn danger", type: "button", onclick: () => { confirmKey = null; const seed = Math.max(1, Math.min(999999, parseInt(sd.value, 10) || 1)); slotId = newSlotId(); setWorld(freshWorld(seed, nm.value.trim().slice(0, 20) || "탄드렐"), `새 세계 · 시드 ${seed}`); } }, "정말 새로 만들기")
       : h("button", { class: "wbtn", type: "button", onclick: () => { confirmKey = "new"; renderWin(); } }, "새 세계 만들기")),
     confirmKey === "new" ? h("p", { class: "small", style: "color:var(--red)" }, "지금 세계는 이 브라우저의 자동 저장에서 사라진다. 보관함이나 파일에 먼저 저장해 둬.") : null];
 }
@@ -968,7 +968,7 @@ document.body.append(importIn);
 importIn.addEventListener("change", (ev) => {
   const f = ev.target.files && ev.target.files[0]; if (!f) return;
   const rd = new FileReader();
-  rd.onload = () => { try { setWorld(A.World.deserialize(String(rd.result)), `파일에서 불러옴 · ${f.name}`); toast(`${f.name}을 불러왔다.`, "good"); } catch (e) { fileMsg = ["아스테리아 세계 파일이 아니거나 손상된 파일이다.", "err"]; renderWin(); } ev.target.value = ""; };
+  rd.onload = () => { try { setWorld(A.World.deserialize(String(rd.result)), `파일에서 불러옴 · ${f.name}`); toast(`${f.name}을 불러왔다.`, "good"); } catch (e) { fileMsg = ["탄드렐 세계 파일이 아니거나 손상된 파일이다.", "err"]; renderWin(); } ev.target.value = ""; };
   rd.readAsText(f);
 });
 
@@ -1165,10 +1165,10 @@ function renderTitle() {
     W && playing() ? h("button", { class: "tbtn", type: "button", onclick: closeTitle }, "게임으로 돌아가기") : null,
     h("button", { class: "tbtn", type: "button", onclick: () => { titlePanel = "quit"; if (W && playing()) autosave(); renderTitle(); } }, "종료"));
   else if (titlePanel === "new") {
-    const nm = h("input", { class: "field", maxlength: 20, value: "아스테리아", "aria-label": "세계 이름" }), sd = h("input", { class: "field num", type: "number", min: 1, max: 999999, value: 1 + Math.floor(Math.random() * 999998), "aria-label": "시드" });
+    const nm = h("input", { class: "field", maxlength: 20, value: "탄드렐", "aria-label": "세계 이름" }), sd = h("input", { class: "field num", type: "number", min: 1, max: 999999, value: 1 + Math.floor(Math.random() * 999998), "aria-label": "시드" });
     body = h("div", { class: "tpanel" }, h("h3", null, "새 게임"), h("label", { class: "small" }, "세계 이름", nm), h("label", { class: "small" }, "시드 (같은 시드면 같은 세계로 시작한다)", sd),
       slots.length >= MAX_SLOTS ? h("p", { class: "small", style: "color:var(--red)" }, `저장 칸이 가득 찼다 (${MAX_SLOTS}개). 불러오기에서 하나를 지워 줘.`) : null,
-      h("div", { class: "row" }, h("button", { class: "wbtn gold", type: "button", disabled: slots.length >= MAX_SLOTS, onclick: (ev) => { ev.target.textContent = "세계를 빚는 중…"; setTimeout(() => { const seed = Math.max(1, Math.min(999999, parseInt(sd.value, 10) || 1)); startWorld(freshWorld(seed, nm.value.trim().slice(0, 20) || "아스테리아"), `새 세계 · 시드 ${seed}`, true); }, 20); } }, "이 세계로 시작"), back),
+      h("div", { class: "row" }, h("button", { class: "wbtn gold", type: "button", disabled: slots.length >= MAX_SLOTS, onclick: (ev) => { ev.target.textContent = "세계를 빚는 중…"; setTimeout(() => { const seed = Math.max(1, Math.min(999999, parseInt(sd.value, 10) || 1)); startWorld(freshWorld(seed, nm.value.trim().slice(0, 20) || "탄드렐"), `새 세계 · 시드 ${seed}`, true); }, 20); } }, "이 세계로 시작"), back),
       h("p", { class: "small muted" }, "새 세계는 새 저장 칸에 저장된다. 지금까지의 세계는 그대로 남는다."));
   } else if (titlePanel === "load") body = h("div", { class: "tpanel" }, h("h3", null, "불러오기"),
     slots.length ? h("ul", { class: "slots" }, slots.map((sl) => h("li", { class: "sslot" + (sl.id === slotId ? " cur" : "") },
@@ -1186,7 +1186,7 @@ function renderTitle() {
       row("화면 글자·창 크기", sel("uiScale", [[0.85, "작게"], [1, "보통"], [1.15, "크게"], [1.3, "아주 크게"]])),
       h("p", { class: "small muted" }, "설정은 이 브라우저에만 저장된다."), back);
   } else body = h("div", { class: "tpanel" }, h("h3", null, "종료"), h("p", null, W && W.player ? "지금 세계를 저장했다. 이 탭을 닫으면 된다. 다시 열면 ‘이어하기’로 계속할 수 있다." : "이 탭을 닫으면 된다."), back);
-  el.replaceChildren(h("div", { class: "tbox" }, h("div", { class: "tlogo" }, h("div", { class: "tl1" }, "아스테리아 연대기")), body));
+  el.replaceChildren(h("div", { class: "tbox" }, h("div", { class: "tlogo" }, h("div", { class: "tl1" }, "탄드렐"), h("div", { class: "tl2" }, "TANDREL")), body));
 }
 function boot(data) {
   let w = null;
@@ -1194,7 +1194,7 @@ function boot(data) {
   if (!w) w = loadAuto();
   if (!w) { const sl = slotsList()[0]; if (sl) { w = loadSlotLocal(sl.id); if (w) slotId = sl.id; } } // 배경으로 보여 줄 최근 세계
   const fresh = !w;
-  if (!w) w = freshWorld(1, "아스테리아");
+  if (!w) w = freshWorld(1, "탄드렐");
   W = w; G.setup(W);
   view = new WorldView($("#world"), { onClick: onWorldClick, hasPlayer: playing });
   if (W.ppos) view.cam = { x: W.ppos.x, y: W.ppos.y };

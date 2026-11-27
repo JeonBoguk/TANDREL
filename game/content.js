@@ -149,7 +149,7 @@
         progress: (n, w, d) => n.fame / d.goal,
         bias: { war: 2.2, work: 1.1, travel: 1.2, rest: 0.5 },
         text: (n, w, d) => "누구나 아는 이름이 되고 싶어 한다",
-        done: (n) => `${jo(n.name, "은/는")} 이제 아스테리아 어디서나 이름이 알려진 사람이 되었다` },
+        done: (n) => `${jo(n.name, "은/는")} 이제 탄드렐 어디서나 이름이 알려진 사람이 되었다` },
       { id: "wander", name: "세상 구경하기",
         weight: (n) => n.traits.ambition * 0.6 + n.traits.bravery * 0.3 - (n.spouse !== null ? 0.4 : 0),
         progress: (n) => (n.stat.towns.length - 1) / 3,

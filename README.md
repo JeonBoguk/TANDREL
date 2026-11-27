@@ -70,4 +70,6 @@ node tools/runtests.js
 3. `ROADMAP.md`에서 다음 할 일을 고른다.
 4. 바꾼 뒤에는 `node tools/runtests.js`가 모두 통과해야 한다.
 
-게임 안 세계 이름은 아직 '아스테리아'다(코드의 전역 이름 `Asteria`도 그대로).
+코드의 전역 이름(`Asteria`)과 저장 키(`asteria.*`)는 예전 저장과의 호환 때문에 옛 이름을 그대로 쓴다.
+
+AI 에이전트는 `AGENTS.md`(Claude Code는 `CLAUDE.md`)를 자동으로 읽는다.

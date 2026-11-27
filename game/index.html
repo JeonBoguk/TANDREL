@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>아스테리아 연대기</title>
+<title>탄드렐</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Gowun+Batang:wght@400;700&display=swap">
@@ -253,6 +253,7 @@ ul.mini { margin: 0; padding-left: 1em; font-size: var(--fs-2); }
 .titlescreen { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--scrim); padding: 16px; overflow-y: auto; }
 .tbox { width: min(420px, 100%); display: flex; flex-direction: column; gap: 20px; }
 .tl1 { font-family: var(--serif); font-size: var(--fs-6); font-weight: 700; text-align: center; color: var(--text); }
+.tl2 { font-size: var(--fs-1); letter-spacing: 0.4em; text-align: center; color: var(--text-2); margin-top: 2px; }
 .tmenu { display: flex; flex-direction: column; gap: 6px; }
 .tbtn { min-height: 48px; font-size: var(--fs-4); font-weight: 500; padding: 8px 14px; border-radius: var(--r2); border: 1px solid var(--line); background: var(--surface); color: var(--text); display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; }
 .tbtn small { font-size: var(--fs-1); color: var(--text-2); font-weight: 400; }
@@ -351,13 +352,13 @@ button.chip:hover, button.need:hover { border-color: var(--accent); }
 </style>
 
 <div class="game" id="game">
-  <canvas id="world" tabindex="0" aria-label="아스테리아 세계. 방향키나 WASD로 움직이고, 스페이스로 손에 든 도구를 쓰고, E로 말을 건다"></canvas>
+  <canvas id="world" tabindex="0" aria-label="탄드렐 세계. 방향키나 WASD로 움직이고, 스페이스로 손에 든 도구를 쓰고, E로 말을 건다"></canvas>
   <div class="tl">
     <div class="frame clock"><span class="time num" id="clock">06:00</span><span class="date" id="date"></span><div class="speed" id="speed"></div></div>
     <div class="frame quests"><div class="title"><span>미션</span><button class="toggle" type="button" data-open="missions">전체</button></div><div class="body" id="questBody"></div></div>
   </div>
   <div class="tr">
-    <div class="frame mini"><div class="title"><span id="where">아스테리아</span><button class="toggle" type="button" data-open="map" aria-label="전체 지도">⤢</button></div><canvas id="minimap" aria-label="미니맵. 누르면 전체 지도"></canvas></div>
+    <div class="frame mini"><div class="title"><span id="where">탄드렐</span><button class="toggle" type="button" data-open="map" aria-label="전체 지도">⤢</button></div><canvas id="minimap" aria-label="미니맵. 누르면 전체 지도"></canvas></div>
     <div class="frame here"><div class="title"><span id="hereTitle">이곳의 사람들</span><button class="toggle" type="button" id="hereToggle" aria-expanded="true">접기</button></div><div class="body" id="hereBody"></div></div>
   </div>
   <div class="bl" id="bl"></div>

@@ -1,4 +1,4 @@
-/* 아스테리아 세계 시뮬레이션 엔진 (Python 프로토타입의 JavaScript 이식판)
+/* 탄드렐 세계 시뮬레이션 엔진 (Python 프로토타입의 JavaScript 이식판)
  * - 모든 일은 Event로 기록되고 cause로 이어진다 (이야기의 축적)
  * - 플레이어도 controller === "player"인 NPC 하나다 (플레이어의 자유)
  * - 세계 상태 전체를 JSON으로 저장/불러오기 할 수 있다
@@ -46,7 +46,7 @@
         skill: { name: "치유의 기도", hint: "사람에게 쓰면 상처를 낫게 한다" }, likes: "flower", ask: ["flower", 3, "제단에 올릴 들꽃이 필요해요."],
         talk: "기도하러 오는 사람이 늘었어요. 다들 마음이 불안한가 봐요." },
     ],
-    nations: { asteria: "아스테리아 왕국", ironhold: "철산 연맹", silvaren: "실바렌 숲의 나라" },
+    nations: { asteria: "탄드렐 왕국", ironhold: "철산 연맹", silvaren: "실바렌 숲의 나라" },
     /* 마을: pos는 지도 타일 좌표(마을 중심), roads는 길로 이어진 마을. 지도는 마을 위치에 맞춰 넓어진다. */
     towns: [
       { id: "lumen", name: "루멘", nation: "asteria", population: 14, races: { human: 0.8, elf: 0.1, beastkin: 0.1 }, pos: [76, 62], roads: ["millbrook", "granok", "greytower", "silvaren"] },
@@ -165,7 +165,7 @@
     constructor(seed) {
       this.seed = seed;
       this.rng = new RNG(seed);
-      this.name = "아스테리아";
+      this.name = "탄드렐";
       this.day = 0;
       this.towns = {};
       for (const t of CONTENT.towns) {
@@ -425,9 +425,9 @@
     }
     static deserialize(json) {
       const d = typeof json === "string" ? JSON.parse(json) : json;
-      if (d.format !== "asteria-world") throw new Error("아스테리아 세계 저장 파일이 아닙니다");
+      if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
       const w = new World(d.seed);
-      w.name = d.name || "아스테리아";
+      w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
       w.rng.s = d.rng >>> 0;
       w.day = d.day;
@@ -1208,7 +1208,7 @@
     if (!bt.fallen && war.front <= 3) fall(w, bt);
     if (bt.fallen && war.front >= 60) {
       bt.fallen = false; bt.food = 60;
-      w.record("liberation", `아스테리아 연합군이 ${jo(bt.name, "을/를")} 되찾았다`, { town: bt.id, imp: 8 });
+      w.record("liberation", `탄드렐 연합군이 ${jo(bt.name, "을/를")} 되찾았다`, { town: bt.id, imp: 8 });
     }
     if (war.front >= 100) { if (hero && hero.alive) finalBattle(w, hero); else war.front = 95; }
   }

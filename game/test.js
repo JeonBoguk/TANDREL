@@ -159,7 +159,7 @@
       const oldDay = t.w.day, oldNations = new Set(Object.values(t.w.towns).map((x) => x.nation)).size;
       t.w.die(t.p(), "시험 삼아", {});
       // 기본: 새로운 세계 (태어나기 창의 '새로운 세계에서 처음부터'와 같은 길)
-      const w2 = A.freshWorld(4242, "새 아스테리아"); G.setup(w2);
+      const w2 = A.freshWorld(4242, "새 탄드렐"); G.setup(w2);
       G.newLife(w2, { name: "두번째", race: "human", job: "farmer", town: A.CONTENT.towns[0].id });
       const e2 = G.ext(w2);
       const oldFounded = new Set((t.w.founded || []).map((f) => f.nationName));
