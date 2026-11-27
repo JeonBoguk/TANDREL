@@ -237,11 +237,10 @@
   }
   // ================================================================ 혼자 익히기 (같은 일을 거듭하면 깨닫는다)
   function practice(w, stat, k = 1) {
-    const e = ext(w), p = w.player;
-    e.stats = e.stats || {}; e.stats[stat] = (e.stats[stat] || 0) + k;
+    const p = w.player;
     for (const K of A.CONTENT.knowledge) {
-      if (!K.practice || K.practice.stat !== stat || A.knows(p, K.id) || e.stats[stat] < K.practice.n) continue;
-      A.learn(p, K.id);
+      if (!K.practice || K.practice.stat !== stat) continue;
+      if (!A.addXp(p, K.id, k, K.practice.n)) continue; // 익히는 중이거나 이미 안다(아는 기술은 솜씨가 는다)
       w.record("discovery", `${jo(p.name, "이/가")} 누구에게도 배우지 않고 스스로 ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 깨우쳤다`, { actor: p.id, town: p.town, imp: 4, wr: 0.3, data: { skill: K.id, how: "practice" } });
       log(w, `${K.practice.text || "거듭하다 보니 요령이 생겼다"} ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 익혔다!`, "good");
     }
@@ -1491,7 +1490,7 @@
     }
     if (id.startsWith("pioneer:") && def && def.ok) {
       const j = JOBS[id.slice(8)], old = JOBS[p.job].name, from = p.job;
-      w.jobsOpen = w.jobsOpen || []; w.jobsOpen.push(j.id); p.job = j.id; p.pioneer = j.id; p.fame += 3;
+      w.jobsOpen = w.jobsOpen || []; w.jobsOpen.push(j.id); A.setJob(p, j.id); p.pioneer = j.id; p.fame += 3;
       w.record("job_born", `${old} 일을 하던 ${jo(p.name, "이/가")} 이 세계에서 처음으로 ‘${j.name}’ 일을 시작했다`, { actor: p.id, town: p.town, imp: 7, wr: 0.8, data: { job: j.id, from } });
       return finish(w, `이제 나는 이 세계 최초의 ${j.name}다! 사람들이 신기한 눈으로 본다.`, 60, 5);
     }
@@ -1504,7 +1503,7 @@
       text = `열심히 일해 금화 ${(p.gold - g0).toFixed(1)}닢을 벌었다.${town.food > f0 + 0.5 ? ` 곳간에 식량 ${jo(Math.round(town.food - f0), "을/를")} 보탰다.` : ""}`;
     } else if (id.startsWith("job:")) {
       const j = JOBS[id.slice(4)], old = JOBS[p.job].name, from = p.job;
-      p.gold -= j.entry_cost; p.job = j.id;
+      p.gold -= j.entry_cost; A.setJob(p, j.id);
       w.record("career", `${jo(old, "이었던/였던")} ${jo(p.name, "이/가")} ${j.start_text || jo(j.name, "이/가") + " 되었다"}`, { actor: p.id, town: p.town, imp: 4, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
       text = `이제 나는 ${j.name}다. 직업 기술이 ‘${SKILL[j.id].name}’(으)로 바뀌었다.`;
     } else if (id.startsWith("buy:")) {

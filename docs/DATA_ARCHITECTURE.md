@@ -45,8 +45,8 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | Species/Heritage/Culture/Nationality/Identity | ✗ | `n.race` 하나. 국적은 `town.nation`(**이름 문자열**)으로 간접 |
 | 직업 | ✅ | `CONTENT.jobs` 한 줄에 경제·화면·일터·기술·대화·지식·출현 조건 |
 | 복수 직업 | ✗ | `n.job` 하나 |
-| 지식 | ◐ | `n.know[]` + 현재 직업의 `teaches`를 `knows()`가 합침 → **전직하면 직업 지식이 사라짐** |
-| 숙련 | △ | 플레이어만 `ext.stats`(`practice()`) |
+| 지식 | ✅ (5a) | `n.skills{id:{lv,xp,from}}`. 직업을 가지면 `setJob`이 teaches를 익힘(`from:"job"`), 전직해도 남는다 |
+| 숙련 | ✅ (5a) | 같은 `n.skills`의 `xp`·`lv`. 일(`rWork`)·혼자 익히기(`practice`) 모두 `addXp`. 수입에 `mastery(n)` |
 | NPC 전업 | ✅ | `uJob/betterJob/rJob`, `jobDemand`, `expectedIncome`, `job_cooldown` |
 | 직업 출현 | ✅ | `emergeJobs(w)`: `job.emerge{demand, fit, know, text}`, `w.jobsOpen`, 플레이어 개척 `pioneer:` |
 | 직업 정의의 세계 저장 | ✗ | `emerge.demand` 등이 함수라 세계 안에서 만든 직업을 저장할 수 없음 |
@@ -94,7 +94,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | Heritage / Culture / Identity | 독립 영역이 아니라 **인물 필드**(`heritage{sp:비율}`, `culture`, `identity`). heritage·culture·look·birthplace는 구현됨, identity는 다음 |
 | Nation | **독립(구현됨)**: `w.nations{id}`, `town.nation` = id |
 | Job | 유지 + 세계 정의(`w.defs.jobs`) |
-| Skill | 지식(`know`)과 숙련(`stats`)을 `n.skills{id:{lv,xp}}`로 합침 |
+| Skill | 지식(`know`)과 숙련(`stats`)을 `n.skills{id:{lv,xp}}`로 합침 (**구현됨**, 저장 v8) |
 | Work + Simulator | 하나로: `CONTENT.works{steps, npc 계산식, sim:id}`, 시뮬레이터는 UI 코드 등록표, 둘은 id로만 연결. `jobReady(j)`가 참일 때만 플레이어에게 노출 |
 | Relationship | `n.rel` 유지 + `n.relKind{id}`(친구·경쟁·스승·제자·지도자). 두 번째 축은 쓰는 규칙이 생길 때 |
 | Event/Memory/History | 하나로 유지 + `ev.data`, 인물별 색인 |

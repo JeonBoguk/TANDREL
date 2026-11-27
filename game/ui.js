@@ -507,7 +507,7 @@ function winInfo() {
     h("div", null, h("div", { class: "row" }, portraitCanvas(p, 72), h("div", null, h("div", { style: "font-family:var(--ui);font-size:20px" }, p.name), h("div", { class: "muted" }, `${A.RACES[p.race].name} · ${W.jobName(p)} · ${A.age(p)}세`), h("div", { class: "gold" }, `₲ ${Math.floor(p.gold)} · 명성 ${p.fame}`))),
       h("h3", null, "성격"), h("div", { class: "traits" }, [["탐욕", "greed"], ["선량", "kindness"], ["용기", "bravery"], ["야망", "ambition"]].map(([l, k]) => [h("span", null, l), h("span", { class: "tb" }, h("span", { style: `width:${p.traits[k] * 100}%` }))])),
       h("h3", null, "직업 기술"), h("div", null, G.SKILL[p.job].name),
-      h("h3", null, "아는 것"), (() => { const ks = A.CONTENT.knowledge.filter((k) => A.knows(p, k.id)); return ks.length ? h("div", { class: "chips" }, ks.map((k) => h("button", { type: "button", class: "chip" + (k.lost ? " accent" : ""), onclick: () => openWin("codex", "k:" + k.id) }, k.name))) : h("p", { class: "small muted", style: "margin:0" }, "없음"); })()),
+      h("h3", null, "아는 것"), (() => { const ks = A.CONTENT.knowledge.filter((k) => A.knows(p, k.id)); return ks.length ? h("div", { class: "chips" }, ks.map((k) => { const lv = A.skillLv(p, k.id); return h("button", { type: "button", class: "chip" + (k.lost ? " accent" : ""), onclick: () => openWin("codex", "k:" + k.id) }, k.name, lv >= 2 ? h("span", { class: "muted" }, ` ${A.SKILL_LV_NAME[lv]}`) : null); })) : h("p", { class: "small muted", style: "margin:0" }, "없음"); })()),
     h("div", null,
       h("h3", null, "가족"),
       fam.length ? h("div", { class: "fam" }, fam.map((f) => h("button", { type: "button", onclick: () => { bioId = f.x.id; openWin("people"); } }, h("b", null, f.rel), f.x.name, f.x.alive ? ` · ${f.x.at_war ? "전선" : W.towns[f.x.town].name}` : " (고인)")))
@@ -678,7 +678,7 @@ function codexDetail(key) {
     const kid = key.slice(2);
     if (kid === "job") { const sk = G.SKILL[p.job]; return [h("div", { class: "cxhead" }, icon("skill", 40), h("div", null, h("div", { class: "nm" }, sk.name), h("div", { class: "muted small" }, `직업 기술 · ${W.jobName(p)}`))), sk.hint ? h("p", null, sk.hint) : null]; }
     const K = A.KNOW(kid), rs = A.CONTENT.recipes.filter((r) => r.know === kid);
-    return [h("div", { class: "cxhead" }, h("div", null, h("div", { class: "nm" }, K.name), h("div", { class: "muted small" }, K.lost ? "마법" : "기술"))), K.desc ? h("p", null, K.desc) : null,
+    return [h("div", { class: "cxhead" }, h("div", null, h("div", { class: "nm" }, K.name), h("div", { class: "muted small" }, `${K.lost ? "마법" : "기술"} · ${A.SKILL_LV_NAME[Math.max(1, A.skillLv(p, kid))]}`))), K.desc ? h("p", null, K.desc) : null,
       rs.length ? [h("h4", null, "만들 수 있는 것"), rlist(rs)] : null];
   }
   const id = key, it = G.ITEMS[id], ent = (e.codex || {})[id] || { ways: [] };

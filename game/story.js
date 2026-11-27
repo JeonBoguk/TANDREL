@@ -681,7 +681,7 @@
   }
 
   // ---- 지식 주고받기
-  const knowList = (n) => [...new Set([...((A.JOBS[n.job] || {}).teaches || []), ...(n.know || [])])];
+  const knowList = (n) => A.knownSkills(n);
   function learnMenu(w, s, list) {
     tick5(s);
     const p = w.player, n = w.npcs[s.nid], op = opinion(n, p.id);

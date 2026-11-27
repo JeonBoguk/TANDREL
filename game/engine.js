@@ -160,9 +160,30 @@
     return f;
   }
   const opinion = (n, id) => n.rel[id] || 0;
-  /** 이 사람이 아는가: 직업이 가르쳐 주는 지식이거나, 따로 배운 지식 */
-  function knows(n, k) { const j = JOBS[n.job]; return !!((j && j.teaches && j.teaches.includes(k)) || (n.know && n.know.includes(k))); }
-  function learn(n, k) { if (knows(n, k)) return false; (n.know = n.know || []).push(k); return true; }
+  /* 기술: n.skills{지식 id: {lv, xp}}. lv 0은 익히는 중(혼자 거듭하는 중), 1부터 안다.
+   * 직업을 가지면 그 직업이 가르치는 기술을 익히고, 직업을 바꿔도 남는다. 일할수록 xp가 쌓여 솜씨(lv)가 오른다. */
+  const SKILL_LV = [0, 120, 360, 840];                 // lv 1·2·3·4가 되는 xp (일한 날 수쯤)
+  const SKILL_LV_NAME = ["", "기초", "능숙", "숙련", "명인"];
+  const skillOf = (n, k) => (n.skills && n.skills[k]) || null;
+  const skillLv = (n, k) => { const s = skillOf(n, k); return s ? s.lv : 0; };
+  function knows(n, k) { return skillLv(n, k) >= 1; }
+  function learn(n, k, from) { if (knows(n, k)) return false; n.skills = n.skills || {}; n.skills[k] = { lv: 1, xp: (n.skills[k] || {}).xp || 0 }; if (from) n.skills[k].from = from; return true; }
+  /** 기술에 경험을 더한다. 익히는 중(lv 0)이면 need에 이르렀을 때 안다(true를 돌려줌) */
+  function addXp(n, k, x, need) {
+    n.skills = n.skills || {};
+    const s = n.skills[k] || (n.skills[k] = { lv: 0, xp: 0 });
+    s.xp += x;
+    if (s.lv === 0) { if (need !== undefined && s.xp >= need) { s.lv = 1; return true; } return false; }
+    while (s.lv < SKILL_LV.length && s.xp >= SKILL_LV[s.lv]) s.lv++;
+    return false;
+  }
+  const knownSkills = (n) => Object.keys(n.skills || {}).filter((k) => n.skills[k].lv >= 1);
+  /** 남에게 퍼뜨리는 기술: 직업으로 익힌 것(from: "job")은 일로 배우는 것이라 소문처럼 퍼지지 않는다 */
+  const sharedSkills = (n) => knownSkills(n).filter((k) => n.skills[k].from !== "job");
+  /** 직업을 바꾼다. 새 직업이 가르치는 기술을 익힌다(이전 직업에서 익힌 것은 그대로 남는다) */
+  function setJob(n, id) { n.job = id; for (const k of (JOBS[id] && JOBS[id].teaches) || []) learn(n, k, "job"); }
+  /** 직업 솜씨: 직업이 가르치는 기술 중 가장 높은 단계. 수입에 곱한다 */
+  function mastery(n) { const t = (JOBS[n.job] && JOBS[n.job].teaches) || []; const lv = t.length ? Math.max(...t.map((k) => skillLv(n, k))) : 1; return 1 + 0.06 * Math.max(0, lv - 1); }
   const A_adjust = (n, id, d) => adjust(n, id, d);
   const KNOW = (id) => CONTENT.knowledge.find((k) => k.id === id) || { id, name: id };
   function adjust(n, id, d) { if (id === n.id) return; n.rel[id] = clamp(opinion(n, id) + d, -100, 100); }
@@ -170,7 +191,7 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 7;
+  const SAVE_VERSION = 8;
   /* 플레이어로 살며 생기는 상태가 어디에 사는가 (game.js의 ext()가 이 표대로 나눠 담는다)
    *  land: 세계에 남는 흔적 · session: 화면·조작 · 나머지: 그 인물의 것(n.ext). 인물이 바뀌어도 인물의 것은 그 인물에게 남는다 */
   const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", board: "land", chickenGone: "land", v: "land",
@@ -237,6 +258,21 @@
         birthplace: n.birthplace || { town: n.home || n.town, nation: (d.towns[n.home || n.town] || {}).nation || null, day: null },
         culture: n.culture ?? ((d.towns[n.home || n.town] || {}).nation || null) }));
       return { ...d, npcs, version: 7 };
+    },
+    // v7 → v8: 지식(n.know + 지금 직업의 teaches)과 혼자 익히던 횟수(ext.stats)를 n.skills로 합친다
+    7: (d) => {
+      const npcs = d.npcs.map((n) => {
+        const skills = { ...(n.skills || {}) };
+        for (const k of n.know || []) skills[k] = skills[k] || { lv: 1, xp: 0 };
+        for (const k of (JOBS[n.job] && JOBS[n.job].teaches) || []) skills[k] = skills[k] || { lv: 1, xp: 0, from: "job" };
+        const st = (n.ext && n.ext.stats) || {};
+        for (const K of CONTENT.knowledge) if (K.practice && st[K.practice.stat]) { const s = skills[K.id] || (skills[K.id] = { lv: 0, xp: 0 }); s.xp = Math.max(s.xp, st[K.practice.stat]); }
+        const { know, ...rest } = n;
+        let ext = n.ext;
+        if (ext && ext.stats) { const { stats, ...e } = ext; ext = e; }
+        return ext ? { ...rest, ext, skills } : { ...rest, skills };
+      });
+      return { ...d, npcs, version: 8 };
     },
   };
   function migrate(d) {
@@ -375,8 +411,10 @@
         heritage: heritageOf(race),                                  // 혈통 {종족: 비율}
         birthplace: { town: tid, nation: town.nation, day: this.day }, // 태어난 곳 (이 세계에 처음 나타난 곳)
         culture: town.nation,                                        // 자란 문화권 (지금은 자란 곳의 나라)
+        skills: {},                                                  // 기술 {id: {lv, xp}}
       };
       n.look = makeLook(n);
+      if (n.grown) setJob(n, n.job);
       this.npcs.push(n);
       settleIn(this, n, pickHouse(this, tid));
       return n;
@@ -599,7 +637,8 @@
   }
   function rWork(n, w) {
     const job = JOBS[n.job], town = w.towns[n.town];
-    let earn = w.rng.uniform(job.income[0], job.income[1]) * jobDemand(w, job, n.town);
+    let earn = w.rng.uniform(job.income[0], job.income[1]) * jobDemand(w, job, n.town) * mastery(n);
+    for (const k of job.teaches || []) addXp(n, k, 1); // 일할수록 솜씨가 는다
     if (job.war_bonus && w.war.active) earn *= 1 + job.war_bonus;
     if (job.food) town.food += job.food * (job.seasonal ? w.harvestMult() : 1);
     if (job.trader) {
@@ -668,8 +707,9 @@
       w.remember(m, w.events[mem.e], false, n.id);
     }
     // 배운 지식은 친한 사람에게 조금씩 퍼진다
-    if (n.know && n.know.length && opinion(n, m.id) >= 30 && w.rng.next() < 0.04) {
-      const k = w.rng.choice(n.know);
+    const mine = sharedSkills(n).filter((k) => !knows(m, k));
+    if (mine.length && opinion(n, m.id) >= 30 && w.rng.next() < 0.04) {
+      const k = w.rng.choice(mine);
       if (learn(m, k)) w.record("learn", `${jo(n.name, "이/가")} ${m.name}에게 ‘${KNOW(k).name}’${jo(KNOW(k).name, "을/를").slice((KNOW(k).name).length)} 가르쳐 주었다`, { actor: n.id, target: m.id, town: n.town, imp: KNOW(k).lost ? 5 : 2, sent: 3, wr: 0.2, data: { skill: k } });
     }
     // 험담: 내가 미워하는 사람에 대해 나쁜 말을 퍼뜨린다
@@ -830,11 +870,11 @@
     if (!j) return;
     const old = JOBS[n.job].name, from = n.job;
     if (j.id === "farmer") {
-      n.job = "farmer"; n.job_cooldown = 120;
+      setJob(n, "farmer"); n.job_cooldown = 120;
       w.record("career", `흉년이 닥치자 ${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 생계를 위해 밭을 갈기 시작했다`, { actor: n.id, town: n.town, imp: 3, wr: 0.3, data: { from, to: "farmer", why: "famine" } });
       return;
     }
-    n.gold -= j.entry_cost; n.job = j.id; n.job_cooldown = 240; n.fame += 1;
+    n.gold -= j.entry_cost; setJob(n, j.id); n.job_cooldown = 240; n.fame += 1;
     const what = j.start_text || `${jo(j.name, "이/가")} 되었다`;
     w.record("career", `${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 모은 금화 ${j.entry_cost}닢으로 ${what}`, { actor: n.id, town: n.town, imp: 5, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
   }
@@ -1060,8 +1100,8 @@
     n.grown = true; n.culture = w.towns[n.town] ? w.towns[n.town].nation : n.culture; // 자란 곳의 문화권
     const pj = n.parents.map((p) => w.npcs[p].job);
     let how;
-    if (pj.length && w.rng.next() < 0.5) { n.job = w.rng.choice(pj); how = "부모의 일을 이어받아"; }
-    else { n.job = w.pickJob(w.towns[n.town]); how = "스스로 길을 정해"; }
+    if (pj.length && w.rng.next() < 0.5) { setJob(n, w.rng.choice(pj)); how = "부모의 일을 이어받아"; }
+    else { setJob(n, w.pickJob(w.towns[n.town])); how = "스스로 길을 정해"; }
     n.gold = w.rng.uniform(5, 15);
     let text = `${jo(n.name, "이/가")} 성인이 되어 ${how} ${jo(JOBS[n.job].name, "이/가")} 되었다`, imp = 3;
     if (n.goal && n.goal.type === "revenge" && w.npcs[n.goal.target].alive) {
@@ -1269,7 +1309,7 @@
       const n = maxBy(cands, (x) => x.traits.ambition + w.rng.next() * 0.5);
       if (!n) continue;
       const old = JOBS[n.job].name, from = n.job;
-      n.job = j.id; n.job_cooldown = 200; n.fame += 3; n.pioneer = j.id;
+      setJob(n, j.id); n.job_cooldown = 200; n.fame += 3; n.pioneer = j.id;
       w.jobsOpen.push(j.id);
       w.record("job_born", j.emerge.text(n, w, old), { actor: n.id, town: n.town, imp: 7, wr: 0.8, data: { job: j.id, from } });
     }
@@ -1527,6 +1567,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

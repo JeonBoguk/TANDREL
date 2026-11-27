@@ -247,6 +247,23 @@
       const w3 = A.World.deserialize(old); G.setup(w3);
       t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
     } },
+    { id: "skills", name: "기술은 사람에게 남고, 일할수록 솜씨가 는다", run(t) {
+      const W = t.w, smith = W.spawn(t.town(), { race: "human", job: "blacksmith", ageYears: 30 });
+      t.check(A.knows(smith, "woodwork") && A.knows(smith, "farming_tools"), "대장장이는 목공·농기구 만들기를 안다");
+      t.check(smith.skills.woodwork.from === "job", "직업으로 익힌 기술은 출처가 직업이다 (소문처럼 퍼지지 않음)");
+      A.setJob(smith, "merchant");
+      t.check(A.knows(smith, "woodwork") && A.knows(smith, "weaving"), "상인이 되어도 목공을 잊지 않고, 짜기를 새로 익힌다");
+      const before = A.mastery(smith);
+      for (let i = 0; i < 130; i++) A._.rWork(smith, W);
+      t.check(A.skillLv(smith, "weaving") === 2 && A.mastery(smith) > before, `130일 일하니 짜기 ${A.SKILL_LV_NAME[A.skillLv(smith, "weaving")]}`);
+      // 옛 저장(v7): n.know와 ext.stats → n.skills
+      const d = JSON.parse(W.serialize()), pd = d.npcs[t.p().id];
+      for (const n of d.npcs) { n.know = Object.keys(n.skills).filter((k) => n.skills[k].lv >= 1 && !((A.JOBS[n.job].teaches || []).includes(k))); delete n.skills; }
+      pd.know = ["rune"]; pd.ext = { ...(pd.ext || {}), stats: { fiber: 7 } }; d.version = 7;
+      const w2 = A.World.deserialize(d), p2 = w2.npcs[t.p().id], s2 = w2.npcs[smith.id];
+      t.check(A.knows(p2, "rune") && A.skillOf(p2, "weaving") && A.skillOf(p2, "weaving").xp >= 7 && !(p2.ext || {}).stats, "옛 지식·혼자 익히던 횟수가 기술로 옮겨졌다");
+      t.check(A.knows(s2, "woodwork") && A.knows(s2, "weaving"), "옛 저장의 주민도 아는 것을 그대로 안다");
+    } },
     { id: "lineage", name: "혈통·외형은 부모에게서, 성인 나이는 종족마다", run(t) {
       const W = t.w, born = W.npcs.filter((n) => n.parents.length === 2);
       const okH = born.every((c) => { const [a, b] = c.parents.map((i) => W.npcs[i]), want = A.blendHeritage(a, b); return Object.keys(want).every((k) => Math.abs((c.heritage[k] || 0) - want[k]) < 1e-6); });
