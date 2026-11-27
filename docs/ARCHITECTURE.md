@@ -38,9 +38,14 @@ Asteria.extend({
 - 직업의 `look.hat`은 인물 그림의 모자 조각으로 이어진다 (`render.js`의 `HAT16`). 새 모자는 `art/person16.js`의 `HATS`에.
 - 직업별로 손에 드는 것은 `render.js`의 `PROP16`.
 
-## 플레이어 쪽 상태
+## 플레이어로 사는 동안의 상태
 
-- `Game.ext(w)`: 가방·단축바·밭·미션·수배·도감(`codex`)·집 공사 등. 새 삶을 시작하면 '이번 삶의 것'만 비운다(`WORLD_KEYS`).
+- `Game.ext(w)`는 **창구**다. 값은 `Asteria.extStore(키)` 표에 따라 세 곳에 산다.
+  - `w.land`: 세계에 남는 흔적 (밭 `farm`, 채집 `picked`, 벌목 `removed`, 유적 `looted`, 의뢰 게시판 `board` …)
+  - `w.session`: 화면·조작 (`facing`, `trail`)
+  - 지금 조종하는 인물의 `n.ext`: 그 밖의 모든 것 (가방 `inv`, 단축바 `hot`, 도감 `codex`, 숙련 `stats`, 미션 `missions`, 수배 `wanted`, 집 `home`·`furn`·`stations`·`reno`, 데이트 `dates`, 아는 꿈 `dreams` …)
+- 새 값을 ext에 넣을 때 세계 쪽이면 engine.js `EXT_STORE`에 등록한다. 등록하지 않으면 인물 쪽이다.
+- 다시 태어나거나 다른 주민으로 살면 이전 인물의 것은 그 인물의 `n.ext`에 남는다 (상속의 바탕). 지난 삶의 집 공사는 `w.innMods`로 건물에 남는다.
 - 도감: `give(w, id, n, how, at)`가 얻은 방법·곳을 `codex`에 적는다.
 
 ## 그리기
@@ -52,7 +57,7 @@ Asteria.extend({
 
 ## 저장
 
-- 형식 버전 `Asteria.SAVE_VERSION`(지금 5). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
+- 형식 버전 `Asteria.SAVE_VERSION`(지금 6). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
 - `w.nations{id}`: 나라 목록 `{name, since, founder, from(갈라져 나온 나라), ended, revolution}`. 마을은 `town.nation`에 **나라 id**를 가진다. 이름은 `Asteria.nationName(w, id)`. 이 세계에서 생긴 나라는 `n1, n2…`
 - `w.assets{id}`: 자산. 지금은 주민 집 `house:마을:번호` = `{kind, town, hid, owner, style(roof·wall·floor), mods(dx·dw·dh·grown)}`. 인물은 사는 집 `n.house`를 가진다. 배정·승계는 engine.js의 `settleIn`, `joinHousehold`, `pickHouse`, `passHouses`. 마을마다 집 수는 `CONTENT.housesPerTown`(game.js `BUILD_DEF`와 맞출 것)
 - `w.worldId`: 세계 식별자(새 세계를 만들 때 정함). 창작물·기록이 어느 세계 것인지 가리킨다.

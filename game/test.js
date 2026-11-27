@@ -229,6 +229,24 @@
       const w2 = A.World.deserialize(W.serialize());
       t.check(JSON.stringify(w2.assets) === JSON.stringify(W.assets) && w2.npcs.every((n, i) => n.house === W.npcs[i].house), "저장 뒤에도 집과 주인이 같다");
     } },
+    { id: "persona", name: "소지품·도감·미션은 인물의 것, 밭은 세계의 것", run(t) {
+      const W = t.w, p1 = t.p();
+      G.give(W, "stone", 3); t.e().farm["1,1"] = { watered: -1, crop: null, owner: p1.id };
+      t.check(p1.ext && p1.ext.inv.stone === 3 && W.land.farm["1,1"] && !W.land.inv, "가방은 인물에, 밭은 세계에 있다");
+      // 새 삶: 이전 인물의 가방은 그 사람에게 남고, 새 인물은 빈손. 밭은 그대로
+      p1.controller = "ai";
+      G.newLife(W, { name: "다음 사람", race: "human", job: "farmer", town: t.town() });
+      const p2 = t.p();
+      t.check(p2 !== p1 && !t.e().inv.stone && p1.ext.inv.stone === 3 && W.land.farm["1,1"], "새 인물은 빈손, 이전 인물의 가방은 남는다");
+      const json = W.serialize(), d = JSON.parse(json);
+      t.check(!("ext" in d) && d.land && d.npcs[p1.id].ext.inv.stone === 3, "저장 파일에 ext 덩어리가 없고, 인물마다 자기 것을 가진다");
+      const w2 = A.World.deserialize(json); G.setup(w2);
+      t.check(w2.npcs[p1.id].ext.inv.stone === 3 && G.ext(w2).farm["1,1"] && w2.player.id === p2.id, "불러와도 그대로");
+      // 옛 형식(v5): 한 덩어리 ext
+      const old = JSON.parse(json); old.ext = { ...old.land, ...old.session, ...old.npcs[p2.id].ext, inv: { apple: 2 } }; delete old.land; delete old.session; delete old.npcs[p2.id].ext; old.version = 5;
+      const w3 = A.World.deserialize(old); G.setup(w3);
+      t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
+    } },
     { id: "records", name: "세계 식별자·사건 기록·옛 저장 이전", run(t) {
       t.check(typeof t.w.worldId === "string" && t.w.worldId.length > 6, `세계 식별자 ${t.w.worldId}`);
       // 직업을 바꾸면 이전·새 직업이 문장이 아니라 값으로 남는다

@@ -528,8 +528,25 @@
   /** 직업 기술은 직업 정의(engine.js·content.js)의 skill에서 온다. 정의가 없으면 기본 기술. */
   const SKILL = new Proxy({}, { get: (_, id) => (JOBS[id] && JOBS[id].skill) || { name: "성실함", hint: "스스로를 다잡는다. 기력을 조금 되찾는다" } });
   // ================================================================ 플레이어 상태
+  /* ext(w): 플레이어로 사는 동안의 상태를 읽고 쓰는 창구. 값은 실제로 세 곳에 나뉘어 산다 (Asteria.extStore 표):
+   *   w.land(세계에 남는 흔적) · w.session(화면) · 지금 조종하는 인물의 n.ext(소지품·도감·미션·수배·집…)
+   * 그래서 다시 태어나거나 다른 사람으로 살면, 이전 인물의 것은 그 인물에게 남는다. */
+  const charDefaults = () => ({ inv: {}, hot: [], sel: 0, missions: [], msSeq: 0, wanted: { town: null, level: 0, lastSeen: 0 }, trackUntil: 0, dates: [], log: [] });
+  function extOf(n) { if (!n.ext) n.ext = charDefaults(); return n.ext; }
   function ext(w) {
-    if (!w.ext) w.ext = { v: 1, inv: {}, hot: [], sel: 0, farm: {}, picked: {}, removed: {}, missions: [], msSeq: 0, wanted: { town: null, level: 0, lastSeen: 0 }, facing: "down", trackUntil: 0, dates: [], log: [] };
+    if (w.ext && w.ext.__view) return w.ext;
+    w.land = { v: 1, farm: {}, picked: {}, removed: {}, ...(w.land || {}) };
+    w.session = { facing: "down", ...(w.session || {}) };
+    const store = (k) => { const s = A.extStore(k); if (s === "land") return w.land; if (s === "session") return w.session; return w.player ? extOf(w.player) : (w._nobody = w._nobody || charDefaults()); };
+    const keys = () => [...new Set([...Object.keys(w.land), ...Object.keys(w.session), ...Object.keys(w.player ? extOf(w.player) : {})])];
+    w.ext = new Proxy({}, {
+      get: (_, k) => (k === "__view" ? true : typeof k === "string" ? store(k)[k] : undefined),
+      set: (_, k, v) => { store(k)[k] = v; return true; },
+      has: (_, k) => k in store(k),
+      deleteProperty: (_, k) => { delete store(k)[k]; return true; },
+      ownKeys: () => keys(),
+      getOwnPropertyDescriptor: (_, k) => ({ enumerable: true, configurable: true, writable: true, value: store(k)[k] }),
+    });
     return w.ext;
   }
   const absMin = (w) => w.day * 1440 + w.clock;
@@ -615,9 +632,8 @@
     const p = w.player;
     if (p) { p.outside = false; p.town = town; }
   }
-  /* ext에는 '세계의 것'(땅에 남은 흔적)과 '이번 삶의 것'(내 가방·수배·미션…)이 섞여 있다.
-   * 새 삶을 시작하면 이번 삶의 것만 비운다. 지난 삶에서 고친 집은 세계에 남는다(w.innMods). */
-  const WORLD_KEYS = ["v", "farm", "picked", "removed", "looted", "mw", "board", "chickenGone"];
+  /* 새 삶: 이번 삶의 것(가방·수배·미션…)은 이전 인물에게 그대로 남고(n.ext), 새 인물은 빈손으로 시작한다.
+   * 세계의 흔적(w.land)은 그대로, 화면 상태(w.session)는 새로. 지난 삶에서 고친 집은 건물로 남는다(w.innMods). */
   function resetLife(w) {
     const e = ext(w);
     w.innMods = w.innMods || {};
@@ -626,8 +642,8 @@
       for (const k of ["dx", "dw", "dh"]) m[k] = (m[k] || 0) + (h[k] || 0);
       for (const k of ["roof", "wall", "floor"]) if (h[k]) m[k] = h[k];
     }
-    const keep = Object.fromEntries(WORLD_KEYS.filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    w.ext = { inv: {}, hot: [], sel: 0, farm: {}, picked: {}, removed: {}, missions: [], msSeq: 0, wanted: { town: null, level: 0, lastSeen: 0 }, facing: "down", trackUntil: 0, dates: [], log: [], ...keep };
+    if (e.home) e.home = {}; // 건물로 옮겼으니 같은 공사가 두 번 더해지지 않게
+    w.session = { facing: "down" };
     w.journal = []; w.papers = []; w.episodes = []; w.autoDays = 0; w.todayLog = []; w.lastPaper = w.day;
     for (const k of walkers.values()) { k.chase = false; k.fight = false; k.seek = null; }
   }
@@ -1621,7 +1637,7 @@
     houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
-    setup, newLife, resetLife, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
+    setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
     updateAnimals, updateWalkers, visibleNPCs, say, npcAtTile, forageReady, farmDawn, canTill, homeBuilding,
     buildingMenu, doBuilding, reportCrime, knownCrimes, crime, peopleHere, activity, weaponDmg, log, attackNPC,
     pendingMins: 0, onLog: null, onHurt: null, onSwing: null, onTalk: null,

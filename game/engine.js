@@ -164,7 +164,12 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 5;
+  const SAVE_VERSION = 6;
+  /* 플레이어로 살며 생기는 상태가 어디에 사는가 (game.js의 ext()가 이 표대로 나눠 담는다)
+   *  land: 세계에 남는 흔적 · session: 화면·조작 · 나머지: 그 인물의 것(n.ext). 인물이 바뀌어도 인물의 것은 그 인물에게 남는다 */
+  const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", board: "land", chickenGone: "land", v: "land",
+    facing: "session", trail: "session" };
+  const extStore = (k) => EXT_STORE[k] || "char";
   const newWorldId = (seed) => `w${(seed >>> 0).toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1679616).toString(36).padStart(4, "0")}`;
   const MIGRATIONS = {
     // v2 → v3: 세계 식별자. 사건의 data는 없던 칸이라 그대로 비어 있다
@@ -207,6 +212,15 @@
       }
       const { houseStyle, ...rest } = d;
       return { ...rest, npcs, assets, version: 5 };
+    },
+    // v5 → v6: 플레이어 전용 덩어리(ext)를 세계(land)·화면(session)·인물(그 인물의 n.ext)로 나눈다
+    5: (d) => {
+      const land = {}, session = {}, char = {};
+      for (const [k, v] of Object.entries(d.ext || {})) ({ land, session, char })[extStore(k)][k] = v;
+      const pid = d.playerId ?? null;
+      const npcs = d.npcs.map((n) => (n.id === pid && Object.keys(char).length ? { ...n, ext: { ...(n.ext || {}), ...char } } : n));
+      const { ext, ...rest } = d;
+      return { ...rest, npcs, land, session, version: 6 };
     },
   };
   function migrate(d) {
@@ -492,7 +506,7 @@
       return JSON.stringify({
         format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
-        papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, ext: this.ext || null, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
+        papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, land: this.land || {}, session: this.session || {}, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
         droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
@@ -529,7 +543,7 @@
       w.journal = (d.journal || []).filter((j) => w.events[j.e]);
       w.episodes = (d.episodes || []).filter((ep) => ep.ev === null || ep.ev === undefined || w.events[ep.ev]);
       w.epSeq = d.epSeq || 0; w.papers = (d.papers || []).map((p) => ({ ...p, items: p.items.filter((id) => w.events[id]) }));
-      w.lastPaper = d.lastPaper || w.day; w.todayLog = d.todayLog || []; w.ext = d.ext || null;
+      w.lastPaper = d.lastPaper || w.day; w.todayLog = d.todayLog || []; w.land = d.land || {}; w.session = d.session || {}; w.ext = null;
       return w;
     }
   }
@@ -1465,6 +1479,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, migrate, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, migrate, extStore, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

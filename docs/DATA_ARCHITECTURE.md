@@ -51,7 +51,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | 직업 출현 | ✅ | `emergeJobs(w)`: `job.emerge{demand, fit, know, text}`, `w.jobsOpen`, 플레이어 개척 `pioneer:` |
 | 직업 정의의 세계 저장 | ✗ | `emerge.demand` 등이 함수라 세계 안에서 만든 직업을 저장할 수 없음 |
 | 업무·시뮬레이터 | ✗ | NPC는 `rWork()` 수치 하나. 플레이어 업무는 `buildingMenu` 분기와 `skill.use`에 코드로 박혀 있음 |
-| 공통 인물 데이터 | ◐ | 인물 필드는 공통. 소지품·숙련·도감·기력은 `w.ext`(플레이어 전용), 꿈은 NPC 전용 |
+| 공통 인물 데이터 | ✅ (3단계: ext 분리) ◐ | 인물 필드는 공통. 소지품·숙련·도감·기력은 `w.ext`(플레이어 전용), 꿈은 NPC 전용 |
 | 관계 | ✅ | `n.rel` 단일 값, 가족 필드, 연인→결혼, 복수(`goal`), 추종(`follows`) |
 | 관계도 | ✅ | `Story.relGraph` + `ui.js winRel`. 새로 만들 필요 없음 |
 | 관계 종류(친구·경쟁·스승) | ✗/△ | `friendship`·`learn` 사건만 |
