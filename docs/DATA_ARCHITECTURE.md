@@ -92,7 +92,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | Character | 유지(`npcs[]`). `ext`의 인물 몫을 인물로 옮김 |
 | Species | 유지 + 규칙 필드(`adultAge`, `magic`, `traitsGenetic`) |
 | Heritage / Culture / Identity | 독립 영역이 아니라 **인물 필드**(`heritage{sp:비율}`, `culture`, `identity`) |
-| Nation | **독립**: `w.nations{id}`, `town.nation` = id |
+| Nation | **독립(구현됨)**: `w.nations{id}`, `town.nation` = id |
 | Job | 유지 + 세계 정의(`w.defs.jobs`) |
 | Skill | 지식(`know`)과 숙련(`stats`)을 `n.skills{id:{lv,xp}}`로 합침 |
 | Work + Simulator | 하나로: `CONTENT.works{steps, npc 계산식, sim:id}`, 시뮬레이터는 UI 코드 등록표, 둘은 id로만 연결. `jobReady(j)`가 참일 때만 플레이어에게 노출 |

@@ -14,7 +14,7 @@
 
 ## 데이터 구조 (docs/DATA_ARCHITECTURE.md)
 - [x] S0 저장 버전 체계(v3, MIGRATIONS), worldId, 사건 구조화 값(ev.data: career·adulthood·learn·discovery·job_born·nation_founded·independence·race_born·contact·birth), 인물별 사건 색인(w.lifeOf)
-- [ ] 1 국가 독립 (w.nations, town.nation = id)
+- [x] 1 국가 독립 (w.nations{id:{name,since,founder,from,ended,revolution}}, town.nation = id, 저장 v4에서 옛 이름 → id 이전)
 - [ ] 2 집·자산 (w.assets, hid 공식 제거)
 - [ ] 3 공통 인물 구조 (ext 분리)
 - [ ] 4 종족·혈통 (heritage, look 유전, 종족 규칙 필드)

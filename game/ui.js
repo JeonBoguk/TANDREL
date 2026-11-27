@@ -775,18 +775,21 @@ function bioCard(n) {
 function winNations() {
   const nations = {};
   for (const t of Object.values(W.towns)) (nations[t.nation] = nations[t.nation] || []).push(t);
+  const nm = (id) => A.nationName(W, id);
   const founded = W.founded || [], born = W.events.filter((e) => e && e.kind === "job_born");
   const dreamer = W.alive().find((n) => n.dream && n.dream.id === "nation");
   const who = (id) => W.npcs[id] ? h("button", { class: "link", type: "button", onclick: () => { bioId = id; openWin("people"); } }, W.npcs[id].name) : "누군가";
   return [
     h("h3", { style: "margin-top:0" }, "이 세계의 나라"),
-    h("div", { class: "towns" }, Object.entries(nations).map(([name, ts]) => {
-      const f = founded.find((d) => d.nationName === name) || (() => { const t = ts.find((x) => x.indep); return t ? { founder: t.indep.founder, day: t.indep.day, indep: t.indep.from } : null; })();
+    h("div", { class: "towns" }, Object.entries(nations).map(([nid, ts]) => {
+      const N = W.nations[nid] || {}, name = nm(nid);
+      const f = N.founder !== null && N.founder !== undefined ? { founder: N.founder, day: N.since, indep: N.from ? nm(N.from) : null } : null;
       const pop = ts.reduce((s, t) => s + W.residents(t.id).length, 0);
       return h("div", { class: "card town" + (f ? " here" : "") }, h("div", { class: "ttl" }, h("span", null, name), f ? h("span", { class: "chip gold" }, f.indep ? `${f.indep}에서 독립` : "이 세계에서 세워짐") : h("span", { class: "chip" }, "옛 나라")),
         h("div", { class: "small" }, `마을 ${ts.map((t) => t.name).join(", ")} · 주민 ${pop}명`),
         f ? h("div", { class: "small", style: "margin-top:4px" }, `${W.date(f.day)}, `, who(f.founder), W.npcs[f.founder] ? jo(W.npcs[f.founder].name, "이/가").slice(W.npcs[f.founder].name.length) + " 세웠다" : " 세웠다", W.npcs[f.founder] && W.npcs[f.founder].title ? ` · ${W.npcs[f.founder].title}` : "") : null);
     })),
+    (() => { const gone = Object.values(W.nations).filter((N) => N.ended !== undefined && N.ended !== null); return gone.length ? h("p", { class: "small muted", style: "margin:8px 0 0" }, "사라진 나라: ", gone.map((N) => `${N.name} (${W.date(N.since)} ~ ${W.date(N.ended)})`).join(", ")) : null; })(),
     dreamer ? h("div", { class: "card soft", style: "margin-top:10px" }, h("div", { class: "ttl" }, "새 나라를 꿈꾸는 사람"), h("div", { class: "small" }, who(dreamer.id), ` (${W.towns[dreamer.town].name}) — ${A.DREAMS.nation.text(dreamer, W, dreamer.dream)}`), h("div", { class: "small muted" }, "그를 찾아가 ‘꿈이 뭐예요?’라고 물으면 함께할 수 있다.")) : null,
     h("h3", null, "이 세계의 종족"),
     h("div", { class: "chips" }, A.racesInWorld(W).map((r) => h("span", { class: "chip" + (r.hidden || r.mix ? " gold" : ""), title: r.mix ? "두 종족 사이에서 태어났다" : r.hidden ? "어느 날 나타났다" : "" }, `${r.name} ${W.alive().filter((n) => n.race === r.id).length}명`))),
@@ -806,7 +809,7 @@ function winTowns() {
       const jobs = {}; for (const n of adults) jobs[n.job] = (jobs[n.job] || 0) + 1;
       const mood = t.fallen ? ["함락됨", "bad"] : price >= 4 ? ["굶주림", "bad"] : price >= 2 ? ["빠듯함", "mid"] : ["넉넉함", "good"];
       return h("div", { class: "town card" + (p && p.town === t.id ? " here" : "") },
-        h("div", { class: "ttl" }, h("span", null, t.name, h("span", { class: "small muted" }, ` · ${t.nation}${t.border ? " · 국경" : ""}`)), h("span", { class: "chip " + mood[1] }, mood[0])),
+        h("div", { class: "ttl" }, h("span", null, t.name, h("span", { class: "small muted" }, ` · ${A.nationName(W, t.nation)}${t.border ? " · 국경" : ""}`)), h("span", { class: "chip " + mood[1] }, mood[0])),
         h("div", { class: "small" }, `주민 ${res.length}명 · 곡식 한 끼 ${price}닢${p && p.home === t.id ? " · 내 집" : ""}`),
         h("div", { class: "jobs" }, Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, c]) => h("span", { class: "chip" }, `${A.JOBS[j].name} ${c}`))),
         h("div", { class: "sub" }, "이름난 사람"), h("div", { class: "fam" }, notable.map((n) => h("button", { type: "button", onclick: () => { bioId = n.id; openWin("people"); } }, following(n.id) ? "★ " : "", n.name, h("span", { class: "muted" }, ` ${W.jobName(n)}`)))),
@@ -861,7 +864,7 @@ function winBorn() {
   // 새 세계는 아직 만들기 전이므로, 처음부터 있는 종족·직업·마을 중에서 고른다
   const races = mode === "new" ? A.CONTENT.races.filter((r) => !r.hidden && !r.mix) : A.racesInWorld(W);
   const jobs = mode === "new" ? A.CONTENT.jobs.filter((j) => !j.emerge) : W.openJobs();
-  const towns = mode === "new" ? A.CONTENT.towns.map((t) => ({ id: t.id, name: t.name, nation: A.CONTENT.nations[t.nation] })) : Object.values(W.towns).filter((t) => !t.fallen);
+  const towns = mode === "new" ? A.CONTENT.towns.map((t) => ({ id: t.id, name: t.name, nation: A.CONTENT.nations[t.nation] })) : Object.values(W.towns).filter((t) => !t.fallen).map((t) => ({ id: t.id, name: t.name, nation: A.nationName(W, t.nation) }));
   const submit = h("button", { class: "wbtn gold full", type: "submit" }, mode === "new" ? "새로운 세계에 태어나기" : "이 세계에서 다시 태어나기");
   const form = h("form", null,
     h("label", { class: "full" }, "이름", h("input", { class: "field", id: "bName", maxlength: 10, required: true, placeholder: "예: 하늘" })),

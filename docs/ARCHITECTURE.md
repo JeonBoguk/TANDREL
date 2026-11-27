@@ -52,7 +52,8 @@ Asteria.extend({
 
 ## 저장
 
-- 형식 버전 `Asteria.SAVE_VERSION`(지금 3). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
+- 형식 버전 `Asteria.SAVE_VERSION`(지금 4). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
+- `w.nations{id}`: 나라 목록 `{name, since, founder, from(갈라져 나온 나라), ended, revolution}`. 마을은 `town.nation`에 **나라 id**를 가진다. 이름은 `Asteria.nationName(w, id)`. 이 세계에서 생긴 나라는 `n1, n2…`
 - `w.worldId`: 세계 식별자(새 세계를 만들 때 정함). 창작물·기록이 어느 세계 것인지 가리킨다.
 - 사건의 `data`: 문장과 별개인 구조화 값. `w.record(kind, text, { …, data: { from, to } })`. 저장 배열의 11번째 칸(있을 때만).
 - `w.lifeOf(id, minImp)`: 인물별 사건 색인(`w.byChar`, 저장하지 않고 불러올 때 다시 만듦).

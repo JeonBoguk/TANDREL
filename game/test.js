@@ -181,6 +181,11 @@
       for (const c of t.w.alive().filter((x) => x !== n && x.controller !== "player" && A.isAdult(x)).slice(0, 3)) c.follows = n.id;
       n.gold = 300; const towns0 = Object.keys(t.w.towns).length, ev = A.foundNation(n, t.w);
       t.check(ev && (ev.kind === "nation_founded" || ev.kind === "independence"), ev ? ev.text : "건국 실패");
+      const nid = ev && ev.data && ev.data.nation, N = nid && t.w.nations[nid];
+      t.check(N && N.founder === n.id && N.name === ev.data.name && Object.values(t.w.towns).some((x) => x.nation === nid), `나라 목록: ${N ? `${nid} ${N.name}` : "없음"}`);
+      if (ev && ev.kind === "independence") t.check(t.w.nations[ev.data.from] && N.from === ev.data.from, "갈라져 나온 나라가 기록된다");
+      const w2 = A.World.deserialize(t.w.serialize());
+      t.check(w2.nations[nid] && w2.nations[nid].name === N.name, "저장 뒤에도 나라가 그대로다");
       if (ev && ev.kind === "nation_founded") t.check(Object.keys(t.w.towns).length === towns0 + 1 && G.MAP.sig.includes(ev.town), "지도에 새 마을이 생겼다");
       t.check(t.overlaps() === 0, "건물끼리 겹치지 않는다");
     } },
@@ -214,9 +219,15 @@
       const w2 = A.World.deserialize(t.w.serialize()), ev2 = ev && w2.events[ev.id];
       t.check(w2.worldId === t.w.worldId && ev2 && ev2.data && ev2.data.to === "blacksmith" && w2.lifeOf(n.id).length === t.w.lifeOf(n.id).length, "저장 뒤에도 식별자·사건 값·색인이 같다");
       // 옛 형식(v2: 식별자·data 없음)도 읽힌다
-      const d = JSON.parse(t.w.serialize()); delete d.worldId; d.version = 2; d.events = d.events.map((e) => (Array.isArray(e) ? e.slice(0, 10) : e));
+      // 옛 형식(v2: 식별자·data·나라 목록 없음, 마을의 나라는 이름 문자열)도 읽힌다
+      const d = JSON.parse(t.w.serialize()), nm = (id) => A.nationName(t.w, id);
+      delete d.worldId; delete d.nations; d.version = 2; d.events = d.events.map((e) => (Array.isArray(e) ? e.slice(0, 10) : e));
+      for (const tw of Object.values(d.towns)) { tw.nation = nm(tw.nation); if (tw.indep) tw.indep.from = nm(tw.indep.from); }
+      for (const f of d.founded || []) delete f.nation;
       const w3 = A.World.deserialize(d);
       t.check(w3.worldId && w3.worldId !== t.w.worldId && w3.npcs.length === t.w.npcs.length, `옛 저장 이전 → 새 식별자 ${w3.worldId}`);
+      const names = (w) => Object.values(w.towns).map((x) => `${x.id}:${A.nationName(w, x.nation)}`).sort().join();
+      t.check(names(w3) === names(t.w) && Object.values(w3.towns).every((x) => w3.nations[x.nation]), "옛 저장의 나라 이름이 id로 바뀌어도 마을마다 같은 나라다");
     } },
   ];
 
