@@ -148,6 +148,23 @@ function onNewDay() {
 }
 
 // ------------------------------------------------------------ 입력
+/* 게임 화면에 키보드 포커스를 되돌린다. 아티팩트처럼 다른 페이지 안에 들어가 있으면 바깥이 포커스를 가져갈 수 있어서
+ * 창 자체에도 포커스를 요청하고, 한 박자 뒤에 한 번 더 확인한다. */
+function refocus() {
+  const go = () => { if (titleOpen || (win && $("#win").contains(document.activeElement))) return; try { window.focus(); } catch (_) {} const c = $("#world"); if (c && document.activeElement !== c) c.focus({ preventScroll: true }); };
+  go(); setTimeout(go, 30); setTimeout(go, 150);
+}
+/* Esc는 바깥(아티팩트 화면 등)이 먼저 가져가지 않도록 가장 먼저 받아서 처리한다 */
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !W || (e.target.closest && e.target.closest("input,select,textarea"))) return;
+  if (!(win || bmenu || session || epView)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (win) closeWin(); else if (bmenu) closeMenu(); else if (session) endSession(); else if (epView) { epView = null; renderTalk(); refocus(); }
+}, true);
+/* 키보드 포커스가 게임 밖으로 나가면(다른 탭·바깥 페이지) 알려 준다. 누르면 돌아온다 */
+window.addEventListener("blur", () => { if (W && !titleOpen) $("#game").classList.add("nofocus"); keys.clear(); });
+window.addEventListener("focus", () => $("#game").classList.remove("nofocus"));
+document.addEventListener("pointerdown", () => $("#game").classList.remove("nofocus"), true);
 const KEYMAP = { arrowleft: "left", a: "left", arrowright: "right", d: "right", arrowup: "up", w: "up", arrowdown: "down", s: "down", shift: "run" };
 document.addEventListener("keydown", (e) => {
   if (!W || (e.target.closest && e.target.closest("input,select,textarea"))) return;
@@ -379,7 +396,7 @@ function renderTalk() {
           h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, o.label), o.hint ? h("span", null, o.hint) : null)))));
   const ln = $("#lines"); if (ln) ln.scrollTop = ln.scrollHeight;
 }
-function endSession() { if (session) { S.endTalk(W, session); session = null; } renderTalk(); renderAll(); $("#world").focus(); }
+function endSession() { if (session) { S.endTalk(W, session); session = null; } renderTalk(); renderAll(); refocus(); }
 // 대화 선택지·단축바·메뉴 버튼을 누른 뒤에도 키보드가 바로 게임에 먹도록 초점을 돌려 둔다
 document.addEventListener("click", (e) => {
   if (!e.target.closest || !e.target.closest(".talk .opt, .slot, .mbtn, .tab")) return;
@@ -397,7 +414,7 @@ function renderEp(ep) {
 
 // ------------------------------------------------------------ 건물
 function openMenu(pl) { if (busy()) return; path = []; keys.clear(); bmenu = { pl, result: null, pick: null }; renderTalk(); }
-function closeMenu() { bmenu = null; renderTalk(); renderAll(); $("#world").focus(); }
+function closeMenu() { bmenu = null; renderTalk(); renderAll(); refocus(); }
 function renderMenu() {
   const pl = bmenu.pl, p = W.player;
   const inv = pl.kind === "house" ? G.inviteAt(W, G.MAP.buildings[pl.b]) : null;
@@ -460,7 +477,7 @@ function openWin(id, arg) {
   if (id === "codex" && arg) { codexSel = arg; codexCat = arg.startsWith("k:") ? (A.KNOW(arg.slice(2)).lost ? "magic" : "tech") : G.catOf(arg); }
   win = id; winArg = arg; path = []; keys.clear(); if ((id === "paper" || id === "paperToday") && arg) arg.unread = false; renderWin(); renderMenubar();
 }
-function closeWin() { win = null; $("#win").hidden = true; $("#game").classList.remove("winopen"); renderAll(); $("#world").focus(); }
+function closeWin() { win = null; $("#win").hidden = true; $("#game").classList.remove("winopen"); renderAll(); refocus(); }
 function tabStrip() {
   const g = GROUPS[groupOf(win)];
   if (!g) return null;
@@ -1145,7 +1162,7 @@ function openTitle() {
   if (auto.on) toggleAuto();
   titleOpen = true; titlePanel = "main"; confirmKey = null; win = null; $("#win").hidden = true; renderTitle();
 }
-function closeTitle() { titleOpen = false; const t = $("#title"); if (t) t.remove(); renderAll(); $("#world").focus(); }
+function closeTitle() { titleOpen = false; const t = $("#title"); if (t) t.remove(); renderAll(); refocus(); }
 function startWorld(w, note, newSlot) {
   if (newSlot) slotId = newSlotId();
   setWorld(w, note); closeTitle(); speed = settings.speed; renderSpeed();

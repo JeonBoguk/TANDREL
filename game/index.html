@@ -349,6 +349,10 @@ button.chip:hover, button.need:hover { border-color: var(--accent); }
   .cxdetail { order: -1; position: static; }
   .cxlist { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
 }
+/* 포커스가 게임 밖에 있을 때 */
+.focushint { display: none; position: absolute; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 7; pointer-events: none; background: var(--hud); border: 1px solid var(--line); border-radius: var(--r1); padding: 4px 12px; font-size: var(--fs-2); color: var(--text-2); }
+.game.nofocus .focushint { display: block; }
+.touch .focushint { display: none !important; }
 </style>
 
 <div class="game" id="game">
@@ -365,6 +369,7 @@ button.chip:hover, button.need:hover { border-color: var(--accent); }
   <div class="handname" id="handname"></div>
   <div class="frame hotbar" id="hotbar" role="toolbar" aria-label="단축바"></div>
   <div class="frame talk" id="talk" hidden></div>
+  <div class="focushint" aria-hidden="true">화면을 누르면 다시 조작할 수 있다</div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <div class="frame win" id="win" hidden role="dialog"></div>
   <nav class="menubar" id="menubar" aria-label="메뉴"></nav>
