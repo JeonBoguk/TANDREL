@@ -235,7 +235,7 @@
     for (const K of A.CONTENT.knowledge) {
       if (!K.practice || K.practice.stat !== stat || A.knows(p, K.id) || e.stats[stat] < K.practice.n) continue;
       A.learn(p, K.id);
-      w.record("discovery", `${jo(p.name, "이/가")} 누구에게도 배우지 않고 스스로 ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 깨우쳤다`, { actor: p.id, town: p.town, imp: 4, wr: 0.3 });
+      w.record("discovery", `${jo(p.name, "이/가")} 누구에게도 배우지 않고 스스로 ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 깨우쳤다`, { actor: p.id, town: p.town, imp: 4, wr: 0.3, data: { skill: K.id, how: "practice" } });
       log(w, `${K.practice.text || "거듭하다 보니 요령이 생겼다"} ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 익혔다!`, "good");
     }
   }
@@ -1202,7 +1202,7 @@
     const p = w.player, it = ITEMS[item], k = A.KNOW(it.teaches);
     if (A.knows(p, k.id)) return `이미 아는 내용이다: ${k.name}`;
     take(w, item, 1); A.learn(p, k.id); spend(w, 60, 4);
-    w.record("discovery", `${jo(p.name, "이/가")} 두루마리를 읽고 ‘${k.name}’${jo(k.name, "을/를").slice((k.name).length)} 익혔다`, { actor: p.id, town: p.town, imp: k.lost ? 6 : 3, wr: 0.1 });
+    w.record("discovery", `${jo(p.name, "이/가")} 두루마리를 읽고 ‘${k.name}’${jo(k.name, "을/를").slice((k.name).length)} 익혔다`, { actor: p.id, town: p.town, imp: k.lost ? 6 : 3, wr: 0.1, data: { skill: k.id, how: "scroll" } });
     const t = `두루마리를 끝까지 읽었다. ‘${k.name}’${jo(k.name, "을/를").slice((k.name).length)} 익혔다! — ${k.desc || ""}`;
     log(w, t, "good");
     return t;
@@ -1464,9 +1464,9 @@
       return finish(w, text, def.min, def.e);
     }
     if (id.startsWith("pioneer:") && def && def.ok) {
-      const j = JOBS[id.slice(8)], old = JOBS[p.job].name;
+      const j = JOBS[id.slice(8)], old = JOBS[p.job].name, from = p.job;
       w.jobsOpen = w.jobsOpen || []; w.jobsOpen.push(j.id); p.job = j.id; p.pioneer = j.id; p.fame += 3;
-      w.record("job_born", `${old} 일을 하던 ${jo(p.name, "이/가")} 이 세계에서 처음으로 ‘${j.name}’ 일을 시작했다`, { actor: p.id, town: p.town, imp: 7, wr: 0.8 });
+      w.record("job_born", `${old} 일을 하던 ${jo(p.name, "이/가")} 이 세계에서 처음으로 ‘${j.name}’ 일을 시작했다`, { actor: p.id, town: p.town, imp: 7, wr: 0.8, data: { job: j.id, from } });
       return finish(w, `이제 나는 이 세계 최초의 ${j.name}다! 사람들이 신기한 눈으로 본다.`, 60, 5);
     }
     if (!def || !def.ok) return { text: def && def.why ? def.why : "지금은 할 수 없다" };
@@ -1477,9 +1477,9 @@
       rWork(p, w);
       text = `열심히 일해 금화 ${(p.gold - g0).toFixed(1)}닢을 벌었다.${town.food > f0 + 0.5 ? ` 곳간에 식량 ${jo(Math.round(town.food - f0), "을/를")} 보탰다.` : ""}`;
     } else if (id.startsWith("job:")) {
-      const j = JOBS[id.slice(4)], old = JOBS[p.job].name;
+      const j = JOBS[id.slice(4)], old = JOBS[p.job].name, from = p.job;
       p.gold -= j.entry_cost; p.job = j.id;
-      w.record("career", `${jo(old, "이었던/였던")} ${jo(p.name, "이/가")} ${j.start_text || jo(j.name, "이/가") + " 되었다"}`, { actor: p.id, town: p.town, imp: 4, wr: 0.4 });
+      w.record("career", `${jo(old, "이었던/였던")} ${jo(p.name, "이/가")} ${j.start_text || jo(j.name, "이/가") + " 되었다"}`, { actor: p.id, town: p.town, imp: 4, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
       text = `이제 나는 ${j.name}다. 직업 기술이 ‘${SKILL[j.id].name}’(으)로 바뀌었다.`;
     } else if (id.startsWith("buy:")) {
       const it = id.split(":")[1]; p.gold -= ITEMS[it].price; give(w, it, 1, "사기", `${town.name} ${pl.name}`); text = `${jo(ITEMS[it].name, "을/를")} 샀다.`;

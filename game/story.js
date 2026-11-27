@@ -690,7 +690,7 @@
     s.options = [...list.map((k) => O(`‘${A.KNOW(k).name}’ 배우기`, `${A.KNOW(k).desc || ""} · 2시간${fee ? ` · 금화 ${fee}` : ""}`, () => {
       if (p.gold < fee) { s.say("npc", "돈이 모자라잖아요."); toMenu(w, s); return; }
       p.gold -= fee; n.gold += fee; A.learn(p, k); s.mins += 120; adjust(n, p.id, 4);
-      w.record("learn", `${jo(p.name, "이/가")} ${n.name}에게 ‘${A.KNOW(k).name}’${jo(A.KNOW(k).name, "을/를").slice((A.KNOW(k).name).length)} 배웠다`, { actor: n.id, target: p.id, town: n.town, imp: 2, sent: 3, wr: 0.2 });
+      w.record("learn", `${jo(p.name, "이/가")} ${n.name}에게 ‘${A.KNOW(k).name}’${jo(A.KNOW(k).name, "을/를").slice((A.KNOW(k).name).length)} 배웠다`, { actor: n.id, target: p.id, town: n.town, imp: 2, sent: 3, wr: 0.2, data: { skill: k } });
       s.say("sys", `‘${A.KNOW(k).name}’${jo(A.KNOW(k).name, "을/를").slice((A.KNOW(k).name).length)} 익혔다. 만들기(K)나 작업대에서 새로 만들 수 있는 것이 생겼다.`); toMenu(w, s);
     }, "quest")), back(w, s)];
   }
@@ -701,7 +701,7 @@
     if (opinion(n, p.id) < -10) { s.say("npc", "당신한테 배울 건 없어요."); toMenu(w, s); return; }
     s.options = [...list.map((k) => O(`‘${A.KNOW(k).name}’ 가르치기`, A.KNOW(k).lost ? "잊힌 비술이다. 세상에 퍼지면 무엇이 생길지 모른다" : "1시간", () => {
       A.learn(n, k); s.mins += 60; adjust(n, p.id, 8 + (A.KNOW(k).lost ? 8 : 0)); p.fame += A.KNOW(k).lost ? 2 : 0;
-      w.record("learn", `${jo(p.name, "이/가")} ${n.name}에게 ‘${A.KNOW(k).name}’${jo(A.KNOW(k).name, "을/를").slice((A.KNOW(k).name).length)} 가르쳐 주었다`, { actor: p.id, target: n.id, town: n.town, imp: A.KNOW(k).lost ? 6 : 2, sent: 4, wr: 0.3 });
+      w.record("learn", `${jo(p.name, "이/가")} ${n.name}에게 ‘${A.KNOW(k).name}’${jo(A.KNOW(k).name, "을/를").slice((A.KNOW(k).name).length)} 가르쳐 주었다`, { actor: p.id, target: n.id, town: n.town, imp: A.KNOW(k).lost ? 6 : 2, sent: 4, wr: 0.3, data: { skill: k } });
       s.say("npc", A.KNOW(k).lost ? pick(w, ["이, 이런 게 세상에 있었다니…!", "평생 잊지 않을게요. 이건 정말 대단한 거예요."]) : pick(w, ["오, 그렇게 하는 거군요!", "고마워요. 써먹을게요."])); toMenu(w, s);
     })), back(w, s)];
   }

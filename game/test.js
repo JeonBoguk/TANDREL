@@ -200,6 +200,24 @@
       t.check(JSON.stringify(w2.founded || []) === JSON.stringify(t.w.founded || []) && w2.player.name === t.p().name, "나라와 내 인물이 그대로다");
       t.check(json.length < 4.5e6, `저장 크기 ${(json.length / 1024).toFixed(0)}KB`);
     } },
+    { id: "records", name: "세계 식별자·사건 기록·옛 저장 이전", run(t) {
+      t.check(typeof t.w.worldId === "string" && t.w.worldId.length > 6, `세계 식별자 ${t.w.worldId}`);
+      // 직업을 바꾸면 이전·새 직업이 문장이 아니라 값으로 남는다
+      const pl = t.placeOf("forge"), from = t.p().job; t.p().gold = 200;
+      const r = pl ? G.doBuilding(t.w, pl, "job:blacksmith") : null;
+      const ev = t.w.lifeOf(t.p().id).filter((e) => e.kind === "career").pop();
+      t.check(ev && ev.data && ev.data.from === from && ev.data.to === "blacksmith", `직업 변경 기록: ${ev ? JSON.stringify(ev.data) : r && r.text}`);
+      // 인물별 색인은 전체를 훑은 결과와 같다
+      const n = t.npcs()[0], scan = t.w.events.filter((e) => e && (e.actor === n.id || e.target === n.id)).map((e) => e.id).join();
+      t.check(t.w.lifeOf(n.id).map((e) => e.id).join() === scan, `생애 색인 ${t.w.lifeOf(n.id).length}건`);
+      // 저장했다 불러와도 식별자·값·색인이 그대로
+      const w2 = A.World.deserialize(t.w.serialize()), ev2 = ev && w2.events[ev.id];
+      t.check(w2.worldId === t.w.worldId && ev2 && ev2.data && ev2.data.to === "blacksmith" && w2.lifeOf(n.id).length === t.w.lifeOf(n.id).length, "저장 뒤에도 식별자·사건 값·색인이 같다");
+      // 옛 형식(v2: 식별자·data 없음)도 읽힌다
+      const d = JSON.parse(t.w.serialize()); delete d.worldId; d.version = 2; d.events = d.events.map((e) => (Array.isArray(e) ? e.slice(0, 10) : e));
+      const w3 = A.World.deserialize(d);
+      t.check(w3.worldId && w3.worldId !== t.w.worldId && w3.npcs.length === t.w.npcs.length, `옛 저장 이전 → 새 식별자 ${w3.worldId}`);
+    } },
   ];
 
   /** 모든 점검을 돌린다. base: 지금 세계를 저장한 JSON. 끝나면 결과 목록을 돌려준다 */

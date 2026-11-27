@@ -240,7 +240,7 @@
           w.racesSeen.push("dragonkin");
           w.record("contact", speaker
             ? `${jo(speaker.name, "이/가")} 두루마리에서 익힌 용의 언어로 하늘을 향해 외쳤다. 며칠 뒤, 뿔과 비늘을 가진 이방인들, 용족이 ${w.towns[town].name}에 내려왔다`
-            : `북쪽 산맥 너머에서 뿔과 비늘을 가진 이방인들이 ${w.towns[town].name}에 나타났다. 사람들은 그들을 ‘용족’이라 불렀다`, { actor: speaker ? speaker.id : leader.id, town, imp: 10, wr: 1 });
+            : `북쪽 산맥 너머에서 뿔과 비늘을 가진 이방인들이 ${w.towns[town].name}에 나타났다. 사람들은 그들을 ‘용족’이라 불렀다`, { actor: speaker ? speaker.id : leader.id, town, imp: 10, wr: 1, data: { species: "dragonkin" } });
           if (speaker) { speaker.fame += 8; c.adjust(leader, speaker.id, 50); }
           A.foundNation(leader, w); // 그들만의 나라를 세운다 (빈 땅이 없으면 그 마을에 섞여 산다)
         } },
@@ -276,7 +276,7 @@
             h.fame += 2;
             if (h.traits.kindness > 0.55 && !A.knows(h, "medicine") && c.rng.next() < 0.35) { // 위기 속에서 지식이 태어난다
               A.learn(h, "medicine");
-              w.record("discovery", `${jo(h.name, "이/가")} 역병 환자들을 돌보다 병이 옮는 길을 깨달았다. 이 세계에 ‘의술’이 처음 생겨났다`, { actor: h.id, town: t.id, imp: 7, cause: ev.id, wr: 0.8 });
+              w.record("discovery", `${jo(h.name, "이/가")} 역병 환자들을 돌보다 병이 옮는 길을 깨달았다. 이 세계에 ‘의술’이 처음 생겨났다`, { actor: h.id, town: t.id, imp: 7, cause: ev.id, wr: 0.8, data: { skill: "medicine", how: "crisis" } });
             }
             w.record("plague_heal", `${jo(h.name, "이/가")} 밤낮없이 역병에 걸린 ${t.name} 사람들을 돌봤다`, { actor: h.id, town: t.id, imp: 5, cause: ev.id, wr: 0.7 });
           }

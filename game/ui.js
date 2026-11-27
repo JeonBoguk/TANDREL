@@ -730,7 +730,7 @@ function meter(v, col) { return h("span", { class: "meter" }, h("span", { style:
 /** 인물 수첩: 이 사람에 대해 '내가 아는 것'만 보여 준다. 캐릭터가 없으면 신의 시점으로 전부 보인다. */
 function bioCard(n) {
   const p = W.player, pov = playing() && n.id !== p.id;
-  const life = W.events.filter((e) => e && e.imp >= 2 && (e.actor === n.id || e.target === n.id) && (!pov || p.known.has(e.id)));
+  const life = W.lifeOf(n.id, 2).filter((e) => !pov || p.known.has(e.id));
   const fam = S.familyList(W, n);
   const canTake = n.alive && A.isAdult(n) && n.controller !== "player";
   const mine = pov ? A.opinion(p, n.id) : 0, theirs = pov ? A.opinion(n, p.id) : 0;

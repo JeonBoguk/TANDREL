@@ -160,6 +160,24 @@
   const KNOW = (id) => CONTENT.knowledge.find((k) => k.id === id) || { id, name: id };
   function adjust(n, id, d) { if (id === n.id) return; n.rel[id] = clamp(opinion(n, id) + d, -100, 100); }
 
+  // ================================================================ 저장 형식의 버전과 이전
+  /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
+   * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
+  const SAVE_VERSION = 3;
+  const newWorldId = (seed) => `w${(seed >>> 0).toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1679616).toString(36).padStart(4, "0")}`;
+  const MIGRATIONS = {
+    // v2 → v3: 세계 식별자. 사건의 data는 없던 칸이라 그대로 비어 있다
+    2: (d) => ({ ...d, worldId: d.worldId || newWorldId(d.seed), version: 3 }),
+  };
+  function migrate(d) {
+    let v = d.version || 2;
+    while (v < SAVE_VERSION) {
+      if (!MIGRATIONS[v]) throw new Error(`저장 형식 ${v}을 읽을 수 없습니다`);
+      d = MIGRATIONS[v](d); v = d.version;
+    }
+    return d;
+  }
+
   // ================================================================ World
   class World {
     constructor(seed) {
@@ -172,8 +190,10 @@
         this.towns[t.id] = { id: t.id, name: t.name, nation: CONTENT.nations[t.nation], border: !!t.border,
           races: t.races, job_bias: t.job_bias || {}, start_pop: t.population, food: t.population * 15, fallen: false, seeded: false, x: t.pos[0], y: t.pos[1] };
       }
+      this.worldId = null;      // 세계 식별자 (newWorld에서 정한다. 창작물·기록이 어느 세계 것인지 가리킨다)
       this.npcs = [];
       this.events = [];
+      this.byChar = new Map();  // 인물 id → 그 사람이 행위자·대상인 사건 id들 (저장하지 않고 다시 만든다)
       this.chronicle = [];
       this.pendingVows = [];
       this.usedNames = new Set();
@@ -226,6 +246,12 @@
     jobName(n) { if (n.role === "hero") return "용사"; if (!isAdult(n)) return "아이"; return JOBS[n.job].name; }
     label(n) { return `${n.name}(${RACES[n.race].name} ${this.jobName(n)})`; }
     ev(id) { return id === null || id === undefined ? null : this.events[id] || null; }
+    /** 이 사람의 생애 사건 (행위자이거나 대상). 정리된 사건은 빠진다 */
+    lifeOf(id, minImp = 0) { return (this.byChar.get(id) || []).map((i) => this.events[i]).filter((e) => e && e.imp >= minImp); }
+    indexEvent(ev) {
+      for (const id of new Set([ev.actor, ev.target])) if (id !== null && id !== undefined) { let l = this.byChar.get(id); if (!l) this.byChar.set(id, (l = [])); l.push(ev.id); }
+    }
+    reindexEvents() { this.byChar = new Map(); for (const e of this.events) if (e) this.indexEvent(e); }
     get player() { return this.playerId === null ? null : this.npcs[this.playerId]; }
 
     // ---- 생성
@@ -328,9 +354,11 @@
 
     // ---- 사건
     record(kind, text, o = {}) {
-      const { actor = null, target = null, town = null, imp = 1, sent = 0, cause = null, wr = 0.25, notify = [], secret = null } = o;
-      const ev = { id: this.events.length, day: this.day, kind, text, actor, target, town, imp, sent, cause, secret };
+      const { actor = null, target = null, town = null, imp = 1, sent = 0, cause = null, wr = 0.25, notify = [], secret = null, data = null } = o;
+      // data: 문장(text)과 별개로 남기는 구조화 값. 예: career {from, to}, learn {skill}. 연대기·생애·심판이 문장 대신 이것을 읽는다
+      const ev = { id: this.events.length, day: this.day, kind, text, actor, target, town, imp, sent, cause, secret, data };
       this.events.push(ev);
+      this.indexEvent(ev);
       if (imp >= 7) this.chronicle.push(ev.id);
       const inv = new Set([actor, target].filter((x) => x !== null));
       for (const i of inv) this.remember(this.npcs[i], ev, true);
@@ -406,7 +434,7 @@
         if (e && e.cause !== null && !keep.has(e.cause)) { keep.add(e.cause); stack.push(e.cause); }
       }
       const events = this.events.map((e) => (e && keep.has(e.id)
-        ? [e.day, e.kind, e.text, e.actor, e.target, e.town, e.imp, e.sent, e.cause, e.secret ?? null] : 0));
+        ? (e.data ? [e.day, e.kind, e.text, e.actor, e.target, e.town, e.imp, e.sent, e.cause, e.secret ?? null, e.data] : [e.day, e.kind, e.text, e.actor, e.target, e.town, e.imp, e.sent, e.cause, e.secret ?? null]) : 0));
       const memIds = new Set();
       for (const n of this.npcs) for (const m of n.mem) memIds.add(m.e);
       // 숫자는 반올림하지 않는다: 불러온 세계가 저장하지 않은 세계와 똑같이 이어지도록
@@ -415,7 +443,7 @@
         known: [...n.known].filter((id) => memIds.has(id)), flags: [...n.flags] }));
       const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
       return JSON.stringify({
-        format: "asteria-world", version: 2,
+        format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, ext: this.ext || null, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
@@ -424,16 +452,19 @@
       });
     }
     static deserialize(json) {
-      const d = typeof json === "string" ? JSON.parse(json) : json;
+      let d = typeof json === "string" ? JSON.parse(json) : json;
       if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
+      d = migrate(d);
       const w = new World(d.seed);
+      w.worldId = d.worldId;
       w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
       w.rng.s = d.rng >>> 0;
       w.day = d.day;
       for (const [k, t] of Object.entries(d.towns)) if (w.towns[k]) Object.assign(w.towns[k], t, { seeded: true });
       w.events = d.events.map((e, id) => (e === 0 || e === null ? null : {
-        id, day: e[0], kind: e[1], text: e[2], actor: e[3], target: e[4], town: e[5], imp: e[6], sent: e[7], cause: e[8], secret: e[9] ?? null }));
+        id, day: e[0], kind: e[1], text: e[2], actor: e[3], target: e[4], town: e[5], imp: e[6], sent: e[7], cause: e[8], secret: e[9] ?? null, data: e[10] ?? null }));
+      w.reindexEvents();
       w.npcs = d.npcs.map((n) => ({ lover: null, outside: false, dream: null, stat: { help: 0, towns: [n.town] }, ...n, known: new Set(n.known), flags: new Set(n.flags),
         mem: n.mem.map((m) => ({ e: m[0], s: m[1], f: !!m[2], v: m[3] })).filter((m) => w.events[m.e]) }));
       for (const n of w.npcs) if (n.goal && !w.events[n.goal.origin]) n.goal = null;
@@ -555,7 +586,7 @@
     // 배운 지식은 친한 사람에게 조금씩 퍼진다
     if (n.know && n.know.length && opinion(n, m.id) >= 30 && w.rng.next() < 0.04) {
       const k = w.rng.choice(n.know);
-      if (learn(m, k)) w.record("learn", `${jo(n.name, "이/가")} ${m.name}에게 ‘${KNOW(k).name}’${jo(KNOW(k).name, "을/를").slice((KNOW(k).name).length)} 가르쳐 주었다`, { actor: n.id, target: m.id, town: n.town, imp: KNOW(k).lost ? 5 : 2, sent: 3, wr: 0.2 });
+      if (learn(m, k)) w.record("learn", `${jo(n.name, "이/가")} ${m.name}에게 ‘${KNOW(k).name}’${jo(KNOW(k).name, "을/를").slice((KNOW(k).name).length)} 가르쳐 주었다`, { actor: n.id, target: m.id, town: n.town, imp: KNOW(k).lost ? 5 : 2, sent: 3, wr: 0.2, data: { skill: k } });
     }
     // 험담: 내가 미워하는 사람에 대해 나쁜 말을 퍼뜨린다
     const hated = Object.entries(n.rel).filter(([k, v]) => v < -40 && +k !== m.id && w.npcs[+k].alive).map(([k]) => +k);
@@ -712,15 +743,15 @@
   function rJob(n, w) {
     const j = betterJob(n, w);
     if (!j) return;
-    const old = JOBS[n.job].name;
+    const old = JOBS[n.job].name, from = n.job;
     if (j.id === "farmer") {
       n.job = "farmer"; n.job_cooldown = 120;
-      w.record("career", `흉년이 닥치자 ${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 생계를 위해 밭을 갈기 시작했다`, { actor: n.id, town: n.town, imp: 3, wr: 0.3 });
+      w.record("career", `흉년이 닥치자 ${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 생계를 위해 밭을 갈기 시작했다`, { actor: n.id, town: n.town, imp: 3, wr: 0.3, data: { from, to: "farmer", why: "famine" } });
       return;
     }
     n.gold -= j.entry_cost; n.job = j.id; n.job_cooldown = 240; n.fame += 1;
     const what = j.start_text || `${jo(j.name, "이/가")} 되었다`;
-    w.record("career", `${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 모은 금화 ${j.entry_cost}닢으로 ${what}`, { actor: n.id, town: n.town, imp: 5, wr: 0.4 });
+    w.record("career", `${jo(old, "이었던/였던")} ${jo(n.name, "이/가")} 모은 금화 ${j.entry_cost}닢으로 ${what}`, { actor: n.id, town: n.town, imp: 5, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
   }
 
   function uWar(n, w) {
@@ -933,8 +964,8 @@
         p.children.push(c.id); p.rel[c.id] = 80; c.rel[p.id] = 80;
         for (const k of Object.keys(c.traits)) c.traits[k] = clamp((c.traits[k] + p.traits[k]) / 2, 0, 1);
       }
-      if (mix && race === mix.id && !seenRace(w, mix.id)) { w.racesSeen.push(mix.id); w.record("race_born", `${jo(n.name, "과/와")} ${m.name} 사이에서 이 세계 최초의 ${jo(mix.name, "이/가")} 태어났다. ${mix.bornText || "사람들은 두 종족의 피를 이은 아이를 신기하게 바라보았다"}`, { actor: n.id, target: c.id, town: n.town, imp: 8, wr: 1 }); }
-      w.record("birth", `${jo(n.name, "과/와")} ${m.name} 부부 사이에 ${jo(c.name, "이/가")} 태어났다`, { actor: n.id, target: c.id, town: n.town, imp: n.controller === "player" || m.controller === "player" ? 5 : 3, wr: 0.4, notify: [m.id] });
+      if (mix && race === mix.id && !seenRace(w, mix.id)) { w.racesSeen.push(mix.id); w.record("race_born", `${jo(n.name, "과/와")} ${m.name} 사이에서 이 세계 최초의 ${jo(mix.name, "이/가")} 태어났다. ${mix.bornText || "사람들은 두 종족의 피를 이은 아이를 신기하게 바라보았다"}`, { actor: n.id, target: c.id, town: n.town, imp: 8, wr: 1, data: { species: mix.id, parents: [n.race, m.race] } }); }
+      w.record("birth", `${jo(n.name, "과/와")} ${m.name} 부부 사이에 ${jo(c.name, "이/가")} 태어났다`, { actor: n.id, target: c.id, town: n.town, imp: n.controller === "player" || m.controller === "player" ? 5 : 3, wr: 0.4, notify: [m.id], data: { parents: [n.id, m.id], species: race } });
     }
   }
 
@@ -949,7 +980,7 @@
       text += `. 어린 시절의 원수 ${jo(w.npcs[n.goal.target].name, "을/를")} 결코 잊지 않았다`;
       imp = 6;
     }
-    w.record("adulthood", text, { actor: n.id, town: n.town, imp, cause: n.goal ? n.goal.vow : null, wr: 0.2 });
+    w.record("adulthood", text, { actor: n.id, town: n.town, imp, cause: n.goal ? n.goal.vow : null, wr: 0.2, data: { job: n.job, inherited: how === "부모의 일을 이어받아" } });
   }
 
   function immigration(w) {
@@ -1015,10 +1046,10 @@
         const ruler = w.alive().find((x) => x.title && x.title.startsWith(oldNation));
         if (ruler) { ruler.title = null; A_adjust(ruler, n.id, -60); }
         return w.record("independence", `${jo(n.name, "이/가")} ${home.name} 사람들의 뜻을 모아 ${ruler ? jo(ruler.name, "을/를") + " 몰아내고 " : ""}${oldNation}의 이름을 버리고 ‘${nationName}’${jo(nationName, "을/를").slice(nationName.length)} 새로 선포했다`,
-          { actor: n.id, target: ruler ? ruler.id : null, town: home.id, imp: 9, sent: ruler ? -10 : 0, wr: 1 });
+          { actor: n.id, target: ruler ? ruler.id : null, town: home.id, imp: 9, sent: ruler ? -10 : 0, wr: 1, data: { nation: nationName, from: oldNation, revolution: true } });
       }
       return w.record("independence", `${jo(n.name, "이/가")} ${home.name} 사람들과 함께 ${oldNation}에서 떨어져 나와 ‘${nationName}’${jo(nationName, "을/를").slice(nationName.length)} 선포했다`,
-        { actor: n.id, town: home.id, imp: 9, wr: 1 });
+        { actor: n.id, town: home.id, imp: 9, wr: 1, data: { nation: nationName, from: oldNation } });
     }
     const tname = w.rng.choice(NN.town.filter((x) => !used.has(x))) || `${n.name}의 터`;
     const near = maxBy(allTownDefs(w), (t) => -Math.hypot(t.pos[0] - site[0], t.pos[1] - site[1]));
@@ -1033,7 +1064,7 @@
     for (const x of [n, ...followers]) { w.move(x, t.id); x.home = t.id; if (!x.stat.towns.includes(t.id)) x.stat.towns.push(t.id); }
     t.food += followers.length * 10 + n.gold * 0.3; n.gold *= 0.5;
     const ev = w.record("nation_founded", `${jo(n.name, "이/가")} ${followers.length}명의 동료와 함께 ${jo(old, "을/를")} 떠나, 빈 땅에 ‘${nationName}’${jo(nationName, "을/를").slice(nationName.length)} 세웠다. 첫 마을의 이름은 ${tname}이다`,
-      { actor: n.id, town: t.id, imp: 9, wr: 0, notify: w.alive().filter((x) => x.follows === n.id).map((x) => x.id) });
+      { actor: n.id, town: t.id, imp: 9, wr: 0, notify: w.alive().filter((x) => x.follows === n.id).map((x) => x.id), data: { nation: nationName, town: t.id, followers: followers.length } });
     for (const x of w.alive()) if (x.follows === n.id && x.controller !== "player") x.follows = null;
     if (w.onMapChange) w.onMapChange();
     return ev;
@@ -1050,10 +1081,10 @@
       const cands = w.alive().filter((n) => isAdult(n) && n.controller !== "player" && !n.at_war && n.jail === 0 && !n.role && !n.title && !n.pioneer && (!j.emerge.fit || j.emerge.fit(n, w)) && (!j.emerge.know || knows(n, j.emerge.know)));
       const n = maxBy(cands, (x) => x.traits.ambition + w.rng.next() * 0.5);
       if (!n) continue;
-      const old = JOBS[n.job].name;
+      const old = JOBS[n.job].name, from = n.job;
       n.job = j.id; n.job_cooldown = 200; n.fame += 3; n.pioneer = j.id;
       w.jobsOpen.push(j.id);
-      w.record("job_born", j.emerge.text(n, w, old), { actor: n.id, town: n.town, imp: 7, wr: 0.8 });
+      w.record("job_born", j.emerge.text(n, w, old), { actor: n.id, town: n.town, imp: 7, wr: 0.8, data: { job: j.id, from } });
     }
   }
   /** 이 세계에 나타난 종족들 (숨은 종족·혼혈 종족은 처음 나타나야 목록에 든다) */
@@ -1285,6 +1316,7 @@
 
   function newWorld(seed, name) {
     const w = new World(seed);
+    w.worldId = newWorldId(seed);
     if (name) w.name = name;
     w.populate();
     initWar(w);
@@ -1306,6 +1338,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, migrate, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);
