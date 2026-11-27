@@ -185,13 +185,50 @@
   const sharedSkills = (n) => knownSkills(n).filter((k) => n.skills[k].from !== "job");
   /** 직업을 바꾼다. 새 직업이 가르치는 기술을 익힌다(이전 직업에서 익힌 것은 그대로 남는다) */
   function setJob(n, id) { n.job = id; for (const k of (JOBS[id] && JOBS[id].teaches) || []) learn(n, k, "job"); }
+  /* ---------------------------------------------------------------- 업무와 조작 부품
+   * 업무(work)는 단계(steps)의 나열이고, 단계는 조작 부품(tool) 하나와 그 값(p)이다. 함수가 없어 저장할 수 있다.
+   *   { id, job, name, place, mins, energy, needs, gives, skill, steps: [{ name, tool, p, w }] }
+   * 조작 부품은 두 얼굴을 가진다.
+   *   - 자동(TOOL_AUTO, 여기): 주민이 일할 때, 플레이어가 '맡기기'를 고를 때 점수를 계산한다
+   *   - 조작 화면(sims.js의 Sims.register): 플레이어가 직접 한다
+   * 둘 다 있는 부품만 쓰는 업무가 '준비된' 업무다. 플레이어에게는 준비된 업무가 있는 직업만 열린다. */
+  const TOOL_AUTO = {};
+  /** 조작 부품의 자동 점수 모델을 더한다: (p, lv, rng, n) → 0~1 */
+  function registerTool(id, auto) { TOOL_AUTO[id] = auto; }
+  const baseAuto = (hard) => (p, lv, rng, n) => clamp(0.32 + 0.12 * lv - (p && p.hard || hard) + (rng.next() + rng.next() - 1) * 0.18 + (n ? (n.traits.ambition - 0.5) * 0.06 : 0), 0, 1);
+  for (const [id, hard] of Object.entries({ gauge: 0.05, rhythm: 0.08, timing: 0.06, measure: 0.04, trace: 0.1, grind: 0.05 })) registerTool(id, baseAuto(hard));
+  /** 품질 단계: 점수(0~1) → 이름·결과 배수 */
+  const GRADES = [{ id: "rough", name: "거친", at: 0, mult: 0.5 }, { id: "plain", name: "보통", at: 0.4, mult: 1 }, { id: "good", name: "좋은", at: 0.7, mult: 1.25 }, { id: "master", name: "걸작", at: 0.9, mult: 1.5 }];
+  const gradeOf = (q) => GRADES.filter((g) => q >= g.at).pop();
+  const stepsOf = (wk) => wk.steps || [];
+  const toolsOf = (wk) => [...new Set(stepsOf(wk).map((s) => s.tool))];
+  /** 이 업무에 쓰는 솜씨 단계: 업무의 기술, 없으면 직업 기술 중 가장 높은 것 */
+  function workLv(n, wk) {
+    if (wk.skill) return Math.max(1, skillLv(n, wk.skill));
+    const t = (JOBS[wk.job] && JOBS[wk.job].teaches) || [];
+    return t.length ? Math.max(1, ...t.map((k) => skillLv(n, k))) : 1;
+  }
+  /** 단계별 점수 → 전체 품질 (단계의 무게 w, 기본 1) */
+  function workQuality(wk, scores) {
+    const st = stepsOf(wk); let sum = 0, tw = 0;
+    st.forEach((s, i) => { const wt = s.w || 1; sum += (scores[i] || 0) * wt; tw += wt; });
+    return tw ? sum / tw : 0.5;
+  }
+  /** 자동으로 한 단계씩 점수를 낸다 (주민, 맡기기). 부품이 없으면 null */
+  function autoScores(n, wk, rng, penalty = 0) {
+    const lv = workLv(n, wk);
+    return stepsOf(wk).map((s) => (TOOL_AUTO[s.tool] ? clamp(TOOL_AUTO[s.tool](s.p || {}, lv, rng, n) - penalty, 0, 1) : null));
+  }
+  const workAutoReady = (wk) => toolsOf(wk).every((t) => TOOL_AUTO[t]);
+
   /** 이 직업이 하는 일 목록. 일터(place)는 따로 적지 않으면 직업의 일터 */
   function worksOf(jobId) {
     const j = JOBS[jobId];
     if (!j) return [];
     const place = j.workplace || "square";
-    const list = CONTENT.works.filter((x) => x.job === jobId).map((x) => ({ place, mins: 240, energy: 20, sim: "shift", ...x }));
-    if (!list.some((x) => x.sim === "shift")) list.unshift({ id: "shift_" + jobId, job: jobId, name: "반나절 일하기", place, mins: 240, energy: 20, sim: "shift", hint: `${jo(j.name, "으로/로")}서 일한다` });
+    const list = CONTENT.works.filter((x) => x.job === jobId).map((x) => ({ place, mins: 240, energy: 20, sim: x.steps ? "steps" : "shift", ...x }));
+    if (j.shift !== false && !list.some((x) => x.sim === "shift")) list.unshift( // shift: false면 기본 일을 붙이지 않는다 (업무가 준비돼야만 열리는 직업)
+      { id: "shift_" + jobId, job: jobId, name: "반나절 일하기", place, mins: 240, energy: 20, sim: "shift", hint: `${jo(j.name, "으로/로")}서 일한다` });
     return list;
   }
   /** 직업 솜씨: 직업이 가르치는 기술 중 가장 높은 단계. 수입에 곱한다 */
@@ -651,6 +688,18 @@
     const job = JOBS[n.job], town = w.towns[n.town];
     let earn = w.rng.uniform(job.income[0], job.income[1]) * jobDemand(w, job, n.town) * mastery(n);
     for (const k of job.teaches || []) addXp(n, k, 1); // 일할수록 솜씨가 는다
+    // 단계가 있는 업무를 하는 직업은 플레이어와 같은 단계를 거친다 (점수는 솜씨·성격으로 계산). 품질이 벌이와 이름을 정한다
+    const crafts = n.controller === "player" ? [] : worksOf(n.job).filter((x) => x.steps && workAutoReady(x));
+    if (crafts.length) {
+      const wk = w.rng.choice(crafts), q = workQuality(wk, autoScores(n, wk, w.rng)), g = gradeOf(q);
+      earn *= 0.6 + 0.6 * q;
+      if (wk.skill) addXp(n, wk.skill, 1);
+      n.lastWork = { id: wk.id, q: Math.round(q * 100) / 100, day: w.day };
+      if (g.id === "master" && w.rng.next() < 0.15) {
+        n.fame += 1;
+        w.record("masterwork", `${jo(n.name, "이/가")} ${wk.name}에서 걸작을 내놓았다. 솜씨가 소문났다`, { actor: n.id, town: n.town, imp: 3, wr: 0.2, data: { work: wk.id, q: Math.round(q * 100) / 100 } });
+      }
+    }
     if (job.war_bonus && w.war.active) earn *= 1 + job.war_bonus;
     if (job.food) town.food += job.food * (job.seasonal ? w.harvestMult() : 1);
     if (job.trader) {
@@ -1175,6 +1224,8 @@
   // ================================================================ 콘텐츠 맞추기
   /** 새로 더해진 마을에 사람을 채우고, 이름이 정해진 주민(CONTENT.npcs)을 세계에 들인다. 저장된 세계를 불러올 때도 불린다. */
   function syncContent(w, silent = false) {
+    // 직업에 새 기술이 더해졌으면(콘텐츠 갱신) 그 직업 사람들도 익힌다
+    for (const n of w.npcs) if (n.alive && isAdult(n)) for (const k of (JOBS[n.job] && JOBS[n.job].teaches) || []) if (!knows(n, k)) learn(n, k, "job");
     for (const t of Object.values(w.towns)) {
       if (t.seeded) continue;
       t.seeded = true;
@@ -1618,6 +1669,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, worksOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, worksOf, registerTool, TOOL_AUTO, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

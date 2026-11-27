@@ -414,9 +414,22 @@ function renderEp(ep) {
 
 // ------------------------------------------------------------ 건물
 function openMenu(pl) { if (busy()) return; path = []; keys.clear(); bmenu = { pl, result: null, pick: null }; renderTalk(); }
-function closeMenu() { bmenu = null; renderTalk(); renderAll(); refocus(); }
+function closeMenu() { if (window.Sims) Sims.stop(); bmenu = null; renderTalk(); renderAll(); refocus(); }
 function renderMenu() {
   const pl = bmenu.pl, p = W.player;
+  if (bmenu.pick === "sim") { // 업무 조작 화면: 진행 중에는 다시 그리지 않는다
+    if (window.Sims && Sims.running() && $("#talk .simwrap")) return;
+    const wk = bmenu.sim, host = h("div", { class: "simwrap" });
+    $("#talk").hidden = false;
+    $("#talk").replaceChildren(h("div", { class: "main full" }, host));
+    Sims.run(host, wk, A.workLv(p, wk), (res) => {
+      if (!bmenu) return;
+      bmenu.pick = null; bmenu.sim = null;
+      if (res) { const r = G.finishWork(W, pl, wk.id, res.auto ? null : res.scores); bmenu.result = r.text; }
+      renderMenu(); renderHotbar(true); renderHud(); refocus();
+    });
+    return;
+  }
   const inv = pl.kind === "house" ? G.inviteAt(W, G.MAP.buildings[pl.b]) : null;
   const name = pl.kind === "inn" && p.home === pl.town ? "내 집" : inv ? `${W.npcs[inv.to].name}의 집` : pl.kind === "house" ? "주민의 집" : pl.name;
   const placeIcon = window.itemIcon({ tavern: "meal", forge: "axe", temple: "potion", guild: "sword", market: "old_coin", inn: "bread", fields: "wheat", camp: "spear", station: "table", house: "chair" }[pl.kind] || "chair", 44);
@@ -440,8 +453,9 @@ function renderMenu() {
       if (r.board) { bmenu.pick = "board"; renderMenu(); return; }
       if (r.craft) { bmenu = null; renderTalk(); openWin("craft"); return; }
       if (r.report) { bmenu.pick = "report"; renderMenu(); return; }
+      if (r.sim) { bmenu.pick = "sim"; bmenu.sim = r.sim; bmenu.result = null; renderMenu(); return; }
       bmenu.result = r.text; renderMenu(); renderHotbar(true); renderHud();
-    } }, h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, v.label), h("span", null, v.ok ? `${v.hint || ""}${v.min ? ` · ${v.min >= 60 ? v.min / 60 + "시간" : v.min + "분"}` : ""}` : v.why || "지금은 할 수 없다")));
+    } }, h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, v.label), h("span", null, v.ok ? `${v.hint || ""}${v.min ? ` · ${v.min >= 60 ? Math.floor(v.min / 60) + "시간" + (v.min % 60 ? ` ${v.min % 60}분` : "") : v.min + "분"}` : ""}` : v.why || "지금은 할 수 없다")));
     opts.push(h("button", { class: "opt", type: "button", onclick: closeMenu }, h("b", null, "나가기")));
   }
   $("#talk").replaceChildren(

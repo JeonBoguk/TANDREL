@@ -1278,7 +1278,8 @@
     if (o === O.ROCK) {
       if (!forageReady(w, x, y)) return "쓸 만한 돌멩이는 다 주웠다.";
       const k = w.rng.randint(1, 2); e.picked[i] = w.day; give(w, "stone", k, "바위 둘레에서 줍기"); spend(w, 6, 2);
-      return `바위 둘레에서 돌멩이 ${k}개를 주웠다.`;
+      const extra = Object.entries(ITEMS).filter(([, it]) => it.foundAt === "rock" && w.rng.next() < (it.chance || 0.05)).map(([id]) => { give(w, id, 1, "바위 둘레에서 줍기"); return ITEMS[id].name; }); // 팩의 아이템: foundAt·chance
+      return `바위 둘레에서 돌멩이 ${k}개를 주웠다.${extra.length ? ` ${extra.join(", ")}도 하나 나왔다!` : ""}`;
     }
     if (!REGROW[o]) return null;
     if (!forageReady(w, x, y)) return o === O.APPLE ? (["여름", "가을"].includes(w.season) ? "아직 열매가 다시 열리지 않았다." : "지금은 사과가 열리는 철이 아니다.") : "아직 거둘 게 없다.";
@@ -1373,18 +1374,41 @@
       rWork(p, w);
       return `열심히 일해 금화 ${(p.gold - g0).toFixed(1)}닢을 벌었다.${town.food > f0 + 0.5 ? ` 곳간에 식량 ${jo(String(Math.round(town.food - f0)), "을/를")} 보탰다.` : ""}`;
     },
-    make(w, wk, { town }) {
-      const p = w.player;
-      for (const [id, n] of Object.entries(wk.needs || {})) take(w, id, n);
-      const lv = wk.skill ? Math.max(1, A.skillLv(p, wk.skill)) : 1, got = [];
-      for (const [id, n] of Object.entries(wk.gives || {})) { const k = n + Math.floor(n * 0.25 * (lv - 1)); give(w, id, k, wk.name, town.name); got.push(`${ITEMS[id].name} ${k}개`); }
-      if (wk.skill) A.addXp(p, wk.skill, 2);
-      return `${wk.name}: ${got.join(", ")}를 만들었다.${lv >= 2 ? ` (${A.SKILL_LV_NAME[lv]}한 솜씨)` : ""}`;
-    },
+    make(w, wk, { town }) { return finishWork(w, null, wk, null, "plain", town).text; },
+    // 단계가 있는 업무: 화면에서 조작한다. 여기서는 시작만 알리고, 끝나면 finishWork가 결과를 낸다
+    steps: () => null,
   };
   function registerSim(id, fn) { SIMS[id] = fn; }
-  /** 플레이어가 이 직업을 가질 수 있는가: 등록된 처리로 할 수 있는 일이 하나는 있어야 한다 */
-  const jobReady = (j) => A.worksOf(j.id).some((x) => SIMS[x.sim]);
+  /* 조작 부품의 손(플레이어 조작 화면). sims.js가 Sims.register로 채운다. 엔진의 자동 모델(A.TOOL_AUTO)과 둘 다 있어야 쓸 수 있다 */
+  const HANDS = {};
+  function registerHand(id, impl) { HANDS[id] = impl; }
+  const toolReady = (t) => !!(HANDS[t] && A.TOOL_AUTO[t]);
+  const workReady = (wk) => !!SIMS[wk.sim] && (!wk.steps || A.toolsOf(wk).every(toolReady));
+  /** 플레이어가 이 직업을 가질 수 있는가: 준비된 업무가 하나는 있어야 한다 */
+  const jobReady = (j) => A.worksOf(j.id).some(workReady);
+  /** 업무를 마친다. scores: 단계별 점수(직접 조작) 또는 null(맡기기 → 자동, 조금 서툴다). grade를 직접 주면 단계 없이 그 품질로 */
+  function finishWork(w, pl, wk, scores, grade, townArg) {
+    const p = w.player, town = townArg || w.towns[pl.town];
+    if (typeof wk === "string") wk = A.worksOf(p.job).find((x) => x.id === wk);
+    if (!wk) return { text: "할 수 없는 일이다" };
+    const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n));
+    if (lack.length) return { text: "재료가 모자라다" };
+    const auto = !scores && !grade;
+    if (auto) scores = A.autoScores(p, wk, w.rng, 0.12);
+    const q = grade ? A.GRADES.find((g) => g.id === grade).at + 0.05 : A.workQuality(wk, scores), g = A.gradeOf(q);
+    for (const [id, n] of Object.entries(wk.needs || {})) take(w, id, n);
+    const got = [];
+    for (const [id, n] of Object.entries(wk.gives || {})) { const k = Math.max(1, Math.round(n * g.mult)); give(w, id, k, wk.name, town.name); got.push(`${ITEMS[id].name} ${k}개`); }
+    if (wk.skill) A.addXp(p, wk.skill, 2 + Math.round(q * 4));
+    ext(w).works = ext(w).works || {}; const rec = ext(w).works[wk.id] || (ext(w).works[wk.id] = { n: 0, best: 0 }); rec.n++; rec.best = Math.max(rec.best, Math.round(q * 100) / 100);
+    if (g.id === "master") {
+      p.fame += 1;
+      w.record("masterwork", `${jo(p.name, "이/가")} ${wk.name}에서 걸작을 내놓았다`, { actor: p.id, town: town.id, imp: 3, wr: 0.2, data: { work: wk.id, q: Math.round(q * 100) / 100 } });
+    }
+    const text = `${wk.name}${auto ? "(손에 익은 대로)" : ""}: ${g.name} 솜씨로 ${got.join(", ")}${got.length ? "를 만들었다" : "를 마쳤다"}.`;
+    if (pl) return finish(w, text, wk.mins, wk.energy);
+    return { text, q, grade: g };
+  }
 
   // ================================================================ 건물 안에서
   function seedsOnSale(w) { return Object.entries(CROPS).filter(([, c]) => c.seasons.includes(w.season)).map(([k]) => SEED_OF[k]); }
@@ -1402,9 +1426,8 @@
     }
     for (const wk of A.worksOf(p.job).filter((x) => x.place === pl.kind)) {
       const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n)).map(([id, n]) => `${ITEMS[id].name} ${n - (e.inv[id] || 0)}`);
-      const hrs = wk.mins % 60 ? `${Math.floor(wk.mins / 60)}시간 ${wk.mins % 60}분` : `${wk.mins / 60}시간`;
-      add({ id: "wk:" + wk.id, label: `${wk.name} (${hrs})`, min: wk.mins, e: wk.energy, hint: [wk.hint, wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
-        ok: !!SIMS[wk.sim] && !lack.length, why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : "아직 할 수 없는 일이다", work: wk });
+      add({ id: "wk:" + wk.id, label: wk.steps ? `${wk.name} · ${wk.steps.length}단계` : wk.name, min: wk.mins, e: wk.energy, hint: [wk.hint, wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
+        ok: workReady(wk) && !lack.length, why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : "아직 할 수 없는 일이다", work: wk });
     }
     const jobsHere = A.CONTENT.jobs.filter((j) => (j.workplace || "square") === pl.kind && w.jobOpen(j.id) && jobReady(j)).map((j) => j.id);
     for (const j of jobsHere) if (j !== p.job) {
@@ -1523,6 +1546,7 @@
     if (!def || !def.ok) return { text: def && def.why ? def.why : "지금은 할 수 없다" };
     const town = w.towns[pl.town];
     let text = "";
+    if (id.startsWith("wk:") && def.work.steps) return { sim: def.work }; // 조작 화면을 연다 (ui → Sims.run → finishWork)
     if (id.startsWith("wk:")) {
       text = SIMS[def.work.sim](w, def.work, { town, pl });
     } else if (id.startsWith("job:")) {
@@ -1659,7 +1683,7 @@
   }
 
   const G = {
-    SIMS, registerSim, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,

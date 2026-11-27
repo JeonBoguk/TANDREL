@@ -54,8 +54,8 @@
         likes: "dish", ask: ["mushroom", 4, "오늘 특선 요리에 쓸 버섯이 모자라요."],
         talk: { 봄: "봄나물이 올라오면 국물이 달라져요. 손님들이 금방 알아채요.", 여름: "더울 땐 시원한 걸 찾죠. 딸기를 얹은 디저트가 잘 나가요.", 가을: "가을은 요리사의 계절이에요. 호박 수프 냄새 맡아 봤어요?", 겨울: "추운 날엔 다들 스튜를 찾아요. 고기가 늘 모자라요." } },
       // 옛 직업이 가르칠 수 있는 지식 (같은 id면 기존 정의에 덧붙는다)
-      { id: "farmer", teaches: ["farming_tools", "weaving"] }, { id: "blacksmith", teaches: ["farming_tools", "woodwork"] },
-      { id: "merchant", teaches: ["weaving"] }, { id: "alchemist", teaches: ["herbal"] }, { id: "priest", teaches: ["herbal"] },
+      { id: "farmer", teaches: ["farming_tools", "weaving"] }, { id: "blacksmith", teaches: ["farming_tools", "woodwork", "smithing"] },
+      { id: "merchant", teaches: ["weaving"] }, { id: "alchemist", teaches: ["herbal"] }, { id: "priest", teaches: ["herbal"] }, { id: "baker", teaches: ["baking"] }, { id: "cook", teaches: ["cooking"] },
       // ---------------------------------------------------------- 수요가 생기면 나타나는 직업 (emerge). 누가 언제 처음 시작하느냐는 세계마다 다르다
       { id: "builder", teaches: ["woodwork"], needKnow: "woodwork", name: "목수", income: [2.0, 5.0], entry_cost: 30, weight: 0.7, color: "#a0703a", icon: "🔨", workplace: "guild", look: { hat: "cap", apron: "#7a5230" },
         emerge: { demand: (w) => ((w.founded || []).length >= 1 ? 1 : 0) + A.recent(w, ["marriage"], 120) / 6 + w.alive().filter((n) => n.gold > 150).length / 12, know: "woodwork",
@@ -104,13 +104,38 @@
       scroll_dragon: { name: "알 수 없는 문자의 두루마리", icon: "📜", teaches: "dragon_tongue", sell: 50 },
     },
     /* 만들기. station 없음 = 맨손으로 어디서나, "home" = 내 집 앞, "workbench" = 내 집 작업대 */
-    /* 직업의 일 (건물 메뉴에 나온다). sim: shift = 반나절 일해 품삯·식량, make = 재료로 물건을 만든다(솜씨가 좋을수록 더 나온다) */
+    /* 직업의 업무 (일터 건물 메뉴에 나온다). steps의 tool은 조작 부품:
+     *   gauge   불·온도 지키기: 누르고 있으면 오르고 떼면 내린다. 표시 구간 안에 오래 머물수록 좋다 (p: zone[아래,위], secs)
+     *   rhythm  박자 맞추기: 내려오는 표시가 선에 닿을 때 누른다 (p: beats, bpm)
+     *   timing  때 맞추기: 움직이는 바늘을 한 번에 멈춘다 (p: zone[아래,위], speed)
+     *   measure 계량: 누르고 있으면 차오른다. 목표에 가깝게 떼되 넘치면 안 된다 (p: target, speed)
+     *   trace   선 따라가기: 끌어서 선을 따라 자른다 (p: shape: "line"|"arc"|"zigzag")
+     *   grind   연마: 좌우를 번갈아 눌러 고르게 간다 (p: n, secs)
+     * w는 단계의 무게(품질에 미치는 몫). 단계가 없는 업무는 '반나절 일하기'처럼 바로 끝난다(sim: shift) */
     works: [
-      { id: "fields_help", job: "farmer", name: "공동 밭일 거들기", sim: "shift", hint: "마을 곳간을 채우고 품삯을 받는다" },
-      { id: "bake", job: "baker", name: "빵 굽기", mins: 120, energy: 8, needs: { wheat: 2 }, gives: { bread: 3 }, sim: "make", hint: "밀로 빵을 굽는다" },
-      { id: "stew", job: "cook", name: "스튜 끓이기", mins: 90, energy: 6, needs: { meat: 1, turnip: 1 }, gives: { meal: 2 }, sim: "make", hint: "고기와 순무로 스튜를 끓인다" },
-      { id: "brew_salve", job: "alchemist", name: "연고 달이기", mins: 90, energy: 6, needs: { herb: 2, fiber: 1 }, gives: { salve: 2 }, skill: "herbal", sim: "make", hint: "약초로 연고를 달인다" },
-      { id: "forge_hoe", job: "blacksmith", name: "괭이 벼리기", mins: 120, energy: 12, needs: { wood: 2, stone: 3 }, gives: { hoe: 1 }, skill: "farming_tools", sim: "make", hint: "대장간 불로 괭이를 벼린다" },
+      { id: "fields_help", job: "farmer", name: "공동 밭일 거들기", hint: "마을 곳간을 채우고 품삯을 받는다" },
+      { id: "forge_hoe", job: "blacksmith", name: "괭이 벼리기", mins: 120, energy: 14, needs: { wood: 2, stone: 3 }, gives: { hoe: 1 }, skill: "smithing", hint: "대장간 불로 괭이를 벼린다",
+        steps: [{ name: "가열", tool: "gauge", p: { zone: [0.62, 0.8], secs: 5, label: "쇠의 빛깔" } },
+          { name: "망치질", tool: "rhythm", p: { beats: 8, bpm: 92 }, w: 1.5 },
+          { name: "담금질", tool: "timing", p: { zone: [0.7, 0.82], speed: 1.1, label: "물에 담글 때" } }] },
+      { id: "forge_axe", job: "blacksmith", name: "도끼 벼리기", mins: 150, energy: 16, needs: { wood: 2, stone: 4 }, gives: { axe: 1 }, skill: "smithing", hint: "날이 선 도끼를 만든다",
+        steps: [{ name: "가열", tool: "gauge", p: { zone: [0.66, 0.82], secs: 6, label: "쇠의 빛깔" } },
+          { name: "망치질", tool: "rhythm", p: { beats: 10, bpm: 100 }, w: 1.5 },
+          { name: "날 세우기", tool: "grind", p: { n: 16, secs: 6 } },
+          { name: "담금질", tool: "timing", p: { zone: [0.72, 0.82], speed: 1.2, label: "물에 담글 때" } }] },
+      { id: "bake", job: "baker", name: "빵 굽기", mins: 120, energy: 8, needs: { wheat: 2 }, gives: { bread: 3 }, skill: "baking", hint: "밀로 빵을 굽는다",
+        steps: [{ name: "계량", tool: "measure", p: { target: 0.7, speed: 0.5, label: "밀가루" } },
+          { name: "반죽", tool: "rhythm", p: { beats: 8, bpm: 80 } },
+          { name: "발효", tool: "gauge", p: { zone: [0.4, 0.6], secs: 5, label: "따뜻함" } },
+          { name: "굽기", tool: "timing", p: { zone: [0.6, 0.74], speed: 0.8, label: "꺼낼 때" }, w: 1.5 }] },
+      { id: "stew", job: "cook", name: "스튜 끓이기", mins: 90, energy: 6, needs: { meat: 1, turnip: 1 }, gives: { meal: 2 }, skill: "cooking", hint: "고기와 순무로 스튜를 끓인다",
+        steps: [{ name: "손질", tool: "rhythm", p: { beats: 8, bpm: 110 } },
+          { name: "불 조절", tool: "gauge", p: { zone: [0.45, 0.65], secs: 6, label: "불 세기" }, w: 1.5 },
+          { name: "간 맞추기", tool: "measure", p: { target: 0.45, speed: 0.4, label: "소금" } }] },
+      { id: "brew_salve", job: "alchemist", name: "연고 달이기", mins: 90, energy: 6, needs: { herb: 2, fiber: 1 }, gives: { salve: 2 }, skill: "herbal", hint: "약초로 연고를 달인다",
+        steps: [{ name: "빻기", tool: "grind", p: { n: 14, secs: 5 } },
+          { name: "계량", tool: "measure", p: { target: 0.55, speed: 0.45, label: "기름" } },
+          { name: "달이기", tool: "gauge", p: { zone: [0.5, 0.66], secs: 6, label: "불 세기" }, w: 1.5 }] },
     ],
     recipes: [
       { id: "stone_axe", out: "stone_axe", needs: { branch: 3, stone: 2, fiber: 3 }, mins: 30, energy: 4, hint: "나무를 벨 수 있다" },
@@ -325,6 +350,10 @@
      * lost(비술)는 아무도 모른다: 유적·흙더미의 두루마리, 적의 땅, 또는 위기 속의 깨달음으로만 세상에 나온다. 아는 사람은 친구에게 퍼뜨린다. */
     knowledge: [
       { id: "farming_tools", name: "농기구 만들기", desc: "괭이와 물뿌리개를 만든다" },
+      // 직업의 손기술: 그 직업으로 일하며 익히고, 업무의 품질을 정한다
+      { id: "smithing", name: "대장일", desc: "쇠를 달구고 두드려 연장을 벼린다" },
+      { id: "baking", name: "제빵", desc: "반죽을 빚고 알맞게 구워 낸다" },
+      { id: "cooking", name: "요리", desc: "재료를 손질하고 불을 다뤄 음식을 낸다" },
       // practice: 같은 일을 n번 거듭하면 혼자서도 깨우친다
       { id: "woodwork", name: "목공", desc: "나무 가구를 짜고, 목수가 될 수 있다", practice: { stat: "chop", n: 12, text: "나무를 베고 다듬기를 거듭하다 보니 나뭇결을 읽는 법이 보였다." } },
       { id: "weaving", name: "짜기", desc: "풀섬유로 바구니와 깔개를 짠다", practice: { stat: "fiber", n: 30, text: "풀을 꼬고 엮다 보니 손이 저절로 움직인다." } },

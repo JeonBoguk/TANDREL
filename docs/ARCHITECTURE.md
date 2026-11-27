@@ -5,8 +5,9 @@
 ```
 engine.js ─ Asteria      세계 상태(World)·주민·하루 흐름·사건 기록·저장 형식
 content.js ─ (extend)     기본 콘텐츠 팩
-pack-*.js  ─ (extend)     추가 콘텐츠 팩 (예: pack-greenhill.js = 도토리골 마을과 양봉가)
-game.js    ─ Game        타일 지도·이동·충돌·아이템·만들기·농사·사냥·건물 메뉴·범죄·공사·도감
+pack-*.js  ─ (extend)     추가 콘텐츠 팩 (예: pack-greenhill.js = 도토리골 마을과 양봉가, pack-jeweler.js = 세공사)
+game.js    ─ Game        타일 지도·이동·충돌·아이템·만들기·농사·사냥·건물 메뉴·범죄·공사·도감·업무 마무리
+sims.js    ─ Sims        업무 조작 화면: 조작 부품(손)과 단계 진행기
 story.js   ─ Story       대화 선택지·미션·신문·에피소드
 test.js    ─ AsteriaTest 시나리오 테스트 (세계 복사본에서 실행)
 art16.js   ─ Art16       도트 키트 (art/ 폴더를 bundle_art.py로 묶은 것)
@@ -37,6 +38,12 @@ Asteria.extend({
 
 - 저장된 세계에도 새 마을·주민이 들어온다(`syncContent`).
 - 직업의 `look.hat`은 인물 그림의 모자 조각으로 이어진다 (`render.js`의 `HAT16`). 새 모자는 `art/person16.js`의 `HATS`에.
+- 업무(works)는 단계의 나열이다: `steps: [{ name, tool, p, w }]`. `tool`은 조작 부품으로, 두 얼굴이 모두 있어야 쓸 수 있다.
+  - 자동 점수: engine.js `Asteria.registerTool(id, (p, lv, rng, n) => 0~1)` (주민이 일할 때, 플레이어가 맡길 때)
+  - 조작 화면: sims.js `Sims.register(id, { name, how, play(ctx) })` (플레이어가 직접)
+  - 단계 점수의 가중 평균이 품질(`GRADES`: 거친·보통·좋은·걸작)이 되고, 결과 수량·솜씨 경험·소식에 반영된다(`Game.finishWork`).
+  - 직업에 `shift: false`를 두면 기본 '반나절 일하기'가 붙지 않아, 업무의 부품이 모두 준비돼야만 플레이어에게 열린다(`Game.jobReady`).
+  - 새 직업은 팩 하나로 더할 수 있다: `game/pack-jeweler.js`가 예. 아이템의 `foundAt: "rock"`, `chance`로 바위에서 나오게 할 수 있다. 직업 그림은 `look.hat`·`look.prop`.
 - 직업의 일은 `works`에 적는다. `sim`은 처리 이름으로, game.js의 `SIMS` 등록표(`shift`: 반나절 일하기, `make`: 재료 → 물건)에 있어야 한다. 새 처리는 `Game.registerSim(id, (w, work, {town, pl}) => 결과 문장)`. 처리가 등록된 일이 없는 직업은 플레이어에게 열리지 않는다(`Game.jobReady`). 목록은 `Asteria.worksOf(직업)`.
 - 직업별로 손에 드는 것은 `render.js`의 `PROP16`.
 

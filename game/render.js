@@ -280,7 +280,7 @@
       over: L.apron ? "apron" : null, apron: L.apron ? ramp3(L.apron) : null,
       bottom: !robe && !L.kid && hash(n.id, 6, 9) < 0.3 ? "skirt" : "pants",
       hat, hatPal: hat && ["cap", "bandana", "wizard", "hood", "beanie"].includes(hat) ? ramp3(L.cloth) : null,
-      prop: L.kid ? null : PROP16[n.job] || (job.fighter ? "sword" : null),
+      prop: L.kid ? null : jl.prop || PROP16[n.job] || (job.fighter ? "sword" : null),
       ears: L.ears, horns: !!L.horns, tail: !!L.tail, beard: !!L.beard,
     };
   }

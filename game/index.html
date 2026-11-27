@@ -123,6 +123,14 @@ canvas.icon { image-rendering: pixelated; flex: none; vertical-align: middle; }
 .opt span { font-size: var(--fs-1); color: var(--text-2); display: block; line-height: 1.4; }
 .opt .k { display: inline; color: var(--text-3); margin-right: 6px; font-size: var(--fs-1); }
 .opt.harm b { color: var(--danger); }
+.talk .main.full { grid-column: 1 / -1; }
+.simwrap { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; user-select: none; -webkit-user-select: none; }
+.simhead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.simhead .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.simhead .chip.done { color: var(--text-3); }
+.simbody { display: flex; flex-direction: column; align-items: center; gap: 8px; touch-action: none; }
+.simcv { display: block; border-radius: var(--r1); }
+.simfoot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .opt.quest b { color: var(--accent); }
 .opt[disabled] { opacity: 0.45; cursor: default; }
 
@@ -378,7 +386,9 @@ button.chip:hover, button.need:hover { border-color: var(--accent); }
 <script src="engine.js"></script>
 <script src="content.js"></script>
 <script src="pack-greenhill.js"></script>
+<script src="pack-jeweler.js"></script>
 <script src="game.js"></script>
+<script src="sims.js"></script>
 <script src="story.js"></script>
 <script src="test.js"></script>
 <script src="art16.js"></script>

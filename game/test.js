@@ -247,32 +247,46 @@
       const w3 = A.World.deserialize(old); G.setup(w3);
       t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
     } },
-    { id: "works", name: "직업마다 일터에서 하는 일이 있고, 솜씨가 좋을수록 많이 만든다", run(t) {
+    { id: "works", name: "직업의 업무는 단계(조작 부품)로 이뤄지고, 주민도 같은 단계를 거친다", run(t) {
       const W = t.w, p = t.p(), fields = t.placeOf("fields"), market = t.placeOf("market");
       A.setJob(p, "farmer"); t.standAt(fields.x, fields.y);
       const fm = G.buildingMenu(W, fields), ids = fm.map((v) => v.id);
       t.check(ids.length === new Set(ids).size && fm.filter((v) => v.work).length === 1, `밭의 일: ${fm.filter((v) => v.work).map((v) => v.label).join(", ")}`);
       p.energy = 100; const g0 = p.gold, r0 = G.doBuilding(W, fields, "work");
       t.check(p.gold > g0, `예전 이름(work)으로도 일한다: ${r0.text}`);
+      // 빵 굽기: 계량 → 반죽 → 발효 → 굽기
       A.setJob(p, "baker"); t.standAt(market.x, market.y); p.energy = 100;
+      const bake = A.worksOf("baker").find((x) => x.id === "bake");
+      t.check(bake.steps.map((s) => s.name).join("·") === "계량·반죽·발효·굽기" && G.workReady(bake), "빵 굽기는 네 단계, 모든 조작 부품이 준비됨");
       t.check(!G.buildingMenu(W, market).find((v) => v.id === "wk:bake").ok, "밀이 없으면 빵을 못 굽는다");
-      G.give(W, "wheat", 2); const b0 = t.e().inv.bread || 0, r1 = G.doBuilding(W, market, "wk:bake");
-      t.check((t.e().inv.bread || 0) - b0 === 3 && !t.e().inv.wheat, r1.text);
-      // 솜씨: 연고 달이기 (약초학 숙련이면 2 → 3개)
-      const temple = t.placeOf("temple");
-      if (temple) {
-        A.setJob(p, "alchemist"); t.standAt(temple.x, temple.y); p.energy = 100;
-        for (let i = 0; i < 400; i++) A.addXp(p, "herbal", 1);
-        G.give(W, "herb", 2); G.give(W, "fiber", 1); const s0 = t.e().inv.salve || 0, r2 = G.doBuilding(W, temple, "wk:brew_salve");
-        t.check((t.e().inv.salve || 0) - s0 === 3, `${r2.text}`);
-      }
-      // 등록표: 처리가 등록되지 않은 일은 할 수 없고, 등록하면 된다
-      A.extend({ works: [{ id: "test_sing", job: "baker", name: "노래 부르기", mins: 30, energy: 2, sim: "test_sing" }] });
-      A.setJob(p, "baker"); t.standAt(market.x, market.y);
-      t.check(!G.buildingMenu(W, market).find((v) => v.id === "wk:test_sing").ok, "등록되지 않은 처리는 아직 할 수 없다");
-      G.registerSim("test_sing", () => "노래를 불렀다.");
-      t.check(G.doBuilding(W, market, "wk:test_sing").text === "노래를 불렀다.", "처리를 등록하자 할 수 있다");
-      A.CONTENT.works = A.CONTENT.works.filter((x) => x.id !== "test_sing"); delete G.SIMS.test_sing;
+      G.give(W, "wheat", 2);
+      t.check(!!G.doBuilding(W, market, "wk:bake").sim, "메뉴에서 고르면 조작 화면이 열린다");
+      let b0 = t.e().inv.bread || 0, r = G.finishWork(W, market, "bake", [1, 1, 0.95, 1]);
+      t.check((t.e().inv.bread || 0) - b0 === 5 && W.events.some((e) => e && e.kind === "masterwork" && e.actor === p.id), `잘하면 걸작: ${r.text}`);
+      G.give(W, "wheat", 2); b0 = t.e().inv.bread || 0; r = G.finishWork(W, market, "bake", [0.5, 0.5, 0.5, 0.5]);
+      t.check((t.e().inv.bread || 0) - b0 === 3, `보통이면 보통: ${r.text}`);
+      G.give(W, "wheat", 2); b0 = t.e().inv.bread || 0; r = G.finishWork(W, market, "bake", null);
+      t.check((t.e().inv.bread || 0) > b0 && /손에 익은 대로/.test(r.text), `맡기기: ${r.text}`);
+      t.check(A.skillOf(p, "baking").xp > 0 && t.e().works.bake.n === 3, "굽는 만큼 제빵 솜씨가 쌓이고 기록된다");
+      // 주민도 같은 단계를 솜씨대로 거친다
+      const nb = W.spawn(t.town(), { race: "human", job: "baker", ageYears: 30 });
+      for (let i = 0; i < 5; i++) A._.rWork(nb, W);
+      t.check(nb.lastWork && nb.lastWork.id === "bake" && nb.lastWork.q >= 0 && A.skillOf(nb, "baking").xp >= 5, `주민 빵집 주인의 오늘 빵: 품질 ${nb.lastWork && nb.lastWork.q}`);
+      // 팩으로 더한 직업(세공사): 데이터만으로 업무가 준비되고, 원석을 보석으로 다듬는다
+      const jw = A.JOBS.jeweler;
+      t.check(jw && G.jobReady(jw) && A.worksOf("jeweler").every((x) => G.workReady(x)) && !A.worksOf("jeweler").some((x) => x.sim === "shift"), "세공사: 기본 일 없이 업무만으로 열린다");
+      A.setJob(p, "jeweler"); t.standAt(market.x, market.y); p.energy = 100; G.give(W, "rough_gem", 1);
+      r = G.finishWork(W, market, "cut_gem", [0.8, 0.7, 0.75]);
+      t.check((t.e().inv.gem || 0) >= 1 && A.knows(p, "gemcraft"), r.text);
+      // 준비되지 않은 업무만 있는 직업은 열리지 않는다
+      A.extend({ jobs: [{ id: "test_glass", name: "유리공", income: [1, 2], entry_cost: 0, weight: 0, workplace: "market", shift: false }],
+        works: [{ id: "test_blow", job: "test_glass", name: "유리 불기", steps: [{ name: "불기", tool: "test_breath" }], gives: { stone: 1 } }] });
+      W.jobsOpen = [...(W.jobsOpen || []), "test_glass"];
+      t.check(!G.jobReady(A.JOBS.test_glass) && !G.buildingMenu(W, market).some((v) => v.id === "job:test_glass"), "조작 부품이 없는 직업은 아직 열리지 않는다");
+      A.registerTool("test_breath", () => 0.5); G.registerHand("test_breath", { name: "불기", how: "", play: () => () => {} });
+      t.check(G.jobReady(A.JOBS.test_glass) && G.buildingMenu(W, market).some((v) => v.id === "job:test_glass"), "부품의 자동 모델과 조작 화면이 생기자 열린다");
+      A.CONTENT.jobs = A.CONTENT.jobs.filter((x) => x.id !== "test_glass"); A.CONTENT.works = A.CONTENT.works.filter((x) => x.id !== "test_blow"); A.extend({});
+      delete A.TOOL_AUTO.test_breath; delete G.HANDS.test_breath; W.jobsOpen = W.jobsOpen.filter((x) => x !== "test_glass");
     } },
     { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
       const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);

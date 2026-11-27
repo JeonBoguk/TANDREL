@@ -1,6 +1,6 @@
 global.window = globalThis;
 const dir = require('path').join(__dirname, '../game/');
-for (const f of ['engine', 'content', 'pack-greenhill', 'game', 'story', 'test']) require(dir + f + '.js');
+for (const f of ['engine', 'content', 'pack-greenhill', 'pack-jeweler', 'game', 'sims', 'story', 'test']) require(dir + f + '.js');
 const A = Asteria;
 let all = 0, ok = 0;
 for (const seed of (process.env.SEEDS ? process.env.SEEDS.split(",").map(Number) : [1, 2, 3, 5, 7, 8, 11, 42])) {
