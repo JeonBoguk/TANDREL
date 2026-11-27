@@ -11,7 +11,7 @@
     nations: { greenhill: "초록언덕 자치령" },
 
     races: [
-      { id: "halfling", name: "하플링", lifespan: [90, 120], traits: { kindness: 0.15, ambition: -0.1, bravery: -0.05 },
+      { id: "halfling", name: "하플링", lifespan: [90, 120], adultAge: 20, magic: 0.25, traits: { kindness: 0.15, ambition: -0.1, bravery: -0.05 },
         look: { skin: ["#f6d1ad", "#eab98f"], short: true, curly: true, hair: ["#7a4a26", "#b8742e", "#d9a85a", "#4a3020"] },
         names: ["포피", "밀로", "로지", "빌보", "데이지", "토비", "페린", "머틀", "올리", "클로버", "호브", "피핀", "메리골드", "탐"] },
     ],

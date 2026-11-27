@@ -90,8 +90,8 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 |---|---|
 | World | 유지 + `worldId`, `version`, `defs`(세계에서 생긴 **함수 없는** 정의) |
 | Character | 유지(`npcs[]`). `ext`의 인물 몫을 인물로 옮김 |
-| Species | 유지 + 규칙 필드(`adultAge`, `magic`, `traitsGenetic`) |
-| Heritage / Culture / Identity | 독립 영역이 아니라 **인물 필드**(`heritage{sp:비율}`, `culture`, `identity`) |
+| Species | 유지 + 규칙 필드(`adultAge`, `magic`, `traitsGenetic`) (**구현됨**) |
+| Heritage / Culture / Identity | 독립 영역이 아니라 **인물 필드**(`heritage{sp:비율}`, `culture`, `identity`). heritage·culture·look·birthplace는 구현됨, identity는 다음 |
 | Nation | **독립(구현됨)**: `w.nations{id}`, `town.nation` = id |
 | Job | 유지 + 세계 정의(`w.defs.jobs`) |
 | Skill | 지식(`know`)과 숙련(`stats`)을 `n.skills{id:{lv,xp}}`로 합침 |
@@ -123,6 +123,6 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 - 사건 구조화 값: `record(kind, text, { …, data })`. 우선 대상 `career{from,to}`, `learn/discovery{skill}`, `job_born{job}`, `nation_founded/independence{nation,from}`, `race_born/contact{species}`, `marriage`, `birth`.
   사소한 행동은 사건으로 남기지 않는다(`G.log`/`todayLog`만). 선별 기준은 기존 `imp`(생애 3~5, 세계 7 이상 → 연대기).
 - 국가: `w.nations = { id: {name, since, founder, from} }`, `nationName(w, id)`.
-- 혈통: `n.heritage`(부모 평균), `n.culture`(성인이 될 때 자란 곳), `n.identity`(사건으로만), `n.look`(태어날 때 결정, 부모 값에서 유전).
+- 혈통: `n.heritage`(부모 평균), `n.culture`(성인이 될 때 자란 곳), `n.identity`(사건으로만), `n.look`(태어날 때 결정, 부모 값에서 유전). identity를 뺀 나머지는 4단계에서 구현(저장 v7).
 - 업무: `works: [{ id, skill, steps:[…], npc:{income, uses}, sim:"forge" }]`, `job.works:[…]`, `jobReady(j)`.
 - 창작물: `w.designs`에만 존재 → 자동으로 세계 귀속. 다른 세계로는 명시적 가져오기로만, 이때 `originWorldId`를 남긴다.

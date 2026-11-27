@@ -9,13 +9,13 @@
   // ------------------------------------------------------------ 콘텐츠 (데이터로 확장)
   const CONTENT = {
     races: [
-      { id: "human", name: "인간", lifespan: [60, 80], traits: { ambition: 0.1 }, look: { skin: ["#f6d3b3", "#eec09a", "#d9a47c", "#b97f57"] },
+      { id: "human", name: "인간", lifespan: [60, 80], adultAge: 16, magic: 0.3, traits: { ambition: 0.1 }, look: { skin: ["#f6d3b3", "#eec09a", "#d9a47c", "#b97f57"] },
         names: ["아론","베아","카일","델리아","에반","그레타","한스","이리스","요한","카린","레오","마리","노엘","오스카","피아","루카스","세라","토마","유나","벤","클라라","다니엘","엠마","펠릭스","한나","올가","리나","마틴","소피","빌헬름"] },
-      { id: "elf", name: "엘프", lifespan: [250, 350], traits: { kindness: 0.1, bravery: -0.05, ambition: -0.1 }, look: { skin: ["#f8e2cf", "#f1d6c0"], ears: "long", hair: ["#f0e2a8", "#e8e8e0", "#c9b27a", "#9fc7a8", "#d7b9e8"] },
+      { id: "elf", name: "엘프", lifespan: [250, 350], adultAge: 30, magic: 0.8, traits: { kindness: 0.1, bravery: -0.05, ambition: -0.1 }, look: { skin: ["#f8e2cf", "#f1d6c0"], ears: "long", hair: ["#f0e2a8", "#e8e8e0", "#c9b27a", "#9fc7a8", "#d7b9e8"] },
         names: ["엘라린","실바","테리안","아엘","리아나","파엘","나엘","이실","로웬","셀린","엘로스","미리엘","타랄","니무엘","시안","아르웬디"] },
-      { id: "dwarf", name: "드워프", lifespan: [130, 170], traits: { bravery: 0.15, greed: 0.1 }, look: { skin: ["#e8b48e", "#d99f7a"], beard: true, short: true, hair: ["#a8452c", "#6b3a20", "#3a2a20", "#c9c3b8", "#d99a3a"] },
+      { id: "dwarf", name: "드워프", lifespan: [130, 170], adultAge: 24, magic: 0.2, traits: { bravery: 0.15, greed: 0.1 }, look: { skin: ["#e8b48e", "#d99f7a"], beard: true, short: true, hair: ["#a8452c", "#6b3a20", "#3a2a20", "#c9c3b8", "#d99a3a"] },
         names: ["브롬","돌가","투린","하르가","김리크","보라","둔","케일다","모르겐","그렘","발린","도르","헬가","트로그","부르딘","아스크"] },
-      { id: "beastkin", name: "수인", lifespan: [50, 70], traits: { bravery: 0.2, kindness: -0.05 }, look: { skin: ["#e9c49a", "#d8ab80"], ears: "animal", tail: true, hair: ["#c8823a", "#6b4a32", "#e8e0d0", "#3a3a3a", "#a86a3a"] },
+      { id: "beastkin", name: "수인", lifespan: [50, 70], adultAge: 14, magic: 0.3, traits: { bravery: 0.2, kindness: -0.05 }, look: { skin: ["#e9c49a", "#d8ab80"], ears: "animal", tail: true, hair: ["#c8823a", "#6b4a32", "#e8e0d0", "#3a3a3a", "#a86a3a"] },
         names: ["라칸","미르","카야","토가","루루","바쿠","시엔","오르카","제나","파오","코르","냐린","울프란","티카","가로","세바"] },
     ],
     /* 직업 하나는 이 한 줄에 모든 것을 담는다: 경제(income·food·entry_cost), 화면(color·icon), 일터(workplace),
@@ -47,7 +47,10 @@
         talk: "기도하러 오는 사람이 늘었어요. 다들 마음이 불안한가 봐요." },
     ],
     nations: { asteria: "탄드렐 왕국", ironhold: "철산 연맹", silvaren: "실바렌 숲의 나라" },
-    housesPerTown: 5, // 마을마다 주민 집 수 (game.js BUILD_DEF의 hid 1~5와 맞춘다)
+    housesPerTown: 5,
+    /* 외형 기본값 (종족 look에 없을 때). 외형은 태어날 때 정해 n.look에 저장하고, 아이는 부모를 닮는다 */
+    lookDefaults: { skin: ["#f1c9a5"], hair: ["#3b2a1e", "#7a4a26", "#d9b25a", "#a33a2a", "#2a2a2a", "#cfcfcf", "#5a3d7a"],
+      styles: ["short", "long", "pony", "bun", "spiky", "bob"], eyes: ["#2a1e16", "#2b4a7a", "#3d6a3a", "#6a3a1a"] }, // 마을마다 주민 집 수 (game.js BUILD_DEF의 hid 1~5와 맞춘다)
     /* 마을: pos는 지도 타일 좌표(마을 중심), roads는 길로 이어진 마을. 지도는 마을 위치에 맞춰 넓어진다. */
     towns: [
       { id: "lumen", name: "루멘", nation: "asteria", population: 14, races: { human: 0.8, elf: 0.1, beastkin: 0.1 }, pos: [76, 62], roads: ["millbrook", "granok", "greytower", "silvaren"] },
@@ -147,7 +150,10 @@
 
   // ------------------------------------------------------------ NPC 도우미
   const age = (n) => Math.floor(n.age_days / DPY);
-  const isAdult = (n) => age(n) >= ADULT;
+  /* 종족마다 성인이 되는 나이가 다르다 (race.adultAge, 없으면 16). 성인이 된 사람은 n.grown = true로 남는다
+   * (규칙이 바뀌어도 이미 어른인 사람이 아이로 돌아가지 않게) */
+  const adultAge = (race) => (RACES[race] && RACES[race].adultAge) || ADULT;
+  const isAdult = (n) => (n.grown !== undefined ? n.grown : age(n) >= adultAge(n.race));
   function family(n) {
     const f = new Set([...n.parents, ...n.children]);
     if (n.spouse !== null) f.add(n.spouse);
@@ -164,7 +170,7 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 6;
+  const SAVE_VERSION = 7;
   /* 플레이어로 살며 생기는 상태가 어디에 사는가 (game.js의 ext()가 이 표대로 나눠 담는다)
    *  land: 세계에 남는 흔적 · session: 화면·조작 · 나머지: 그 인물의 것(n.ext). 인물이 바뀌어도 인물의 것은 그 인물에게 남는다 */
   const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", board: "land", chickenGone: "land", v: "land",
@@ -221,6 +227,16 @@
       const npcs = d.npcs.map((n) => (n.id === pid && Object.keys(char).length ? { ...n, ext: { ...(n.ext || {}), ...char } } : n));
       const { ext, ...rest } = d;
       return { ...rest, npcs, land, session, version: 6 };
+    },
+    // v6 → v7: 혈통·외형·성인 표시·태어난 곳. 외형은 예전 그림 계산과 같아서 얼굴이 바뀌지 않는다
+    6: (d) => {
+      const npcs = d.npcs.map((n) => ({ ...n,
+        grown: n.grown ?? n.age_days >= ADULT * DPY,
+        heritage: n.heritage || heritageOf(n.race),
+        look: n.look || makeLook(n),
+        birthplace: n.birthplace || { town: n.home || n.town, nation: (d.towns[n.home || n.town] || {}).nation || null, day: null },
+        culture: n.culture ?? ((d.towns[n.home || n.town] || {}).nation || null) }));
+      return { ...d, npcs, version: 7 };
     },
   };
   function migrate(d) {
@@ -345,7 +361,7 @@
       const town = this.towns[tid];
       race = race || this.rng.choices(Object.keys(town.races), Object.values(town.races));
       const r = RACES[race];
-      if (ageYears === null) ageYears = this.rng.randint(ADULT, Math.floor(r.lifespan[0] * 0.7));
+      if (ageYears === null) ageYears = this.rng.randint(adultAge(race), Math.max(adultAge(race) + 1, Math.floor(r.lifespan[0] * 0.7)));
       const n = {
         id: this.npcs.length, name: name || this.newName(race), race, job: job || this.pickJob(town),
         town: tid, home: tid, traits: this.randomTraits(race),
@@ -355,7 +371,12 @@
         at_war: false, service_left: 0, role: null, jail: 0, job_cooldown: 0, flags: new Set(),
         controller: "ai", vowed: {}, lover: null, outside: false,
         dream: null, stat: { help: 0, towns: [tid] }, house: null,
+        grown: ageYears >= adultAge(race),
+        heritage: heritageOf(race),                                  // 혈통 {종족: 비율}
+        birthplace: { town: tid, nation: town.nation, day: this.day }, // 태어난 곳 (이 세계에 처음 나타난 곳)
+        culture: town.nation,                                        // 자란 문화권 (지금은 자란 곳의 나라)
       };
+      n.look = makeLook(n);
       this.npcs.push(n);
       settleIn(this, n, pickHouse(this, tid));
       return n;
@@ -894,7 +915,7 @@
   function actOne(w, n) {
     if (!n.alive) return;
     n.age_days += 1;
-    if (n.age_days === ADULT * DPY) comeOfAge(n, w);
+    if (!n.grown && n.age_days >= adultAge(n.race) * DPY) comeOfAge(n, w);
     if (!isAdult(n)) return;
     if (n.at_war) { n.lastAct = "soldier"; soldierDay(n, w); return; }
     if (n.jail > 0) { n.lastAct = "jail"; n.jail -= 1; return; }
@@ -1025,16 +1046,18 @@
       const c = w.spawn(n.town, { race, job: w.rng.choice([n.job, m.job]), ageYears: 0 });
       c.age_days = 0; c.gold = 0; c.parents = [n.id, m.id];
       if (n.house) settleIn(w, c, n.house); // 부모 집에서 자란다
-      for (const p of [n, m]) {
-        p.children.push(c.id); p.rel[c.id] = 80; c.rel[p.id] = 80;
-        for (const k of Object.keys(c.traits)) c.traits[k] = clamp((c.traits[k] + p.traits[k]) / 2, 0, 1);
-      }
+      c.heritage = blendHeritage(n, m);      // 혈통은 부모의 평균
+      c.look = inheritLook(c, n, m);         // 외형은 부모를 닮는다
+      const g = (RACES[race] && RACES[race].traitsGenetic) ?? 0.6; // 성격: 부모 평균과 타고난 기질이 섞인다
+      for (const k of Object.keys(c.traits)) c.traits[k] = clamp(((n.traits[k] + m.traits[k]) / 2) * g + c.traits[k] * (1 - g), 0, 1);
+      for (const p of [n, m]) { p.children.push(c.id); p.rel[c.id] = 80; c.rel[p.id] = 80; }
       if (mix && race === mix.id && !seenRace(w, mix.id)) { w.racesSeen.push(mix.id); w.record("race_born", `${jo(n.name, "과/와")} ${m.name} 사이에서 이 세계 최초의 ${jo(mix.name, "이/가")} 태어났다. ${mix.bornText || "사람들은 두 종족의 피를 이은 아이를 신기하게 바라보았다"}`, { actor: n.id, target: c.id, town: n.town, imp: 8, wr: 1, data: { species: mix.id, parents: [n.race, m.race] } }); }
       w.record("birth", `${jo(n.name, "과/와")} ${m.name} 부부 사이에 ${jo(c.name, "이/가")} 태어났다`, { actor: n.id, target: c.id, town: n.town, imp: n.controller === "player" || m.controller === "player" ? 5 : 3, wr: 0.4, notify: [m.id], data: { parents: [n.id, m.id], species: race } });
     }
   }
 
   function comeOfAge(n, w) {
+    n.grown = true; n.culture = w.towns[n.town] ? w.towns[n.town].nation : n.culture; // 자란 곳의 문화권
     const pj = n.parents.map((p) => w.npcs[p].job);
     let how;
     if (pj.length && w.rng.next() < 0.5) { n.job = w.rng.choice(pj); how = "부모의 일을 이어받아"; }
@@ -1079,6 +1102,31 @@
       else if (isAdult(n)) pickDream(n, w, true);
       if (!silent) w.record("arrival", `${RACES[n.race].name} ${JOBS[n.job].name} ${jo(n.name, "이/가")} ${w.towns[d.town].name}에 정착했다`, { actor: n.id, town: d.town, imp: 3, wr: 0.3 });
     }
+  }
+
+  // ================================================================ 혈통과 외형
+  const lhash = (a, b, c = 0) => { let x = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) >>> 0; x = Math.imul(x ^ (x >>> 13), 1274126177) >>> 0; return x / 4294967296; };
+  const pickBy = (arr, r) => arr[Math.floor(r * arr.length) % arr.length];
+  /** 한 종족의 혈통. 혼혈 종족(mix)이면 두 종족 반씩 */
+  function heritageOf(race) {
+    const r = RACES[race];
+    return r && r.mix ? Object.fromEntries(r.mix.map((x) => [x, 1 / r.mix.length])) : { [race]: 1 };
+  }
+  function blendHeritage(a, b) {
+    const out = {};
+    for (const p of [a, b]) for (const [k, v] of Object.entries(p.heritage || heritageOf(p.race))) out[k] = (out[k] || 0) + v / 2;
+    for (const k of Object.keys(out)) out[k] = Math.round(out[k] * 1024) / 1024;
+    return out;
+  }
+  /** 종족 look에서 고른 외형. 인물 번호로 정하므로 같은 사람은 늘 같은 얼굴이다 (그림 쪽이 예전에 하던 계산과 같다) */
+  function makeLook(n) {
+    const rl = (RACES[n.race] && RACES[n.race].look) || {}, D = CONTENT.lookDefaults, h = (k) => lhash(n.id + 7, k, 3);
+    return { skin: pickBy(rl.skin || D.skin, h(1)), hair: pickBy(rl.hair || D.hair, h(2)), style: rl.curly ? "curly" : pickBy(D.styles, h(3)), eye: pickBy(D.eyes, h(4)) };
+  }
+  /** 아이의 외형: 피부·눈은 부모 중 한 쪽, 머리색은 대개 부모 중 한 쪽(가끔 그 종족의 다른 빛깔), 머리 모양은 제각각 */
+  function inheritLook(c, a, b) {
+    const own = makeLook(c), h = (k) => lhash(c.id + 11, k, 5), la = a.look || makeLook(a), lb = b.look || makeLook(b), P = (k) => (h(k) < 0.5 ? la : lb);
+    return { skin: P(1).skin, hair: h(5) < 0.8 ? P(2).hair : own.hair, style: own.style, eye: P(3).eye };
   }
 
   // ================================================================ 집 (자산)
@@ -1479,6 +1527,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, migrate, extStore, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

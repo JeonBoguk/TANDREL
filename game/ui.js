@@ -754,6 +754,8 @@ function bioCard(n) {
       h("div", { style: "min-width:0;flex:1" },
         h("div", { class: "bioname" }, n.name, h("span", { class: "muted small" }, ` ${A.RACES[n.race].name} ${W.jobName(n)} · ${A.age(n)}세 · 명성 ${n.fame}`)),
         h("div", { class: "small" }, status),
+        (() => { const hs = Object.entries(n.heritage || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]); // 혈통: 섞인 경우에만
+          return hs.length > 1 ? h("div", { class: "small muted" }, `혈통 ${hs.map(([k, v]) => `${A.RACES[k] ? A.RACES[k].name : k} ${Math.round(v * 100)}%`).join(" · ")}`) : null; })(),
         n.title ? h("div", { class: "small", style: "color:var(--gold)" }, n.title) : null,
         n.pioneer ? h("div", { class: "small", style: "color:var(--gold)" }, `이 세계 최초의 ${A.JOBS[n.pioneer].name}`) : null,
         n.follows !== undefined && n.follows !== null && W.npcs[n.follows] ? h("div", { class: "small" }, `${W.npcs[n.follows].name}의 새 나라에 함께하기로 했다`) : null,

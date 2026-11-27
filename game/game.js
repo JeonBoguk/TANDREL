@@ -199,6 +199,7 @@
   const EXPAND_STEPS = [{ dx: -2, dw: 2, name: "왼쪽으로 한 칸" }, { dw: 2, name: "오른쪽으로 한 칸" }, { dh: 1, name: "앞쪽으로 한 줄" }];
   /** 주민 집을 넓힐 수 있는 방법들 (최대 두 번) */
   function houseExpandOptions(w, town, hid) {
+    rebuildMap(w); // 지도가 이 세계 것인지 확인 (새 세계를 만들자마자 흘려보낼 때 이전 세계 지도가 남아 있을 수 있다)
     const bd = MAP.buildings.find((b) => b.town === town && b.kind === "house" && b.hid === hid);
     const cur = (houseAsset(w, town, hid) || {}).mods || {};
     if (!bd || (cur.grown || 0) >= 2) return [];
@@ -398,7 +399,8 @@
   }
   /** 이 건물 안에 놓인 것들: 원래 가구 + (내 집이면) 내가 놓은 가구 */
   function furnitureIn(w, bd) {
-    const base = (FURN[bd.kind] || []).map(([rx, ry, type]) => ({ rx, ry, type, block: true }));
+    const [ex, ey] = entryOf(bd); // 집을 넓혀 문이 옮겨져도 원래 가구가 문간을 막지 않게
+    const base = (FURN[bd.kind] || []).filter(([rx, ry]) => !(bd.x + rx === ex && bd.y + ry === ey)).map(([rx, ry, type]) => ({ rx, ry, type, block: true }));
     const mine = w && w.ext && w.ext.furn && w.ext.furn[furnKey(bd)] ? w.ext.furn[furnKey(bd)].map((f) => ({ rx: f.rx, ry: f.ry, type: ITEMS[f.id] ? ITEMS[f.id].furniture : "crate", item: f.id, block: !(ITEMS[f.id] && ITEMS[f.id].walk) })) : [];
     return [...base, ...mine];
   }

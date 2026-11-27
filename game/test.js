@@ -247,6 +247,26 @@
       const w3 = A.World.deserialize(old); G.setup(w3);
       t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
     } },
+    { id: "lineage", name: "혈통·외형은 부모에게서, 성인 나이는 종족마다", run(t) {
+      const W = t.w, born = W.npcs.filter((n) => n.parents.length === 2);
+      const okH = born.every((c) => { const [a, b] = c.parents.map((i) => W.npcs[i]), want = A.blendHeritage(a, b); return Object.keys(want).every((k) => Math.abs((c.heritage[k] || 0) - want[k]) < 1e-6); });
+      t.check(okH, `이 세계에서 태어난 ${born.length}명의 혈통 = 부모 평균`);
+      t.check(born.every((c) => c.parents.some((i) => W.npcs[i].look.skin === c.look.skin) && c.parents.some((i) => W.npcs[i].look.eye === c.look.eye)), "피부와 눈빛은 부모 중 한 쪽을 닮는다");
+      // 인간과 엘프 사이의 아이
+      const hu = W.spawn(t.town(), { race: "human", ageYears: 30 }), el = W.spawn(t.town(), { race: "elf", ageYears: 80 });
+      const mix = A.blendHeritage(hu, el);
+      t.check(mix.human === 0.5 && mix.elf === 0.5, `혈통 ${JSON.stringify(mix)}`);
+      // 엘프는 30살에 어른이 된다
+      const kid = W.spawn(t.town(), { race: "elf", ageYears: 20 });
+      t.check(!A.isAdult(kid) && A.adultAge("elf") === 30, "스무 살 엘프는 아직 아이다");
+      kid.age_days = 30 * A.DPY - 1; G.tick(t.w, 48 * 60); // 오늘 태어난 아이는 내일부터 차례가 온다
+      t.check(A.isAdult(kid) && W.lifeOf(kid.id).some((e) => e.kind === "adulthood"), "서른 살이 되자 어른이 되었다");
+      // 옛 저장(v6): 외형·혈통 없음 → 예전 계산과 같은 외형, 예전 규칙(16살)대로 어른
+      const d = JSON.parse(W.serialize()); for (const n of d.npcs) { delete n.look; delete n.heritage; delete n.grown; delete n.birthplace; delete n.culture; } d.version = 6;
+      const w2 = A.World.deserialize(d), x = w2.npcs.find((n) => n.race === "elf" && A.age(n) >= 16 && A.age(n) < 30);
+      t.check(w2.npcs.every((n, i) => n.look.skin === A.makeLook(W.npcs[i]).skin || n.parents.length), "옛 주민의 얼굴이 바뀌지 않는다");
+      if (x) t.check(A.isAdult(x), `옛 저장의 ${A.age(x)}살 엘프는 그대로 어른`);
+    } },
     { id: "records", name: "세계 식별자·사건 기록·옛 저장 이전", run(t) {
       t.check(typeof t.w.worldId === "string" && t.w.worldId.length > 6, `세계 식별자 ${t.w.worldId}`);
       // 직업을 바꾸면 이전·새 직업이 문장이 아니라 값으로 남는다

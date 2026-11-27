@@ -304,11 +304,11 @@
     // ------------------------------------------------------------ 처음엔 없는 종족
     /* mix: 두 종족 사이에서 처음 태어나는 순간 이 세계에 생긴다.  hidden: 어떤 계기(접촉 사건)가 있어야 나타난다. */
     races: [
-      { id: "halfelf", name: "하프엘프", mix: ["human", "elf"], lifespan: [120, 180], traits: { kindness: 0.05, ambition: 0.05 },
+      { id: "halfelf", name: "하프엘프", mix: ["human", "elf"], lifespan: [120, 180], adultAge: 22, magic: 0.55, traits: { kindness: 0.05, ambition: 0.05 },
         look: { skin: ["#f6dcc4", "#eecaa8"], ears: "long", hair: ["#d9b25a", "#7a4a26", "#e8e0c8", "#3b2a1e"] },
         bornText: "엘프의 귀와 인간의 눈빛을 가진 아이였다",
         names: ["엘리안", "카엘", "세린", "아르딘", "미렌", "티엘", "로엔", "아셀"] },
-      { id: "dragonkin", name: "용족", hidden: true, lifespan: [300, 500], traits: { bravery: 0.25, ambition: 0.15, kindness: -0.05 },
+      { id: "dragonkin", name: "용족", hidden: true, lifespan: [300, 500], adultAge: 40, magic: 0.7, traits: { bravery: 0.25, ambition: 0.15, kindness: -0.05 },
         look: { skin: ["#8cc0a0", "#d0906a", "#9aa8e0", "#c8b06a"], horns: "#efe4c8", tail: true, hair: ["#2a3a4a", "#5a2a2a", "#e8e0d0", "#2a4a3a"] },
         names: ["바르크", "이그니아", "쇼르", "타라크", "벨루즈", "카이락", "오르샤", "드라엔"] },
     ],
