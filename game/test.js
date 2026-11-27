@@ -328,6 +328,11 @@
       Object.assign(d.work, { name: "큰 바구니 짜기", mins: 120, kind: "make", needs: { fiber: 2 }, gives: { gem: 3 } });
       d.work.steps = [{ name: "풀 고르기", tool: "observe", level: 0 }, { name: "엮기", tool: "rhythm", level: 1 }, { name: "마무리", tool: "trace", level: 2 }];
       t.check(G.checkJobDraft(W, d).some((x) => /넘는다/.test(x)), "풀섬유로 보석을 만드는 일은 균형 규칙에 걸린다");
+      const dB = G.jobDraft(W, null); Object.assign(dB, { name: "밀빵 장수", skill: "weaving" }); Object.assign(dB.work, { name: "밀빵 굽기", mins: 240, kind: "make", needs: { wheat: 4 }, gives: { bread: 2 } });
+      t.check(G.checkJobDraft(W, dB).some((x) => /빵집 주인/.test(x)), `이미 있는 일은 새 직업이 못 된다: ${G.checkJobDraft(W, dB).find((x) => /이미/.test(x))}`);
+      const dH = G.jobDraft(W, null); Object.assign(dH, { name: "약손", skill: "weaving" }); Object.assign(dH.work, { name: "아픈 데 만지기", kind: "serve", serve: "heal" });
+      if (W.jobOpen("doctor")) t.check(G.checkJobDraft(W, dH).some((x) => /의사/.test(x)), "아픈 사람 돌보기는 의사가 이미 하는 일");
+      else t.check(!G.checkJobDraft(W, dH).some((x) => /이미/.test(x)), "의사가 아직 없는 세계라면 아픈 사람 돌보기는 처음 나오는 일");
       d.work.gives = { basket: 1 }; d.work.needs = { fiber: 8 }; d.work.mins = 240;
       t.check(G.checkJobDraft(W, d).length === 0, `규칙을 지키면 통과: ${G.checkJobDraft(W, d).join(" / ") || "문제 없음"}`);
       const wkTry = G.draftWork(d, "draft", "draft");
@@ -348,6 +353,8 @@
       const r3 = G.createJob(W, d2);
       t.check(r3.ok && A.worksOf(J.id).length === 2 && A.worksOf(J.id)[1].effects.gold, r3.text);
       t.check(W.openJobs().some((j) => j.id === J.id) && J.needKnow === "weaving", "짜기를 아는 주민도 이 직업으로 옮겨 올 수 있다");
+      const dC = G.jobDraft(W, null); dC.addTo = null; Object.assign(dC, { name: "광주리 장인", skill: "weaving" }); Object.assign(dC.work, { name: "광주리 짜기", mins: 240, kind: "make", needs: { fiber: 8 }, gives: { basket: 1 } });
+      t.check(G.checkJobDraft(W, dC).some((x) => /바구니 장인/.test(x)), "내가 만든 직업과 같은 일도 다시 새 직업이 될 수 없다");
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check(A.JOBS[J.id] && A.worksOf(J.id).length === 2 && w2.npcs[p.id].job === J.id, "불러와도 남아 있다");
       A.newWorld(77, "다른 세계"); t.check(!A.JOBS[J.id], "다른 세계에는 없다"); A.applyDefs(W);

@@ -1431,6 +1431,21 @@
     },
   };
   const itemValue = (bag) => Object.entries(bag || {}).reduce((s, [id, n]) => s + ((ITEMS[id] && (ITEMS[id].sell || (ITEMS[id].price || 3) / 3)) || 1) * n, 0);
+  /* 일의 정체: 무엇을 내놓는가. 만드는 일은 결과물, 봉사하는 일은 손님과 결과의 종류.
+   * 새 직업은 이 세계에 처음 나오는 일일 때만 만들 수 있다 (이미 누가 하는 일이면 그 직업이 있는 것) */
+  const fxKind = (fx) => (!fx ? "" : fx.heal >= 2 ? "heal" : fx.bond ? "bond" : fx.rel >= 8 && !(fx.gold && fx.gold[1] > 2) ? "cheer" : "pay");
+  function workSig(wk) {
+    if (wk.gives && Object.keys(wk.gives).length) return "make:" + Object.keys(wk.gives).sort().join("+");
+    if (wk.effects) { const c = wk.client || "any"; return "serve:" + fxKind(wk.effects) + ":" + (c.startsWith("race:") ? "foreign" : c); }
+    return "";
+  }
+  /** 이 업무와 같은 일을 이미 하는 직업 (없으면 null) */
+  function sameWork(w, wk) {
+    const sig = workSig(wk);
+    if (!sig) return null;
+    const x = A.CONTENT.works.find((o) => o.job !== wk.job && JOBS[o.job] && w.jobOpen(o.job) && workSig(o) === sig);
+    return x ? { job: JOBS[x.job], work: x } : null;
+  }
   function jobDraft(w, addTo) {
     const p = w.player, sk = A.knownSkills(p)[0] || null, J = addTo ? JOBS[addTo] : null;
     return { addTo: addTo || null, name: J ? J.name : "", skill: J ? J.teaches[0] : sk, place: J ? J.workplace : "market", hat: J ? (J.look || {}).hat || "" : "cap", color: J ? J.color : JOBMAKE.colors[0],
@@ -1456,6 +1471,10 @@
       if (!Object.keys(wd.needs).length) err.push("재료를 하나는 고른다");
       if (gv > nv + labor) err.push(`결과물 값(${Math.round(gv)})이 재료 값(${Math.round(nv)})과 품삯(${Math.round(labor)})을 넘는다`);
       if (Object.keys(wd.gives).some((id) => wd.needs[id])) err.push("재료와 결과물이 같으면 안 된다");
+    }
+    if (!d.addTo) { // 새 직업은 처음 나오는 일이어야 한다
+      const same = sameWork(w, draftWork(d, "draft", "draft"));
+      if (same) err.push(`이미 ‘${same.job.name}’${jo(same.job.name, "이/가").slice(same.job.name.length)} 하는 일이다 (${same.work.name}). 처음 나오는 일이어야 새 직업이 된다`);
     }
     return err;
   }
@@ -1769,7 +1788,7 @@
   }
 
   const G = {
-    JOBMAKE, jobDraft, checkJobDraft, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
