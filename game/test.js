@@ -300,6 +300,10 @@
       t.check(J && J.name === "용언 통역가" && sage.job === J.id, `새 직업: ${J && J.name}, 첫 사람 ${sage.name}`);
       t.check(W.events.some((e) => e && e.kind === "job_born" && e.data && e.data.gen), W.events.filter((e) => e && e.kind === "job_born").pop().text);
       t.check(wk && wk.client === "race:dragonkin" && wk.steps.every((s) => (A.TOOL_DOMAINS[s.tool] || []).includes("language")) && G.workReady(wk), `업무 ‘${wk.name}’: ${wk.steps.map((s) => s.name).join(" → ")}`);
+      // 처음 연 사람은 꿈이나 더 나은 벌이가 보여도 떠나지 않는다
+      sage.gold = 999; sage.dream = { id: "rich", job: "baker", since: W.day }; sage.job_cooldown = 0;
+      t.check(A._.betterJob(sage, W) === null || A._.betterJob(sage, W).id === "farmer", "개척자는 자기 일을 떠나지 않는다 (흉년에 밭으로 가는 것만 예외)");
+      sage.dream = null;
       // 주민 통역가가 일하면 용족과 마을 사람들 사이가 가까워진다
       const dk = W.npcs.filter((n) => n.alive && n.race === "dragonkin" && n.town === sage.town), other = W.residents(sage.town).find((n) => n.race !== "dragonkin" && n !== sage);
       const before = other ? (other.rel[dk[0].id] || 0) : 0;

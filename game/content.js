@@ -136,6 +136,8 @@
       { id: "treat", job: "doctor", name: "진료하기", mins: 90, energy: 8, client: "sick", skill: "medicine", hint: "아픈 사람을 살피고 약을 지어 준다",
         steps: [{ name: "증상 살피기", tool: "observe", p: { rounds: 3 } }, { name: "안심시키기", tool: "talk", p: { rounds: 2 } }, { name: "약 달기", tool: "measure", p: { target: 0.5, speed: 0.45, label: "약재" }, w: 1.5 }],
         effects: { heal: 4, gold: [2, 6], rel: 8, fame: 1, record: { kind: "cure", text: "{me:이/가} 앓아누운 {client:을/를} 정성껏 돌봐 일으켜 세웠다", imp: 3, p: 0.3 } } },
+      { id: "brew_tonic", job: "doctor", name: "탕약 짓기", mins: 120, energy: 8, needs: { herb: 3, mushroom: 1 }, gives: { fever_tonic: 1 }, skill: "medicine", hint: "환자가 없는 날엔 약을 지어 둔다",
+        steps: [{ name: "약재 고르기", tool: "observe", p: { rounds: 2 } }, { name: "달이기", tool: "gauge", p: { zone: [0.5, 0.68], secs: 6, label: "불 세기" }, w: 1.5 }, { name: "덜어 담기", tool: "measure", p: { target: 0.6, speed: 0.45, label: "탕약" } }] },
       { id: "bless", job: "priest", name: "축복 기도", mins: 60, energy: 5, client: "any", hint: "찾아온 사람을 위해 기도한다",
         steps: [{ name: "이야기 듣기", tool: "talk", p: { rounds: 2 } }, { name: "기도문 외우기", tool: "memory", p: { len: 4 } }, { name: "촛불 지키기", tool: "gauge", p: { zone: [0.35, 0.55], secs: 5, label: "촛불" } }],
         effects: { rel: 6, heal: 1, gold: [0.5, 2] } },

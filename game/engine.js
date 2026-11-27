@@ -197,7 +197,8 @@
   function registerTool(id, auto, domains) { TOOL_AUTO[id] = auto; if (domains) TOOL_DOMAINS[id] = domains; }
   /* 분야(domain): craft 손기술 · heat 불 · art 꾸밈 · body 몸 · language 언어 · social 사람 대하기 · knowledge 앎 · care 돌봄 · nature 자연 · magic 마법
    * 지식(knowledge)도 domain을 가진다. 세계에서 새 직업이 생길 때 지식의 분야에 맞는 부품으로 업무를 조립한다 (genesis) */
-  const baseAuto = (hard, trait) => (p, lv, rng, n) => clamp(0.32 + 0.12 * lv - (p && p.hard || hard) + (rng.next() + rng.next() - 1) * 0.18 + (n ? (n.traits[trait || "ambition"] - 0.5) * 0.08 : 0), 0, 1);
+  // 단계 점수 = 솜씨 + 성격 - 어려움 + 작은 흔들림. 그날의 컨디션은 autoScores가 모든 단계에 함께 더한다
+  const baseAuto = (hard, trait) => (p, lv, rng, n) => clamp(0.4 + 0.11 * lv - (p && p.hard !== undefined ? p.hard : hard) + (rng.next() + rng.next() - 1) * 0.12 + (n ? (n.traits[trait || "ambition"] - 0.5) * 0.1 : 0), 0, 1);
   for (const [id, hard, doms, trait] of [
     ["gauge", 0.05, ["craft", "heat", "care"]], ["rhythm", 0.08, ["craft", "body"]], ["timing", 0.06, ["craft", "heat", "body"]],
     ["measure", 0.04, ["craft", "knowledge", "care"]], ["trace", 0.1, ["craft", "art"]], ["grind", 0.05, ["craft", "body"]],
@@ -223,8 +224,8 @@
   }
   /** 자동으로 한 단계씩 점수를 낸다 (주민, 맡기기). 부품이 없으면 null */
   function autoScores(n, wk, rng, penalty = 0) {
-    const lv = workLv(n, wk);
-    return stepsOf(wk).map((s) => (TOOL_AUTO[s.tool] ? clamp(TOOL_AUTO[s.tool](s.p || {}, lv, rng, n) - penalty, 0, 1) : null));
+    const lv = workLv(n, wk), form = (rng.next() + rng.next() - 1) * 0.16; // 그날의 컨디션
+    return stepsOf(wk).map((s) => (TOOL_AUTO[s.tool] ? clamp(TOOL_AUTO[s.tool](s.p || {}, lv, rng, n) + form - penalty, 0, 1) : null));
   }
   const workAutoReady = (wk) => toolsOf(wk).every((t) => TOOL_AUTO[t]);
 
@@ -236,7 +237,7 @@
   function clientOk(w, n, m, cond) {
     if (!m.alive || m.id === n.id || m.at_war || !isAdult(m)) return false;
     if (!cond || cond === "any") return true;
-    if (cond === "sick") return m.health < 8;
+    if (cond === "sick") return m.health < 9 || age(m) >= m.lifespan * 0.75; // 몸이 좀 안 좋거나 나이가 많은 사람
     if (cond === "poor") return m.gold < 10;
     if (cond === "foreign") return (w.towns[m.home] || {}).nation !== (w.towns[n.town] || {}).nation;
     if (cond.startsWith("race:")) return m.race === cond.slice(5);
@@ -245,9 +246,11 @@
   /** 이 업무의 손님. 같은 마을에서 가장 필요한 사람 (없으면 null) */
   function workClient(w, n, wk) {
     if (!wk.client) return null;
-    const c = w.npcs.filter((m) => m.town === n.town && !m.outside && clientOk(w, n, m, wk.client));
+    // 아픈 사람·가난한 사람은 같은 마을에서, 다른 종족·다른 나라 사람은 세계 어디서든 (말을 옮기고 잇는 일은 멀리서도 맡는다)
+    const far = wk.client === "foreign" || wk.client.startsWith("race:");
+    const c = w.npcs.filter((m) => (far || m.town === n.town) && !m.outside && clientOk(w, n, m, wk.client));
     if (!c.length) return null;
-    return c.sort((a, b) => (wk.client === "sick" ? a.health - b.health : 0) || opinion(b, n.id) - opinion(a, n.id) || a.id - b.id)[0];
+    return c.sort((a, b) => (a.town === n.town ? 0 : 1) - (b.town === n.town ? 0 : 1) || (wk.client === "sick" ? a.health - b.health : 0) || opinion(b, n.id) - opinion(a, n.id) || a.id - b.id)[0];
   }
   /** 자리 채우기: {me}, 조사가 붙으면 {me:이/가} */
   const fill = (t, o) => t.replace(/\{(\w+)(?::([^}]+))?\}/g, (_, k, pair) => { const v = o[k] !== undefined ? String(o[k]) : ""; return pair && v ? jo(v, pair) : v; });
@@ -514,7 +517,12 @@
         skills: {},                                                  // 기술 {id: {lv, xp}}
       };
       n.look = makeLook(n);
-      if (n.grown) setJob(n, n.job);
+      if (n.grown) {
+        setJob(n, n.job);
+        // 처음부터 있던 어른은 일해 온 햇수만큼 솜씨가 있다 (해마다 일한 날의 절반쯤)
+        const yrs = Math.max(0, ageYears - adultAge(race)) * this.rng.uniform(0.2, 0.7);
+        for (const k of (JOBS[n.job] && JOBS[n.job].teaches) || []) addXp(n, k, Math.round(Math.min(yrs, 12) * DPY * 0.5));
+      }
       this.npcs.push(n);
       settleIn(this, n, pickHouse(this, tid));
       return n;
@@ -743,7 +751,8 @@
     // 단계가 있는 업무를 하는 직업은 플레이어와 같은 단계를 거친다 (점수는 솜씨·성격으로 계산). 품질이 벌이와 이름을 정한다
     const crafts = n.controller === "player" ? [] : worksOf(n.job).filter((x) => x.steps && workAutoReady(x) && (!x.client || workClient(w, n, x)));
     if (crafts.length) {
-      const wk = w.rng.choice(crafts), q = workQuality(wk, autoScores(n, wk, w.rng)), g = gradeOf(q);
+      const served = crafts.filter((x) => x.client); // 기다리는 손님이 있으면 손님부터
+      const wk = w.rng.choice(served.length ? served : crafts), q = workQuality(wk, autoScores(n, wk, w.rng)), g = gradeOf(q);
       earn *= 0.6 + 0.6 * q;
       if (wk.effects) applyEffects(w, n, wk, q, workClient(w, n, wk));
       if (wk.skill) addXp(n, wk.skill, 1);
@@ -962,6 +971,10 @@
   }
 
   function betterJob(n, w) {
+    // 이 세계에 처음 그 일을 연 사람은 큰 흉년이 아니면 떠나지 않는다 (그 일이 곧 그 사람의 꿈이다)
+    // 흉년에 밭으로 갔던 개척자는 흉년이 끝나면 자기 일로 돌아간다
+    if (n.pioneer && n.pioneer !== n.job && JOBS[n.pioneer] && w.jobOpen(n.pioneer) && w.foodPrice(w.towns[n.town]) < 4 && n.gold >= JOBS[n.pioneer].entry_cost) return JOBS[n.pioneer];
+    if (n.pioneer && n.pioneer === n.job) return w.foodPrice(w.towns[n.town]) >= 4 && n.traits.ambition < 0.8 && !JOBS[n.job].food ? JOBS.farmer : null; // 흉년엔 살려고 밭으로만
     // 꿈이 가리키는 직업이 있고 돈이 모였다면 그 길로 간다
     const want = n.dream && n.dream.job && JOBS[n.dream.job];
     if (want && want.id !== n.job && want.entry_cost <= n.gold && jobDemand(w, want, n.town, 1) > 0.6) return want;
@@ -1273,6 +1286,14 @@
       const n = w.spawn(town.id);
       w.record("arrival", `${RACES[n.race].name} ${JOBS[n.job].name} ${jo(n.name, "이/가")} ${town.name}에 정착했다`, { actor: n.id, town: town.id, imp: 2, wr: 0 });
     }
+    // 비어 가는 마을: 빈집과 곳간을 보고 바깥에서 사람이 들어온다 (마을 하나가 통째로 비지 않게)
+    for (const t of Object.values(w.towns)) {
+      if (t.fallen || !t.start_pop) continue;
+      const here = w.residents(t.id, true).length;
+      if (here >= Math.max(3, t.start_pop * 0.4) || (t.food + (t.store || 0)) < 20 || w.rng.next() > 0.05) continue;
+      const n = w.spawn(t.id);
+      w.record("arrival", `빈집이 늘어 가던 ${t.name}에 ${RACES[n.race].name} ${JOBS[n.job].name} ${jo(n.name, "이/가")} 새로 자리를 잡았다`, { actor: n.id, town: t.id, imp: 2, wr: 0 });
+    }
   }
 
   // ================================================================ 콘텐츠 맞추기
@@ -1468,7 +1489,7 @@
       "magic:memory": "주문 외우기", "magic:match": "문양 읽기", "knowledge:observe": "살피기", "knowledge:memory": "외우기", "knowledge:match": "풀이하기", "social:talk": "흥정하기" },
     client: { language: (K) => (K.lang ? "race:" + K.lang : "foreign"), care: () => "sick" },
     effects: {
-      language: { gold: [2, 6], bond: 4, rel: 6, fame: 1, record: { kind: "interpret", text: "{me:이/가} {race}과 {town} 사람들 사이에서 말을 옮겼다. 서로의 뜻이 통하기 시작했다", imp: 4, p: 0.3 } },
+      language: { gold: [2, 6], bond: 4, rel: 6, fame: 1, record: { kind: "interpret", text: "{me:이/가} {race}과 {town} 사람들 사이에서 말을 옮겼다. 서로의 뜻이 통하기 시작했다", imp: 4, p: 0.12 } },
       care: { heal: 4, gold: [2, 5], rel: 8, record: { kind: "cure", text: "{me:이/가} {client:을/를} 돌봐 일으켜 세웠다", imp: 3, p: 0.3 } },
       magic: { gold: [3, 7], rel: 3, fame: 2, record: { kind: "service", text: "{me:이/가} {client}에게 {work}의 힘을 빌려주었다", imp: 3, p: 0.25 } },
       _: { gold: [2, 6], rel: 4, fame: 1, record: { kind: "service", text: "{me:이/가} {work}에서 솜씨를 보였다", imp: 3, p: 0.2 } },
