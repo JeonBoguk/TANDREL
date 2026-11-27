@@ -729,6 +729,8 @@ function traitWords(n) { return TRAIT_WORDS.filter(([k, v]) => (v > 0 ? n.traits
 function meter(v, col) { return h("span", { class: "meter" }, h("span", { style: `width:${Math.round(v * 100)}%;background:${col || "var(--gold)"}` })); }
 /** 인물 수첩: 이 사람에 대해 '내가 아는 것'만 보여 준다. 캐릭터가 없으면 신의 시점으로 전부 보인다. */
 function bioCard(n) {
+  const hs = Object.entries(n.heritage || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]); // 혈통: 섞인 경우에만, 가족 칸 안에
+  const mixed = hs.length > 1 ? hs.map(([k, v]) => `${A.RACES[k] ? A.RACES[k].name : k} ${Math.round(v * 100)}%`).join(" · ") : "";
   const p = W.player, pov = playing() && n.id !== p.id;
   const life = W.lifeOf(n.id, 2).filter((e) => !pov || p.known.has(e.id));
   const fam = S.familyList(W, n);
@@ -754,8 +756,6 @@ function bioCard(n) {
       h("div", { style: "min-width:0;flex:1" },
         h("div", { class: "bioname" }, n.name, h("span", { class: "muted small" }, ` ${A.RACES[n.race].name} ${W.jobName(n)} · ${A.age(n)}세 · 명성 ${n.fame}`)),
         h("div", { class: "small" }, status),
-        (() => { const hs = Object.entries(n.heritage || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]); // 혈통: 섞인 경우에만
-          return hs.length > 1 ? h("div", { class: "small muted" }, `혈통 ${hs.map(([k, v]) => `${A.RACES[k] ? A.RACES[k].name : k} ${Math.round(v * 100)}%`).join(" · ")}`) : null; })(),
         n.title ? h("div", { class: "small", style: "color:var(--gold)" }, n.title) : null,
         n.pioneer ? h("div", { class: "small", style: "color:var(--gold)" }, `이 세계 최초의 ${A.JOBS[n.pioneer].name}`) : null,
         n.follows !== undefined && n.follows !== null && W.npcs[n.follows] ? h("div", { class: "small" }, `${W.npcs[n.follows].name}의 새 나라에 함께하기로 했다`) : null,
@@ -768,7 +768,9 @@ function bioCard(n) {
         h("button", { class: "link small", type: "button", onclick: () => { bioId = null; renderWin(); } }, "수첩 닫기"))),
     h("div", { class: "grid2" },
       h("div", null, dreamBox, relBox,
-        fam.length ? h("div", { class: "card soft" }, h("div", { class: "ttl" }, "가족"), h("div", { class: "fam" }, fam.map((f) => h("button", { type: "button", onclick: () => { bioId = f.x.id; renderWin(); } }, h("b", null, f.rel), f.x.name, f.x.alive ? "" : " (고인)")))) : null),
+        (fam.length || mixed) ? h("div", { class: "card soft" }, h("div", { class: "ttl" }, "가족"),
+          fam.length ? h("div", { class: "fam" }, fam.map((f) => h("button", { type: "button", onclick: () => { bioId = f.x.id; renderWin(); } }, h("b", null, f.rel), f.x.name, f.x.alive ? "" : " (고인)"))) : null,
+          mixed ? h("div", { class: "small muted" }, `혈통 ${mixed}`) : null) : null),
       h("div", null, h("h3", { style: "margin-top:0" }, pov ? `내가 아는 ${n.name}의 일` : "일대기"),
         life.length ? h("ul", { class: "list compact" }, life.slice(-30).reverse().map((e) => { const j = pov ? [...W.journal].reverse().find((x) => x.e === e.id) : null; return h("li", null, h("span", { class: "d" }, W.date(e.day)), h("span", { class: "t" }, e.text, j ? h("span", { class: "src " + j.s }, S.sourceText(W, j)) : null)); }))
           : h("p", { class: "small muted" }, pov ? "아는 일이 아직 없다." : "기록된 일이 없다."))));
