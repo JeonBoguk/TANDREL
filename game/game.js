@@ -377,7 +377,7 @@
       const m = inviteAt(w, bd);
       if (!m.visited) { m.visited = true; const host = w.npcs[m.to]; adjust(host, w.player.id, 4);
         w.record("visit", `${jo(w.player.name, "이/가")} ${host.name}의 집에 초대받아 놀러 갔다`, { actor: w.player.id, target: host.id, town: bd.town, imp: 2, sent: 2, wr: 0.2 });
-        log(w, `${jo(host.name, "이/가")} 반갑게 맞아 주었다. "어서 와요, 들어와요!" (안에서 E로 함께 시간을 보낼 수 있다)`, "good"); }
+        log(w, `${jo(host.name, "이/가")} 반갑게 맞아 주었다. "어서 와요, 들어와요!"`, "good"); }
     }
   }
   const entryOf = (bd) => [bd.door[0], bd.y + bd.h - 1];
@@ -1375,7 +1375,7 @@
         add({ id: "visit:tea", label: `${jo(host.name, "과/와")} 차 마시기 (1시간)`, min: 60, e: -5, hint: "더 가까워진다. 속 이야기를 들을지도 모른다" });
         if (hour(w) >= 17) add({ id: "visit:meal", label: "저녁 대접받기 (1시간)", min: 60, e: 0, hint: "배를 채우고 기력 +25", ok: !inv.ate, why: "이미 배불리 먹었다" });
         add({ id: "visit:look", label: "집 구경하기 (10분)", min: 10, e: 0, hint: "집을 칭찬한다", ok: !inv.looked, why: "이미 구경했다" });
-        if (hour(w) >= 20.5 && (host.lover === p.id || host.spouse === p.id || A.opinion(host, p.id) >= 70)) add({ id: "visit:stay", label: "🌙 하룻밤 묵어가기", min: 0, e: 0, hint: "이 집에서 자고 간다" });
+        if (hour(w) >= 20.5 && (host.lover === p.id || host.spouse === p.id || A.opinion(host, p.id) >= 70)) add({ id: "visit:stay", label: "하룻밤 묵어가기", min: 0, e: 0, hint: "이 집에서 자고 간다" });
       } else if (inv && !inside) add({ id: "locked", label: `${w.npcs[inv.to].name}의 집 (초대받음)`, ok: false, why: "문으로 걸어 들어가면 된다" });
       const bi = breakinAt(w, bd);
       if (bi && inside) { add({ id: "steal:rummage", label: "서랍 뒤지기 (20분)", min: 0, e: 0, hint: sleepersIn(w, bd).length ? "자는 사람이 깰 수도 있다" : "아무도 없다", ok: !bi.looted, why: "이미 다 뒤졌다" }); add({ id: "steal:leave", label: "조용히 빠져나가기", min: 0, e: 0, hint: "" }); }

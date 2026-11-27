@@ -116,6 +116,11 @@
       t.check(m.visited, "집 안에 들어가 환영받았다");
       const pl = G.MAP.places.find((q) => q.b === bd.id);
       t.check(G.buildingMenu(t.w, pl).some((v) => v.id === "visit:tea"), "안에서 차 마시기를 할 수 있다");
+      const ts = S.talk(t.w, m.to);
+      t.check(ts.options.some((o) => o.label.startsWith("차 한잔")), "집주인에게 말을 걸면 집 안에서만 나오는 대화가 열린다");
+      const fo = ts.options.find((o) => o.label.startsWith("가족 이야기")); if (fo) fo.go();
+      t.check(ts.options.some((o) => o.label.startsWith("이만 가")), "이야기를 나눈 뒤에도 집 안 대화로 돌아온다");
+      S.endTalk(t.w, ts);
       G.tick(t.w, 6 * 60); t.check(!G.insideBuilding(t.w) && m.done, "시간이 지나면 문밖으로 배웅받는다");
     } },
     { id: "reno", name: "목수에게 내 집 공사 맡기기", run(t) {

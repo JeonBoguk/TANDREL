@@ -375,7 +375,7 @@ function renderTalk() {
       h("div", { class: "lines", id: "lines" }, session.lines.slice(-14).map((l) => h("div", { class: "line " + l.who }, l.who === "npc" ? h("b", null, x.name) : null, l.text))),
       h("div", { class: "opts" }, session.over
         ? [h("button", { class: "opt", type: "button", onclick: endSession }, h("b", null, h("span", { class: "k" }, "1"), "대화를 마친다"))]
-        : session.options.map((o, i) => h("button", { class: "opt" + (o.cls ? " " + o.cls : ""), type: "button", onclick: () => { o.go(); renderTalk(); renderHud(); } },
+        : session.options.map((o, i) => h("button", { class: "opt" + (o.cls ? " " + o.cls : ""), type: "button", onclick: () => { o.go(); if (session && session.slept) { session = null; renderTalk(); onNewDay(); renderAll(); return; } renderTalk(); renderHud(); } },
           h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, o.label), o.hint ? h("span", null, o.hint) : null)))));
   const ln = $("#lines"); if (ln) ln.scrollTop = ln.scrollHeight;
 }

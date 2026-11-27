@@ -453,6 +453,15 @@
     if (opener === "propose") { say("npc", `${w.player.name}. 이거… 받아 줄래? 나와 결혼해 줘.`); s.options = [O("청혼을 받아들인다", "결혼한다", () => { say("me", "응, 좋아!"); say("sys", marry(w, w.player, n)); toMenu(w, s); }), O("아직은 때가 아니라고 말한다", "", () => { adjust(n, w.player.id, -10); say("me", "조금만 더 기다려 줄래?"); say("npc", "…알았어. 기다릴게."); toMenu(w, s); })]; return s; }
     if (opener === "confront") { confrontByNPC(w, s, n); return s; }
     if (opener === "invite") { say("npc", pick(w, [`${w.player.name}! 오늘 저녁에 우리 집에 올래요? 6시쯤부터 있을게요.`, `저기… 오늘 저녁에 시간 돼요? 우리 집에서 밥 한번 같이 먹어요.`])); s.options = inviteChoices(w, n, s); return s; }
+    const vc = visitCtx(w, n);
+    if (vc) { // 초대받은 집 안: 집에서만 나오는 대화
+      const kid = !isAdult(n);
+      say("npc", vc.isHost ? (vc.inv.greeted ? pick(w, ["더 필요한 거 있어요? 편하게 있어요.", "차 식기 전에 마셔요.", "심심하진 않죠?"]) : pick(w, [`${w.player.name}, 와 줬네요! 편하게 앉아요.`, "어서 와요. 누추하지만 편하게 있어요.", "기다렸어요! 들어와요, 들어와."]))
+        : kid ? pick(w, ["안녕하세요! 손님이다!", `${vc.host.name} 손님이에요? 안녕하세요.`]) : pick(w, [`아, ${vc.host.name}의 손님이군요. 어서 와요.`, `${vc.host.name}한테 얘기 들었어요. 편하게 있어요.`]));
+      if (vc.isHost) vc.inv.greeted = true;
+      visitMenu(w, s, vc);
+      return s;
+    }
     say("npc", greeting(w, n));
     if (opener === "approach") {
       const news = n.mem.filter((m) => !w.player.known.has(m.e) && w.events[m.e] && w.events[m.e].imp >= 3);
@@ -473,6 +482,8 @@
       if (m.type === "match" && m.b === n.id) opts.push(O(`${w.npcs[m.a].name}의 마음을 전한다`, "미션", () => matchmake(w, s, m), "quest"));
       if (m.type === "fetch" && m.from === n.id && G.has(w, m.item, m.n)) opts.push(O(`${G.ITEMS[m.item].name} ${m.n}개를 건넨다`, "미션", () => { G.take(w, m.item, m.n); s.say("me", "부탁한 거 가져왔어요."); s.say("npc", pick(w, ["정말 고마워요! 이거 받아요.", "와, 이렇게 빨리? 약속한 보수예요.", "덕분에 살았어요."])); completeMission(w, m); toMenu(w, s); }, "quest"));
     }
+    const vc0 = visitCtx(w, n);
+    if (vc0) opts.push(O("집에서 함께 시간 보내기", vc0.isHost ? "차·저녁·집 구경·속 이야기" : "가족 이야기", () => visitMenu(w, s, vc0), "heart"));
     const date = (e.dates || []).find((d) => d.who === n.id && d.day === w.day);
     if (date && G.hour(w) >= 18.5 && G.hour(w) < 22.5) opts.push(O("(데이트) 함께 저녁을 먹는다", "약속한 데이트", () => dateNight(w, s, date), "heart"));
     opts.push(O("요즘 어때요?", "그 사람의 사정을 듣는다", () => howAreYou(w, s)));
@@ -516,6 +527,88 @@
     adjust(n, p.id, -35);
     G.crime(w, "pickpocket", n, 1, `${jo(p.name, "이/가")} ${n.name}의 주머니를 털려다 들켰다`);
     s.say("npc", pick(w, ["지금 뭐 하는 거야?! 도둑이야!", "손 치워! 경비병! 경비병!"])); s.over = true;
+  }
+
+  // ---- 초대받은 집 안
+  /** 지금 이 사람의 집에 초대받아 들어와 있는가 */
+  function visitCtx(w, n) {
+    const bd = G.insideBuilding(w);
+    if (!bd || bd.kind !== "house") return null;
+    const inv = G.inviteAt(w, bd);
+    if (!inv) return null;
+    const hh = G.houseOfNpc(n);
+    if (hh.town !== bd.town || hh.hid !== bd.hid) return null;
+    return { bd, inv, host: w.npcs[inv.to], isHost: inv.to === n.id, pl: G.MAP.places.find((q) => q.b === bd.id) };
+  }
+  function visitMenu(w, s, vc) {
+    const { inv, host, isHost, pl } = vc, n = w.npcs[s.nid], p = w.player, h = G.hour(w), deep = (inv.deep = inv.deep || {}), fam = (inv.fam = inv.fam || {});
+    const act = (id, me, reply) => () => {
+      s.say("me", me);
+      const r = G.doBuilding(w, pl, id);
+      if (r.slept) { s.slept = true; s.over = true; return; }
+      if (r.text) s.say("sys", r.text);
+      if (reply) s.say("npc", reply);
+      visitMenu(w, s, vc);
+    };
+    const opts = [];
+    if (isHost) {
+      opts.push(O("차 한잔 해요", "1시간 · 더 가까워진다", act("visit:tea", "차 한잔 마셔도 돼요?", null), "heart"));
+      if (h >= 17 && !inv.ate) opts.push(O("같이 저녁 먹어요", "1시간 · 배를 채운다", act("visit:meal", "배고프다… 같이 저녁 먹을래요?", pick(w, ["많이 먹어요. 또 해 줄게요.", "입에 맞아요? 다행이다."]))));
+      if (!inv.looked) opts.push(O("집 구경시켜 줄래요?", "10분", act("visit:look", "집 구경 좀 해도 돼요?", null)));
+    }
+    if (!fam[n.id]) opts.push(O("가족 이야기 들려줄래요?", "이 집에 사는 사람들", () => familyTalk(w, s, vc)));
+    if (isAdult(n) && !deep[n.id] && (opinion(n, p.id) >= 45 || p.spouse === n.id || p.lover === n.id)) opts.push(O("요즘 고민 있어요?", "속 깊은 이야기", () => deepTalk(w, s, vc), "heart"));
+    if (isHost && h >= 20.5 && (host.lover === p.id || host.spouse === p.id || opinion(host, p.id) >= 70)) opts.push(O("오늘 여기서 자고 가도 될까요?", "하룻밤 묵는다", act("visit:stay", "오늘… 여기서 자고 가도 될까요?", null), "heart"));
+    opts.push(O("다른 이야기도 해요", "", () => toMenu(w, s)));
+    if (isHost) opts.push(O("이만 가 볼게요", "집을 나선다", () => leaveVisit(w, s, vc)));
+    else opts.push(O("잘 있어요", "대화를 마친다", () => { s.say("me", "편히 쉬어요."); s.say("npc", farewell(w, n)); s.over = true; }));
+    s.options = opts;
+  }
+  function familyTalk(w, s, vc) {
+    const n = w.npcs[s.nid], fl = familyList(w, n).filter((f) => f.x.alive);
+    vc.inv.fam[n.id] = true; tick5(s); adjust(n, w.player.id, 2);
+    s.say("me", "가족 이야기 좀 들려줄래요?");
+    const home = fl.filter((f) => !f.x.at_war && f.x.town === n.town), away = fl.filter((f) => !home.includes(f));
+    if (!fl.length) s.say("npc", pick(w, ["혼자 살아요. 가끔은 적적하죠.", "식구는 없어요. 그래서 이렇게 손님이 오면 좋아요."]));
+    else {
+      if (home.length) s.say("npc", `이 집엔 ${home.slice(0, 4).map((f) => `${f.rel} ${f.x.name}`).join(", ")}${home.length > 4 ? " 말고도 더 있어요" : ""}. ${pick(w, ["시끌벅적하죠?", "다들 착해요.", "가끔 싸우기도 해요, 하하."])}`);
+      const war = away.find((f) => f.x.at_war);
+      if (war) s.say("npc", `${f2(war)} 지금 전선에 나가 있어요. …무사히 돌아와야 할 텐데.`);
+      else if (away.length) s.say("npc", `${f2(away[0])} ${w.towns[away[0].x.town] ? w.towns[away[0].x.town].name : "먼 곳"}에 살아요. 자주는 못 봐요.`);
+      const kid = home.find((f) => !isAdult(f.x));
+      if (kid) s.say("npc", `${jo(kid.x.name, "은/는")} 요즘 ${A.age(kid.x) < 6 ? "말이 부쩍 늘었어요" : "뭘 해도 제멋대로예요"}. 귀엽죠.`);
+    }
+    visitMenu(w, s, vc);
+  }
+  const f2 = (f) => `${f.rel} ${jo(f.x.name, "은/는")}`;
+  /** 속 깊은 이야기: 이 사람이 마음에 품은 것 하나를 털어놓는다 */
+  function deepTalk(w, s, vc) {
+    const p = w.player, n = w.npcs[s.nid], fam = A.family(n);
+    vc.inv.deep[n.id] = true; s.mins += 20; adjust(n, p.id, 4); adjust(p, n.id, 2);
+    s.say("me", "요즘 고민 있어요? 들어 줄게요.");
+    const ids = Object.keys(n.rel).map(Number).filter((id) => id !== p.id && w.npcs[id] && w.npcs[id].alive && !fam.has(id));
+    const fav = maxBy(ids.filter((id) => isAdult(w.npcs[id]) && n.rel[id] >= 50), (id) => n.rel[id]);
+    const foe = maxBy(ids.filter((id) => n.rel[id] <= -30), (id) => -n.rel[id]);
+    const cand = [];
+    if (p.spouse === n.id || p.lover === n.id) cand.push(() => pick(w, ["고민은… 당신이 요즘 너무 바쁜 거? 농담이에요. 이렇게 와 줘서 좋아요.", "가끔 무서워요. 이 행복이 깨질까 봐."]));
+    if (fav !== undefined && fav !== null && !n.spouse && !n.lover) cand.push(() => `사실… ${jo(w.npcs[fav].name, "을/를")} 좋아해요. 아무한테도 말하면 안 돼요.`);
+    if (foe !== undefined && foe !== null) cand.push(() => `${w.npcs[foe].name}만 생각하면 아직도 속이 끓어요. ${pick(w, ["용서가 잘 안 돼요.", "언젠가 따져야 할까요?"])}`);
+    if (n.gold < 10) cand.push(() => "요즘 살림이 빠듯해요. 이번 겨울을 어떻게 날지…");
+    if (n.health < 6) cand.push(() => "몸이 예전 같지 않아요. 괜찮은 척하는 거예요.");
+    if (n.dream) cand.push(() => { const e = EX(w); e.dreams = e.dreams || {}; e.dreams[n.id] = n.dream.id + "@" + n.dream.since; return `언젠가는 꼭 ‘${A.dreamName(n)}’. ${A.dreamProgress(n, w) > 0.5 ? "이제 거의 다 왔어요." : "아직 한참 멀었지만요."}`; });
+    if (!cand.length) cand.push(() => pick(w, ["고민이요? 글쎄요… 이렇게 같이 있으니 딱히 없네요.", "별일 없이 사는 게 제일이죠."]));
+    s.say("npc", pick(w, cand)());
+    s.say("sys", `${jo(n.name, "과/와")} 한층 가까워졌다.`);
+    visitMenu(w, s, vc);
+  }
+  function leaveVisit(w, s, vc) {
+    const n = w.npcs[s.nid];
+    s.say("me", pick(w, ["오늘 정말 즐거웠어요. 이만 가 볼게요.", "초대해 줘서 고마워요. 이만 가 볼게요."]));
+    s.say("npc", pick(w, ["와 줘서 고마워요. 또 놀러 와요!", "벌써 가요? 조심히 가요.", "다음엔 내가 놀러 갈게요."]));
+    adjust(n, w.player.id, 2);
+    vc.inv.done = true;
+    w.ppos = { x: vc.bd.door[0] + 0.5, y: vc.bd.door[1] + 0.6 };
+    s.over = true;
   }
 
   // ---- 초대
