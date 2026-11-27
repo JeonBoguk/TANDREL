@@ -1186,7 +1186,7 @@ function renderTitle() {
       row("화면 글자·창 크기", sel("uiScale", [[0.85, "작게"], [1, "보통"], [1.15, "크게"], [1.3, "아주 크게"]])),
       h("p", { class: "small muted" }, "설정은 이 브라우저에만 저장된다."), back);
   } else body = h("div", { class: "tpanel" }, h("h3", null, "종료"), h("p", null, W && W.player ? "지금 세계를 저장했다. 이 탭을 닫으면 된다. 다시 열면 ‘이어하기’로 계속할 수 있다." : "이 탭을 닫으면 된다."), back);
-  el.replaceChildren(h("div", { class: "tbox" }, h("div", { class: "tlogo" }, h("div", { class: "tl1" }, "탄드렐"), h("div", { class: "tl2" }, "TANDREL")), body));
+  el.replaceChildren(h("div", { class: "tbox" }, h("div", { class: "tlogo" }, h("div", { class: "tl1" }, "TANDREL"), h("div", { class: "tl2" }, "각자의 이야기가 엮여 역사가 되는 곳")), body));
 }
 function boot(data) {
   let w = null;
