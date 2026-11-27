@@ -517,6 +517,7 @@
         skills: {},                                                  // 기술 {id: {lv, xp}}
       };
       n.look = makeLook(n);
+      for (const k of r.knows || []) learn(n, k, "race"); // 종족이 태어날 때부터 아는 것 (예: 용족의 말)
       if (n.grown) {
         setJob(n, n.job);
         // 처음부터 있던 어른은 일해 온 햇수만큼 솜씨가 있다 (해마다 일한 날의 절반쯤)
@@ -777,6 +778,14 @@
         if (n.health <= 0) w.die(n, "던전 탐험 중 괴물에게 당해", { imp: 5 });
         else w.record("injury", `${jo(n.name, "이/가")} 모험 중 크게 다쳤다`, { target: n.id, town: n.town, imp: 2 });
       } else {
+        // 유적에서 두루마리를 찾기도 한다: 잊힌 지식이 세상에 다시 나온다 (플레이어와 같은 유적 보물표)
+        const scrolls = CONTENT.loot.filter((l) => l.id && CONTENT.items[l.id] && CONTENT.items[l.id].teaches && !knows(n, CONTENT.items[l.id].teaches));
+        if (scrolls.length && w.rng.next() < 0.3) {
+          const it = CONTENT.items[w.rng.choices(scrolls, scrolls.map((l) => l.w)).id], K = KNOW(it.teaches);
+          learn(n, K.id); n.fame += 2;
+          w.record("discovery", `${jo(n.name, "이/가")} 유적 깊은 곳에서 ${it.name}${jo(it.name, "을/를").slice(it.name.length)} 찾아내 ‘${K.name}’${jo(K.name, "을/를").slice(K.name.length)} 익혔다`, { actor: n.id, town: n.town, imp: 5, wr: 0.5, data: { skill: K.id, how: "ruin" } });
+          return;
+        }
         const loot = w.rng.randint(40, 120);
         n.gold += loot; n.fame += 2;
         w.record("treasure", `${jo(n.name, "이/가")} 고대 유적에서 금화 ${loot}닢어치 보물을 찾아냈다`, { actor: n.id, town: n.town, imp: 5, wr: 0.5 });
@@ -1078,6 +1087,7 @@
     warDay(w);
     worldEvents(w);
     emergeJobs(w);
+    knowledgeBirth(w);
     genesis(w);
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
@@ -1495,13 +1505,47 @@
       _: { gold: [2, 6], rel: 4, fame: 1, record: { kind: "service", text: "{me:이/가} {work}에서 솜씨를 보였다", imp: 3, p: 0.2 } },
     },
   };
+  /* 지식이 태어나는 삶 (born, 데이터). 조건을 채운 어른이 날마다 p의 확률로 깨친다. 이미 아는 사람이 있으면 훨씬 드물다.
+   *  { job, lv } 그 직업으로 솜씨 lv 이상 · { flag } 겪은 일(veteran 전선, widowed…) · { life: [사건 종류], n } 내 생애 사건
+   *  { fame } 이름 · { title: true } 칭호(나라를 세운 사람 등) · { mixed: n } 내 마을에 다른 종족이 n명 이상 · text: 깨친 이야기
+   *  p: 세계 하나에 하루 한 번 오는 기회 (기본 0.001, 몇 년에 한 번꼴) */
+  function bornOk(w, n, b) {
+    if (b.job && n.job !== b.job) return false;
+    if (b.lv && Math.max(0, ...((JOBS[n.job] || {}).teaches || []).map((k) => skillLv(n, k))) < b.lv) return false;
+    if (b.flag && !n.flags.has(b.flag)) return false;
+    if (b.life && w.lifeOf(n.id).filter((e) => b.life.includes(e.kind)).length < (b.n || 1)) return false;
+    if (b.fame && n.fame < b.fame) return false;
+    if (b.title && !n.title) return false;
+    if (b.mixed && w.residents(n.town).filter((m) => m.race !== n.race).length < b.mixed) return false;
+    return true;
+  }
+  function knowledgeBirth(w) {
+    const people = w.alive().filter((n) => isAdult(n) && !n.at_war && n.controller !== "player");
+    for (const K of CONTENT.knowledge) {
+      if (!K.born) continue;
+      // p는 세계 하나에 하루 한 번 오는 기회 (조건에 맞는 사람이 많아도 같다 → 어떤 세계엔 끝내 안 생긴다)
+      const known = w.alive().some((n) => knows(n, K.id)), p = (K.born.p || 0.001) * (known ? 0.3 : 1);
+      if (w.rng.next() > p) continue;
+      const ok = people.filter((n) => !knows(n, K.id) && bornOk(w, n, K.born));
+      if (!ok.length) continue;
+      {
+        const n = w.rng.choice(ok);
+        learn(n, K.id);
+        w.record("discovery", `${jo(n.name, "이/가")} ${fill(K.born.text || "오랜 경험 끝에 ‘{k}’{k:을/를} 깨쳤다", { k: K.name })}${known ? "" : ". 이 세계에서 처음 생겨난 앎이다"}`, { actor: n.id, town: n.town, imp: known ? 3 : 5, wr: 0.3, data: { skill: K.id, how: "life" } });
+      }
+    }
+  }
+  /** 수요: 적힌 조건을 모두 채워야 한다 */
   function demandMet(w, d) {
-    if (!d) return false;
-    if (d.race) return seenRace(w, d.race) && w.alive().some((n) => n.race === d.race);
-    if (d.events) return recent(w, d.events, d.within || 120) >= (d.n || 1);
-    if (d.sick) return w.alive().filter((n) => n.health < 6).length >= d.sick;
-    if (d.war) return !!(w.war && w.war.active);
-    return false;
+    if (!d || !Object.keys(d).length) return false;
+    if (d.nations && Object.values(w.nations || {}).filter((x) => !x.ended).length < d.nations) return false;
+    if (d.pop && w.alive().length < d.pop) return false;
+    if (d.crime && recent(w, ["theft", "theft_unknown", "raid", "revenge", "duel"], d.within || 120) < d.crime) return false;
+    if (d.race && !(seenRace(w, d.race) && w.alive().some((n) => n.race === d.race))) return false;
+    if (d.events && recent(w, d.events, d.within || 120) < (d.n || 1)) return false;
+    if (d.sick && w.alive().filter((n) => n.health < 6).length < d.sick) return false;
+    if (d.war && !(w.war && w.war.active)) return false;
+    return true;
   }
   /** 저장된 세계 정의(w.defs)를 콘텐츠에 올린다. 이전 세계의 정의는 지운다 */
   function applyDefs(w) {
@@ -1518,10 +1562,13 @@
     const pool = tools.length >= 2 ? tools : Object.keys(TOOL_AUTO);
     const pick = w.rng.shuffle(pool).slice(0, 3);
     const steps = pick.map((t, i) => ({ name: GEN.step[dom + ":" + t] || ["준비", "본일", "마무리"][i], tool: t, p: {}, ...(i === pick.length - 1 ? { w: 1.5 } : {}) }));
-    const job = { id, name: fill(GEN.name[dom] || "{noun} 일꾼", { noun }), income: [2.0, 5.0], entry_cost: 20, weight: 0, shift: false, teaches: [K.id], needKnow: K.id,
+    const job = { id, name: K.jobName || fill(GEN.name[dom] || "{noun} 일꾼", { noun }), income: [2.0, 5.0], entry_cost: 20, weight: 0, shift: false, teaches: [K.id], needKnow: K.id,
       color: GEN.color[dom] || "#9a9a9a", workplace: GEN.place[dom] || "market", look: { hat: GEN.hat[dom] || "cap" }, born: w.day, from: K.id };
-    const work = { id: id + "_work", job: id, name: fill(GEN.work[dom] || "{noun} 일", { noun }), mins: 120, energy: 10, skill: K.id, steps,
-      client: GEN.client[dom] ? GEN.client[dom](K) : "any", effects: GEN.effects[dom] || GEN.effects._, hint: `${noun}${jo(noun, "을/를").slice(noun.length)} 아는 사람만 할 수 있는 일` };
+    const work = { id: id + "_work", job: id, name: K.workName || fill(GEN.work[dom] || "{noun} 일", { noun }), mins: 120, energy: 10, skill: K.id, steps,
+      hint: `${K.name}${jo(K.name, "을/를").slice(K.name.length)} 아는 사람만 할 수 있는 일` };
+    if (K.makes) Object.assign(work, { needs: { ...K.makes.needs }, gives: { ...K.makes.gives } }); // 물건을 만드는 지식
+    else Object.assign(work, { client: K.client || (GEN.client[dom] ? GEN.client[dom](K) : "any"), effects: K.effects || GEN.effects[dom] || GEN.effects._ });
+    if (K.client === null) delete work.client;
     return { job, work };
   }
   function genesis(w) {
@@ -1631,6 +1678,7 @@
   }
 
   function returnHome(n, w, text = null, imp = 4) {
+    n.flags.add("veteran"); // 전선을 겪고 돌아온 사람
     n.at_war = false;
     if (n.role === "hero") n.role = null;
     let home = w.towns[n.home];
@@ -1810,6 +1858,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, genesis, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

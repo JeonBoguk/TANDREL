@@ -290,12 +290,18 @@
     } },
     { id: "genesis", name: "용족이 오고 용언을 아는 사람이 있으면, 이 세계에 용언 통역가가 생긴다", run(t) {
       const W = t.w, town = t.town();
+      // 이 세계에 저절로 생겨 있었다면 걷어 내고 시작한다
+      W.defs.jobs = W.defs.jobs.filter((j) => j.id !== "w_dragon_tongue"); W.defs.works = W.defs.works.filter((x) => x.job !== "w_dragon_tongue"); A.applyDefs(W);
+      for (const n of W.npcs) if (n.job === "w_dragon_tongue") { n.job = "farmer"; n.pioneer = null; }
       t.check(!A.JOBS.w_dragon_tongue, "처음엔 그런 직업이 없다");
-      const sage = W.spawn(town, { race: "human", job: "farmer", ageYears: 40 }); sage.traits.ambition = 0.99; A.learn(sage, "dragon_tongue");
+      for (const n of W.alive()) if (n.race === "dragonkin") n.health = 0; W.npcs.forEach((n) => { if (n.race === "dragonkin") n.alive = false; }); // 이 시험에선 용족이 처음 온다
+      const sage0 = W.spawn(town, { race: "human", job: "farmer", ageYears: 40 }); sage0.traits.ambition = 0.99; A.learn(sage0, "dragon_tongue");
       W.day = W.day - (W.day % 5) + 2; A.genesis(W);
       t.check(!A.JOBS.w_dragon_tongue, "용족이 없으면 수요가 없다");
-      for (let i = 0; i < 2; i++) W.spawn(town, { race: "dragonkin", job: "adventurer", ageYears: 120 }); if (!W.racesSeen.includes("dragonkin")) W.racesSeen.push("dragonkin");
+      const dks = [0, 1].map(() => W.spawn(town, { race: "dragonkin", job: "adventurer", ageYears: 120 })); if (!W.racesSeen.includes("dragonkin")) W.racesSeen.push("dragonkin");
+      t.check(dks.every((d) => A.knows(d, "dragon_tongue")), "용족은 태어날 때부터 용의 언어를 안다");
       A.genesis(W);
+      const sage = W.npcs.find((n) => n.pioneer === "w_dragon_tongue") || sage0;
       const J = A.JOBS.w_dragon_tongue, wk = A.worksOf("w_dragon_tongue")[0];
       t.check(J && J.name === "용언 통역가" && sage.job === J.id, `새 직업: ${J && J.name}, 첫 사람 ${sage.name}`);
       t.check(W.events.some((e) => e && e.kind === "job_born" && e.data && e.data.gen), W.events.filter((e) => e && e.kind === "job_born").pop().text);
@@ -305,7 +311,7 @@
       t.check(A._.betterJob(sage, W) === null || A._.betterJob(sage, W).id === "farmer", "개척자는 자기 일을 떠나지 않는다 (흉년에 밭으로 가는 것만 예외)");
       sage.dream = null;
       // 주민 통역가가 일하면 용족과 마을 사람들 사이가 가까워진다
-      const dk = W.npcs.filter((n) => n.alive && n.race === "dragonkin" && n.town === sage.town), other = W.residents(sage.town).find((n) => n.race !== "dragonkin" && n !== sage);
+      const dk = W.npcs.filter((n) => n.alive && n.race === "dragonkin" && n.id !== sage.id), other = W.residents(sage.town).find((n) => n.race !== "dragonkin" && n !== sage);
       const before = other ? (other.rel[dk[0].id] || 0) : 0;
       for (let i = 0; i < 6; i++) A._.rWork(sage, W);
       t.check(other && (other.rel[dk[0].id] || 0) > before, `${other && other.name}의 용족을 향한 마음 ${before} → ${other && other.rel[dk[0].id]}`);
@@ -324,6 +330,23 @@
       t.check(!A.JOBS.w_dragon_tongue, "새 세계에는 없다");
       A.applyDefs(W);
     } },
+    { id: "lifeknow", name: "겪은 삶에서 지식이 태어나고, 수요가 맞으면 직업이 된다", run(t) {
+      const W = t.w, K = A.KNOW("field_surgery"), p0 = K.born.p;
+      for (const n of W.alive()) if (A.knows(n, "field_surgery")) delete n.skills.field_surgery;
+      W.defs.jobs = W.defs.jobs.filter((j) => j.id !== "w_field_surgery"); W.defs.works = W.defs.works.filter((x) => x.job !== "w_field_surgery"); A.applyDefs(W);
+      for (const n of W.npcs) if (n.job === "w_field_surgery") { n.job = "farmer"; n.pioneer = null; }
+      const vet = W.spawn(t.town(), { race: "human", job: "cook", ageYears: 35 }); vet.flags.add("veteran");
+      for (const n of W.alive()) if (n !== vet) n.flags.delete("veteran");
+      K.born.p = 1; A.knowledgeBirth(W); K.born.p = p0;
+      t.check(A.knows(vet, "field_surgery"), W.events.filter((e) => e && e.kind === "discovery").pop().text);
+      W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2; A.genesis(W); W.war.active = was;
+      const J = A.JOBS.w_field_surgery, wk = A.worksOf("w_field_surgery")[0];
+      t.check(J && J.name === "야전 의원" && vet.job === J.id && wk.client === "sick" && wk.effects.heal, `전쟁 중 → ${J && J.name}: ‘${wk && wk.name}’ ${wk && wk.steps.map((s) => s.name).join("→")}`);
+      // 모험가는 유적에서 두루마리를 찾아 잊힌 지식을 세상에 내놓는다
+      const adv = W.spawn(t.town(), { race: "human", job: "adventurer", ageYears: 30 }); const r0 = W.rng.next;
+      let found = false; for (let i = 0; i < 3000 && !found; i++) { adv.health = 10; A._.rWork(adv, W); found = ["rune", "elixir", "medicine", "dragon_tongue"].some((k) => A.knows(adv, k)); }
+      t.check(found, found ? W.events.filter((e) => e && e.kind === "discovery" && e.actor === adv.id).pop().text : "유적에서 아무것도 못 찾았다");
+    } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
       A.setJob(p, "farmer"); p.gold = 60;
@@ -338,8 +361,9 @@
       const dB = G.jobDraft(W, null); Object.assign(dB, { name: "밀빵 장수", skill: "weaving" }); Object.assign(dB.work, { name: "밀빵 굽기", mins: 240, kind: "make", needs: { wheat: 4 }, gives: { bread: 2 } });
       t.check(G.checkJobDraft(W, dB).some((x) => /빵집 주인/.test(x)), `이미 있는 일은 새 직업이 못 된다: ${G.checkJobDraft(W, dB).find((x) => /이미/.test(x))}`);
       const dH = G.jobDraft(W, null); Object.assign(dH, { name: "약손", skill: "weaving" }); Object.assign(dH.work, { name: "아픈 데 만지기", kind: "serve", serve: "heal" });
-      if (W.jobOpen("doctor")) t.check(G.checkJobDraft(W, dH).some((x) => /의사/.test(x)), "아픈 사람 돌보기는 의사가 이미 하는 일");
-      else t.check(!G.checkJobDraft(W, dH).some((x) => /이미/.test(x)), "의사가 아직 없는 세계라면 아픈 사람 돌보기는 처음 나오는 일");
+      const healer = G.sameWork(W, G.draftWork(dH, "draft", "draft"));
+      if (healer) t.check(G.checkJobDraft(W, dH).some((x) => x.includes(healer.job.name)), `아픈 사람 돌보기는 ‘${healer.job.name}’${"이/가"} 이미 하는 일`);
+      else t.check(!G.checkJobDraft(W, dH).some((x) => /이미/.test(x)), "돌보는 직업이 아직 없는 세계라면 처음 나오는 일");
       d.work.gives = { basket: 1 }; d.work.needs = { fiber: 8 }; d.work.mins = 240;
       t.check(G.checkJobDraft(W, d).length === 0, `규칙을 지키면 통과: ${G.checkJobDraft(W, d).join(" / ") || "문제 없음"}`);
       const wkTry = G.draftWork(d, "draft", "draft");

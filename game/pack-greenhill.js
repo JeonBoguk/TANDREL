@@ -21,8 +21,11 @@
         races: { halfling: 0.8, human: 0.2 }, job_bias: { cook: 3, farmer: 2, beekeeper: 3 } },
     ],
 
+    knowledge: [
+      { id: "beekeeping", name: "벌 치기", domain: ["nature", "craft"], desc: "벌통을 돌보고 꿀을 거둔다" },
+    ],
     jobs: [
-      { id: "beekeeper", name: "양봉가", income: [1.5, 3.5], food: 0.8, entry_cost: 20, weight: 0.5, start_text: "벌통을 놓았다",
+      { id: "beekeeper", teaches: ["beekeeping"], name: "양봉가", income: [1.5, 3.5], food: 0.8, entry_cost: 20, weight: 0.5, start_text: "벌통을 놓았다",
         color: "#e0b02a", icon: "🐝", workplace: "fields", look: { hat: "veil" },
         skill: { name: "벌통 돌보기", hint: "하루에 한 번, 꿀을 거둔다. 사람에게 쓰면 꿀을 나눠 준다",
           use(api) {
