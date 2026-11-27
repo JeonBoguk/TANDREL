@@ -1396,16 +1396,19 @@
     const auto = !scores && !grade;
     if (auto) scores = A.autoScores(p, wk, w.rng, 0.12);
     const q = grade ? A.GRADES.find((g) => g.id === grade).at + 0.05 : A.workQuality(wk, scores), g = A.gradeOf(q);
+    const client = wk.client ? A.workClient(w, p, wk) : null;
+    if (wk.client && !client) return { text: "손님이 없다" };
     for (const [id, n] of Object.entries(wk.needs || {})) take(w, id, n);
     const got = [];
     for (const [id, n] of Object.entries(wk.gives || {})) { const k = Math.max(1, Math.round(n * g.mult)); give(w, id, k, wk.name, town.name); got.push(`${ITEMS[id].name} ${k}개`); }
+    const fx = wk.effects ? A.applyEffects(w, p, wk, q, client) : [];
     if (wk.skill) A.addXp(p, wk.skill, 2 + Math.round(q * 4));
     ext(w).works = ext(w).works || {}; const rec = ext(w).works[wk.id] || (ext(w).works[wk.id] = { n: 0, best: 0 }); rec.n++; rec.best = Math.max(rec.best, Math.round(q * 100) / 100);
     if (g.id === "master") {
       p.fame += 1;
       w.record("masterwork", `${jo(p.name, "이/가")} ${wk.name}에서 걸작을 내놓았다`, { actor: p.id, town: town.id, imp: 3, wr: 0.2, data: { work: wk.id, q: Math.round(q * 100) / 100 } });
     }
-    const text = `${wk.name}${auto ? "(손에 익은 대로)" : ""}: ${g.name} 솜씨로 ${got.join(", ")}${got.length ? "를 만들었다" : "를 마쳤다"}.`;
+    const text = `${wk.name}${auto ? "(손에 익은 대로)" : ""}: ${g.name} 솜씨${client ? `, 손님 ${client.name}` : ""}. ${got.length ? `${got.join(", ")}를 만들었다.` : ""}${fx.length ? ` ${fx.join(", ")}.` : got.length ? "" : "일을 마쳤다."}`.replace(/\s+/g, " ").trim();
     if (pl) return finish(w, text, wk.mins, wk.energy);
     return { text, q, grade: g };
   }
@@ -1426,8 +1429,9 @@
     }
     for (const wk of A.worksOf(p.job).filter((x) => x.place === pl.kind)) {
       const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n)).map(([id, n]) => `${ITEMS[id].name} ${n - (e.inv[id] || 0)}`);
-      add({ id: "wk:" + wk.id, label: wk.steps ? `${wk.name} · ${wk.steps.length}단계` : wk.name, min: wk.mins, e: wk.energy, hint: [wk.hint, wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
-        ok: workReady(wk) && !lack.length, why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : "아직 할 수 없는 일이다", work: wk });
+      const client = wk.client ? A.workClient(w, p, wk) : null;
+      add({ id: "wk:" + wk.id, label: wk.steps ? `${wk.name} · ${wk.steps.length}단계` : wk.name, min: wk.mins, e: wk.energy, hint: [wk.hint, client ? `손님 ${client.name}` : "", wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
+        ok: workReady(wk) && !lack.length && (!wk.client || !!client), why: lack.length ? `재료가 모자라다: ${lack.join(", ")}` : wk.client && !client ? "지금 이 마을엔 이 일을 맡길 손님이 없다" : "아직 할 수 없는 일이다", work: wk, client });
     }
     const jobsHere = A.CONTENT.jobs.filter((j) => (j.workplace || "square") === pl.kind && w.jobOpen(j.id) && jobReady(j)).map((j) => j.id);
     for (const j of jobsHere) if (j !== p.job) {

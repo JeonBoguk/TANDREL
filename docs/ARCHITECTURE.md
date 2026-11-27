@@ -43,6 +43,8 @@ Asteria.extend({
   - 조작 화면: sims.js `Sims.register(id, { name, how, play(ctx) })` (플레이어가 직접)
   - 단계 점수의 가중 평균이 품질(`GRADES`: 거친·보통·좋은·걸작)이 되고, 결과 수량·솜씨 경험·소식에 반영된다(`Game.finishWork`).
   - 직업에 `shift: false`를 두면 기본 '반나절 일하기'가 붙지 않아, 업무의 부품이 모두 준비돼야만 플레이어에게 열린다(`Game.jobReady`).
+  - 봉사하는 일: `client`(손님 조건)와 `effects`(금화·치료·마음·유대·곳간·명성·소식 `record.text`의 `{me:이/가}` 자리)를 적는다. 엔진 `applyEffects`가 주민·플레이어 모두에게 같게 적용.
+  - 부품은 분야(`TOOL_DOMAINS`)를, 지식은 `domain`을 가진다. 지식에 `demand`(`{race}`·`{events, within, n}`·`{sick}`)를 달면, 수요가 생기고 아는 사람이 있을 때 세계 안에서 직업이 생긴다(engine `genesis`, `makeJobDef`). 만든 정의는 `w.defs{jobs, works}`에 저장되고 `applyDefs(w)`가 그 세계를 열 때 콘텐츠에 올린다(다른 세계엔 없다).
   - 새 직업은 팩 하나로 더할 수 있다: `game/pack-jeweler.js`가 예. 아이템의 `foundAt: "rock"`, `chance`로 바위에서 나오게 할 수 있다. 직업 그림은 `look.hat`·`look.prop`.
 - 직업의 일은 `works`에 적는다. `sim`은 처리 이름으로, game.js의 `SIMS` 등록표(`shift`: 반나절 일하기, `make`: 재료 → 물건)에 있어야 한다. 새 처리는 `Game.registerSim(id, (w, work, {town, pl}) => 결과 문장)`. 처리가 등록된 일이 없는 직업은 플레이어에게 열리지 않는다(`Game.jobReady`). 목록은 `Asteria.worksOf(직업)`.
 - 직업별로 손에 드는 것은 `render.js`의 `PROP16`.

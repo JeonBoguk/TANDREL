@@ -427,7 +427,7 @@ function renderMenu() {
       bmenu.pick = null; bmenu.sim = null;
       if (res) { const r = G.finishWork(W, pl, wk.id, res.auto ? null : res.scores); bmenu.result = r.text; }
       renderMenu(); renderHotbar(true); renderHud(); refocus();
-    });
+    }, { client: wk.client ? A.workClient(W, p, wk) : null, vocab: wk.skill ? A.KNOW(wk.skill).vocab : null });
     return;
   }
   const inv = pl.kind === "house" ? G.inviteAt(W, G.MAP.buildings[pl.b]) : null;

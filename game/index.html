@@ -130,6 +130,18 @@ canvas.icon { image-rendering: pixelated; flex: none; vertical-align: middle; }
 .simhead .chip.done { color: var(--text-3); }
 .simbody { display: flex; flex-direction: column; align-items: center; gap: 8px; touch-action: none; }
 .simcv { display: block; border-radius: var(--r1); }
+.simtalk { display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+.simtalk p { margin: 0; }
+.simchoices { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.simgrid { display: grid; grid-template-columns: repeat(6, auto); gap: 6px; justify-content: center; }
+.simcell { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r1); padding: 2px; min-width: var(--tap); min-height: var(--tap); display: grid; place-items: center; }
+.simcell:hover { border-color: var(--accent); }
+.simshow { display: flex; gap: 10px; align-items: center; justify-content: center; min-height: 60px; }
+.simdict { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.simdict .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; }
+.simtime { height: 3px; background: var(--line-2); align-self: stretch; width: 100%; }
+.glyph { image-rendering: pixelated; }
+@media (max-width: 480px) { .simgrid { grid-template-columns: repeat(4, auto); } }
 .simfoot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .opt.quest b { color: var(--accent); }
 .opt[disabled] { opacity: 0.45; cursor: default; }

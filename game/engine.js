@@ -192,11 +192,18 @@
    *   - 자동(TOOL_AUTO, 여기): 주민이 일할 때, 플레이어가 '맡기기'를 고를 때 점수를 계산한다
    *   - 조작 화면(sims.js의 Sims.register): 플레이어가 직접 한다
    * 둘 다 있는 부품만 쓰는 업무가 '준비된' 업무다. 플레이어에게는 준비된 업무가 있는 직업만 열린다. */
-  const TOOL_AUTO = {};
-  /** 조작 부품의 자동 점수 모델을 더한다: (p, lv, rng, n) → 0~1 */
-  function registerTool(id, auto) { TOOL_AUTO[id] = auto; }
-  const baseAuto = (hard) => (p, lv, rng, n) => clamp(0.32 + 0.12 * lv - (p && p.hard || hard) + (rng.next() + rng.next() - 1) * 0.18 + (n ? (n.traits.ambition - 0.5) * 0.06 : 0), 0, 1);
-  for (const [id, hard] of Object.entries({ gauge: 0.05, rhythm: 0.08, timing: 0.06, measure: 0.04, trace: 0.1, grind: 0.05 })) registerTool(id, baseAuto(hard));
+  const TOOL_AUTO = {}, TOOL_DOMAINS = {};
+  /** 조작 부품의 자동 점수 모델을 더한다: (p, lv, rng, n) → 0~1. domains: 이 부품이 어울리는 분야 */
+  function registerTool(id, auto, domains) { TOOL_AUTO[id] = auto; if (domains) TOOL_DOMAINS[id] = domains; }
+  /* 분야(domain): craft 손기술 · heat 불 · art 꾸밈 · body 몸 · language 언어 · social 사람 대하기 · knowledge 앎 · care 돌봄 · nature 자연 · magic 마법
+   * 지식(knowledge)도 domain을 가진다. 세계에서 새 직업이 생길 때 지식의 분야에 맞는 부품으로 업무를 조립한다 (genesis) */
+  const baseAuto = (hard, trait) => (p, lv, rng, n) => clamp(0.32 + 0.12 * lv - (p && p.hard || hard) + (rng.next() + rng.next() - 1) * 0.18 + (n ? (n.traits[trait || "ambition"] - 0.5) * 0.08 : 0), 0, 1);
+  for (const [id, hard, doms, trait] of [
+    ["gauge", 0.05, ["craft", "heat", "care"]], ["rhythm", 0.08, ["craft", "body"]], ["timing", 0.06, ["craft", "heat", "body"]],
+    ["measure", 0.04, ["craft", "knowledge", "care"]], ["trace", 0.1, ["craft", "art"]], ["grind", 0.05, ["craft", "body"]],
+    ["talk", 0.04, ["social", "language", "care"], "kindness"], ["observe", 0.06, ["knowledge", "care", "nature"]],
+    ["memory", 0.08, ["knowledge", "language", "magic"]], ["match", 0.07, ["language", "knowledge", "magic"]],
+  ]) registerTool(id, baseAuto(hard, trait), doms);
   /** 품질 단계: 점수(0~1) → 이름·결과 배수 */
   const GRADES = [{ id: "rough", name: "거친", at: 0, mult: 0.5 }, { id: "plain", name: "보통", at: 0.4, mult: 1 }, { id: "good", name: "좋은", at: 0.7, mult: 1.25 }, { id: "master", name: "걸작", at: 0.9, mult: 1.5 }];
   const gradeOf = (q) => GRADES.filter((g) => q >= g.at).pop();
@@ -220,6 +227,49 @@
     return stepsOf(wk).map((s) => (TOOL_AUTO[s.tool] ? clamp(TOOL_AUTO[s.tool](s.p || {}, lv, rng, n) - penalty, 0, 1) : null));
   }
   const workAutoReady = (wk) => toolsOf(wk).every((t) => TOOL_AUTO[t]);
+
+  /* 업무의 손님과 결과 (봉사하는 일). 함수 없이 데이터로 적는다.
+   *  client: "any" | "sick"(다친·아픈 사람) | "race:<종족>" | "foreign"(다른 나라 사람) | "poor"
+   *  effects: { gold: [최소, 최대] (손님이 내고, 품질을 곱함), heal: 체력, rel: 손님 마음, bond: 손님 종족 ↔ 이 마을 사람들의 마음,
+   *             fame: 걸작일 때 명성, food: 마을 곳간, record: { kind, text, imp, p } }
+   *  record.text 자리: {me} {client} {town} {work} {race} — 좋은 솜씨 이상일 때 p의 확률로 소식이 된다 */
+  function clientOk(w, n, m, cond) {
+    if (!m.alive || m.id === n.id || m.at_war || !isAdult(m)) return false;
+    if (!cond || cond === "any") return true;
+    if (cond === "sick") return m.health < 8;
+    if (cond === "poor") return m.gold < 10;
+    if (cond === "foreign") return (w.towns[m.home] || {}).nation !== (w.towns[n.town] || {}).nation;
+    if (cond.startsWith("race:")) return m.race === cond.slice(5);
+    return false;
+  }
+  /** 이 업무의 손님. 같은 마을에서 가장 필요한 사람 (없으면 null) */
+  function workClient(w, n, wk) {
+    if (!wk.client) return null;
+    const c = w.npcs.filter((m) => m.town === n.town && !m.outside && clientOk(w, n, m, wk.client));
+    if (!c.length) return null;
+    return c.sort((a, b) => (wk.client === "sick" ? a.health - b.health : 0) || opinion(b, n.id) - opinion(a, n.id) || a.id - b.id)[0];
+  }
+  /** 자리 채우기: {me}, 조사가 붙으면 {me:이/가} */
+  const fill = (t, o) => t.replace(/\{(\w+)(?::([^}]+))?\}/g, (_, k, pair) => { const v = o[k] !== undefined ? String(o[k]) : ""; return pair && v ? jo(v, pair) : v; });
+  /** 업무의 결과를 세계에 남긴다. 반환: 결과를 적은 짧은 말들 */
+  function applyEffects(w, n, wk, q, client) {
+    const fx = wk.effects || {}, out = [], g = gradeOf(q);
+    if (fx.gold) { const v = Math.round((fx.gold[0] + (fx.gold[1] - fx.gold[0]) * q) * 10) / 10, payer = client && client.gold >= v ? client : null; if (payer) payer.gold -= v; n.gold += v; out.push(`금화 ${v}닢`); }
+    if (fx.heal && client) { const h0 = client.health; client.health = Math.min(10, client.health + fx.heal * (0.4 + q)); out.push(`${client.name}의 체력 +${Math.round((client.health - h0) * 10) / 10}`); }
+    if (fx.rel && client) { adjust(client, n.id, Math.round(fx.rel * (0.3 + q))); out.push(`${client.name}의 마음이 열렸다`); }
+    if (fx.bond && client) {
+      const k = Math.round(fx.bond * q);
+      for (const a of w.residents(n.town)) if (a.race !== client.race) { adjust(a, client.id, k); adjust(client, a.id, k); }
+      out.push(`${(RACES[client.race] || {}).name || "손님"}과 마을 사람들 사이가 가까워졌다`);
+    }
+    if (fx.food) { const t = w.towns[n.town]; if (t) t.food += fx.food * q; }
+    if (fx.fame && g.id === "master") n.fame += fx.fame;
+    if (fx.record && q >= 0.7 && w.rng.next() < (fx.record.p ?? 0.25)) {
+      const o = { me: n.name, client: client ? client.name : "", town: (w.towns[n.town] || {}).name, work: wk.name, race: client ? (RACES[client.race] || {}).name : "" };
+      w.record(fx.record.kind || "service", fill(fx.record.text, o), { actor: n.id, target: client ? client.id : null, town: n.town, imp: fx.record.imp || 3, wr: 0.3, data: { work: wk.id, q: Math.round(q * 100) / 100 } });
+    }
+    return out;
+  }
 
   /** 이 직업이 하는 일 목록. 일터(place)는 따로 적지 않으면 직업의 일터 */
   function worksOf(jobId) {
@@ -337,6 +387,7 @@
   class World {
     constructor(seed) {
       this.seed = seed;
+      this.defs = { jobs: [], works: [] }; applyDefs(this); // 세계에서 생긴 정의 (새 세계는 비어 있다)
       this.rng = new RNG(seed);
       this.name = "탄드렐";
       this.day = 0;
@@ -616,7 +667,7 @@
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, land: this.land || {}, session: this.session || {}, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
-        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
+        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
       });
     }
@@ -625,6 +676,7 @@
       if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
       d = migrate(d);
       const w = new World(d.seed);
+      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w);
       w.worldId = d.worldId;
       w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
@@ -689,10 +741,11 @@
     let earn = w.rng.uniform(job.income[0], job.income[1]) * jobDemand(w, job, n.town) * mastery(n);
     for (const k of job.teaches || []) addXp(n, k, 1); // 일할수록 솜씨가 는다
     // 단계가 있는 업무를 하는 직업은 플레이어와 같은 단계를 거친다 (점수는 솜씨·성격으로 계산). 품질이 벌이와 이름을 정한다
-    const crafts = n.controller === "player" ? [] : worksOf(n.job).filter((x) => x.steps && workAutoReady(x));
+    const crafts = n.controller === "player" ? [] : worksOf(n.job).filter((x) => x.steps && workAutoReady(x) && (!x.client || workClient(w, n, x)));
     if (crafts.length) {
       const wk = w.rng.choice(crafts), q = workQuality(wk, autoScores(n, wk, w.rng)), g = gradeOf(q);
       earn *= 0.6 + 0.6 * q;
+      if (wk.effects) applyEffects(w, n, wk, q, workClient(w, n, wk));
       if (wk.skill) addXp(n, wk.skill, 1);
       n.lastWork = { id: wk.id, q: Math.round(q * 100) / 100, day: w.day };
       if (g.id === "master" && w.rng.next() < 0.15) {
@@ -1012,6 +1065,7 @@
     warDay(w);
     worldEvents(w);
     emergeJobs(w);
+    genesis(w);
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
     w.qi = 0;
@@ -1399,6 +1453,70 @@
     return ev;
   }
   /** 수요가 쌓이면 누군가 처음으로 새 일을 시작한다. 그 뒤로 그 직업은 이 세계의 직업이 된다 */
+  // ================================================================ 세계 안에서 새 직업이 생긴다 (genesis)
+  /* 미리 정의된 직업이 없어도, 세계에 수요가 생기고 그 수요를 채울 지식을 아는 사람이 있으면 직업이 새로 생긴다.
+   *  수요: 지식의 demand (데이터) — { race: 종족 } 그 종족이 이 세계에 있다 · { events: [종류], within: 일, n } 최근 사건 · { sick: n } 아픈 사람 수
+   *  이름·일터·업무 단계·결과는 지식의 분야(domain)로 정한다. 업무 단계는 그 분야에 어울리는 조작 부품(TOOL_DOMAINS)으로 조립한다.
+   *  만든 정의는 함수가 없는 데이터라 w.defs에 저장되고, 이 세계에만 있다 (다른 세계를 불러오면 사라진다). */
+  const GEN = {
+    name: { language: "{noun} 통역가", care: "{noun} 치료사", magic: "{noun} 술사", knowledge: "{noun} 학자", craft: "{noun} 장인", art: "{noun} 장인", heat: "{noun} 장인", nature: "{noun} 채집꾼", social: "{noun} 중개인", body: "{noun} 꾼" },
+    place: { language: "inn", care: "temple", magic: "temple", knowledge: "guild", craft: "forge", art: "market", heat: "forge", nature: "fields", social: "market", body: "guild" },
+    hat: { language: "cap", care: "hood", magic: "witch", knowledge: "hood", craft: "bandana", art: "bandana", heat: "bandana", nature: "straw", social: "cap", body: "helmet" },
+    color: { language: "#7a9ad8", care: "#d8e8e0", magic: "#9a7ad8", knowledge: "#b8a878", craft: "#a8784a", art: "#d89ab8", heat: "#c8603a", nature: "#6a9a4a", social: "#d8b84a", body: "#8a6a5a" },
+    work: { language: "{noun} 통역하기", care: "{noun}로 돌보기", magic: "{noun} 부리기", knowledge: "{noun} 가르치기", craft: "{noun} 일 맡기", art: "{noun} 꾸미기", heat: "{noun} 일 맡기", nature: "{noun} 거두기", social: "{noun} 거래 잇기", body: "{noun} 일 하기" },
+    step: { "language:talk": "뜻 전하기", "language:match": "낱말 옮기기", "language:memory": "긴 말 외우기", "care:observe": "살피기", "care:talk": "안심시키기", "care:measure": "약 달기",
+      "magic:memory": "주문 외우기", "magic:match": "문양 읽기", "knowledge:observe": "살피기", "knowledge:memory": "외우기", "knowledge:match": "풀이하기", "social:talk": "흥정하기" },
+    client: { language: (K) => (K.lang ? "race:" + K.lang : "foreign"), care: () => "sick" },
+    effects: {
+      language: { gold: [2, 6], bond: 4, rel: 6, fame: 1, record: { kind: "interpret", text: "{me:이/가} {race}과 {town} 사람들 사이에서 말을 옮겼다. 서로의 뜻이 통하기 시작했다", imp: 4, p: 0.3 } },
+      care: { heal: 4, gold: [2, 5], rel: 8, record: { kind: "cure", text: "{me:이/가} {client:을/를} 돌봐 일으켜 세웠다", imp: 3, p: 0.3 } },
+      _: { gold: [2, 6], rel: 4, fame: 1, record: { kind: "service", text: "{me:이/가} {work}에서 솜씨를 보였다", imp: 3, p: 0.2 } },
+    },
+  };
+  function demandMet(w, d) {
+    if (!d) return false;
+    if (d.race) return seenRace(w, d.race) && w.alive().some((n) => n.race === d.race);
+    if (d.events) return recent(w, d.events, d.within || 120) >= (d.n || 1);
+    if (d.sick) return w.alive().filter((n) => n.health < 6).length >= d.sick;
+    return false;
+  }
+  /** 저장된 세계 정의(w.defs)를 콘텐츠에 올린다. 이전 세계의 정의는 지운다 */
+  function applyDefs(w) {
+    for (const key of ["jobs", "works"]) { const a = CONTENT[key]; for (let i = a.length - 1; i >= 0; i--) if (a[i].gen) a.splice(i, 1); } // 제자리에서 (다른 파일이 배열을 쥐고 있어도 맞게)
+    const d = w.defs || { jobs: [], works: [] };
+    for (const j of d.jobs || []) CONTENT.jobs.push({ ...j, gen: true });
+    for (const x of d.works || []) CONTENT.works.push({ ...x, gen: true });
+    reindex();
+  }
+  /** 지식 K로 새 직업 정의를 만든다 (데이터만) */
+  function makeJobDef(w, K) {
+    const dom = (K.domain || ["craft"])[0], noun = K.noun || K.name, id = "w_" + K.id;
+    const tools = Object.keys(TOOL_AUTO).filter((t) => (TOOL_DOMAINS[t] || []).includes(dom));
+    const pool = tools.length >= 2 ? tools : Object.keys(TOOL_AUTO);
+    const pick = w.rng.shuffle(pool).slice(0, 3);
+    const steps = pick.map((t, i) => ({ name: GEN.step[dom + ":" + t] || ["준비", "본일", "마무리"][i], tool: t, p: {}, ...(i === pick.length - 1 ? { w: 1.5 } : {}) }));
+    const job = { id, name: fill(GEN.name[dom] || "{noun} 일꾼", { noun }), income: [2.0, 5.0], entry_cost: 20, weight: 0, shift: false, teaches: [K.id], needKnow: K.id,
+      color: GEN.color[dom] || "#9a9a9a", workplace: GEN.place[dom] || "market", look: { hat: GEN.hat[dom] || "cap" }, born: w.day, from: K.id };
+    const work = { id: id + "_work", job: id, name: fill(GEN.work[dom] || "{noun} 일", { noun }), mins: 120, energy: 10, skill: K.id, steps,
+      client: GEN.client[dom] ? GEN.client[dom](K) : "any", effects: GEN.effects[dom] || GEN.effects._, hint: `${noun}${jo(noun, "을/를").slice(noun.length)} 아는 사람만 할 수 있는 일` };
+    return { job, work };
+  }
+  function genesis(w) {
+    if (w.day % 5 !== 2) return;
+    w.defs = w.defs || { jobs: [], works: [] };
+    for (const K of CONTENT.knowledge) {
+      if (!K.demand || CONTENT.jobs.some((j) => (j.teaches || []).includes(K.id)) || !demandMet(w, K.demand)) continue;
+      const who = w.alive().filter((n) => isAdult(n) && knows(n, K.id) && n.controller !== "player" && !n.at_war && n.jail === 0 && !n.role);
+      if (!who.length) continue;
+      const n = maxBy(who, (x) => x.traits.ambition + x.traits.kindness * 0.5 + w.rng.next() * 0.3);
+      const { job, work } = makeJobDef(w, K);
+      w.defs.jobs.push(job); w.defs.works.push(work); applyDefs(w);
+      const old = JOBS[n.job] ? JOBS[n.job].name : "", from = n.job;
+      setJob(n, job.id); n.job_cooldown = 200; n.fame += 4; n.pioneer = job.id;
+      w.record("job_born", `${K.name}${jo(K.name, "을/를").slice(K.name.length)} 아는 ${jo(n.name, "이/가")} ${old ? old + " 일을 그만두고 " : ""}이 세계 최초의 ‘${job.name}’${jo(job.name, "이/가").slice(job.name.length)} 되었다. 아무도 하지 않던 일이 생겨났다`, { actor: n.id, town: n.town, imp: 7, wr: 0.8, data: { job: job.id, from, skill: K.id, gen: true } });
+    }
+  }
+
   function emergeJobs(w) {
     w.jobsOpen = w.jobsOpen || [];
     for (const j of CONTENT.jobs) {
@@ -1669,6 +1787,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, worksOf, registerTool, TOOL_AUTO, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, genesis, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

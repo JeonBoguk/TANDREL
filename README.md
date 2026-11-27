@@ -28,7 +28,7 @@ cd game && python3 -m http.server 8766
 | `game/engine.js` | 세계 시뮬레이션: 주민·직업·꿈·관계·사건·경제·전쟁·나라 (`window.Asteria`) |
 | `game/content.js`, `game/pack-greenhill.js`, `game/pack-jeweler.js` | 콘텐츠 팩: 직업·종족·꿈·만들기·지식·사건·주민 (`Asteria.extend`) |
 | `game/game.js` | 지도·이동·아이템·만들기·농사·사냥·건물·도둑질·공사·도감 (`window.Game`) |
-| `game/sims.js` | 업무 조작 화면: 조작 부품(온도·박자·때·계량·선·연마)과 단계 진행 (`window.Sims`) |
+| `game/sims.js` | 업무 조작 화면: 조작 부품(온도·박자·때·계량·선·연마·말·살피기·외우기·낱말)과 단계 진행 (`window.Sims`) |
 | `game/story.js` | 대화·미션·신문·이야기(에피소드) (`window.Story`) |
 | `game/test.js` | 테스트 단계: 내 캐릭터를 NPC처럼 대신 움직여 기능을 점검 (`window.AsteriaTest`) |
 | `game/art16.js` | 16px 도트 키트 묶음 (**직접 고치지 말 것**: `art/`에서 고친 뒤 다시 묶는다) |
@@ -56,7 +56,7 @@ python3 art/bundle_art.py game/art16.js
 node tools/runtests.js
 ```
 
-시드 8개 세계에서 24가지 시나리오(빈손 시작, 모으기, 만들기, 도감, 사냥, 장사, 배우기, 초대, 공사, 도둑질, 범죄, 다시 태어나기, 건국, 1년 흐름, 저장/불러오기, 집, 혈통 등)를 돌린다. 지금 192/192 통과.
+시드 8개 세계에서 25가지 시나리오(빈손 시작, 모으기, 만들기, 도감, 사냥, 장사, 배우기, 초대, 공사, 도둑질, 범죄, 다시 태어나기, 건국, 1년 흐름, 저장/불러오기, 집, 혈통 등)를 돌린다. 지금 200/200 통과.
 
 화면 점검(Playwright, Chromium 필요):
 

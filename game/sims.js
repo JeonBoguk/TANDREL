@@ -43,6 +43,27 @@
   /** 구간을 솜씨만큼 넓힌다 */
   const widen = ([a, b], ease) => { const m = (a + b) / 2, h = ((b - a) / 2) * ease; return [clamp(m - h, 0, 1), clamp(m + h, 0, 1)]; };
 
+  /** 글자 무늬: 씨앗 문자열로 정해지는 5×5 좌우 대칭 도트 (낯선 문자, 증상, 기도문 표식) */
+  function glyph(seed) {
+    let h = 2166136261; for (const ch of String(seed)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const cells = [];
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 3; x++) { h = Math.imul(h ^ (h >>> 13), 1274126177); if ((h >>> 8) % 100 < 48) { cells.push([x, y]); if (x < 2) cells.push([4 - x, y]); } }
+    return cells.length < 5 ? glyph(seed + "+") : cells;
+  }
+  function glyphCanvas(cells, px, color, bg) {
+    const c = el("canvas", { class: "glyph" }); const s = 5 * px + 4; c.width = s; c.height = s; c.style.width = s + "px"; c.style.height = s + "px";
+    const g = c.getContext("2d"); if (bg) { g.fillStyle = bg; g.fillRect(0, 0, s, s); } g.fillStyle = color; for (const [x, y] of cells) g.fillRect(2 + x * px, 2 + y * px, px, px);
+    return c;
+  }
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  /* 말 고르기: 손님의 성격이 원하는 말투. 성격 수치 → 말투와 겉으로 보이는 기색 */
+  const TONES = [
+    { id: "warm", name: "다정하게", trait: "kindness", cue: ["눈치를 보며 머뭇거린다", "작은 목소리로 겨우 말을 꺼낸다"] },
+    { id: "plain", name: "솔직하게", trait: "bravery", cue: ["팔짱을 끼고 본론을 기다린다", "단도직입적으로 묻는다"] },
+    { id: "polite", name: "정중하게", trait: "ambition", cue: ["고개를 꼿꼿이 들고 있다", "자기 체면을 신경 쓰는 눈치다"] },
+    { id: "calm", name: "차분하게", trait: "greed", cue: ["주위를 두리번거리며 불안해한다", "손익을 따지듯 말을 아낀다"] },
+  ];
+
   const HANDS = {
     // ---------------------------------------------------------------- 불·온도 지키기
     gauge: { name: "온도 지키기", how: "누르고 있으면 오르고, 떼면 내려간다. 초록 구간 안에 머물게 한다", play(ctx) {
@@ -176,6 +197,65 @@
         }
       });
     } },
+    // ---------------------------------------------------------------- 말 고르기 (사람 대하기)
+    talk: { name: "말 고르기", how: "손님의 기색을 보고 알맞은 말투를 고른다", play(ctx) {
+      const n = ctx.client, rounds = ctx.p.rounds || 2, tr = n ? n.traits : { kindness: 0.6, bravery: 0.5, ambition: 0.5, greed: 0.4 };
+      const rank = TONES.slice().sort((a, b) => tr[b.trait] - tr[a.trait]);
+      let r = 0, sum = 0; const box = el("div", { class: "simtalk" }); ctx.box.append(box);
+      const round = () => {
+        const want = rank[r % 2 === 0 || rank[1] === undefined ? 0 : (Math.random() < 0.7 ? 0 : 1)], cue = want.cue[r % want.cue.length];
+        box.replaceChildren(el("p", null, `${n ? n.name : "손님"}${n ? "은(는)" : "은"} ${cue}.`), el("div", { class: "simchoices" }, shuffle(TONES).map((t) => el("button", { type: "button", class: "wbtn", onclick: () => {
+          sum += t === want ? 1 : t === rank[1] ? 0.5 : 0; r++; if (r >= rounds) ctx.done(sum / rounds); else round(); } }, t.name))));
+      };
+      round();
+      return () => {};
+    } },
+    // ---------------------------------------------------------------- 살피기 (다른 하나 찾기)
+    observe: { name: "살피기", how: "모두 같아 보이지만 하나가 다르다. 그것을 누른다", play(ctx) {
+      const rounds = ctx.p.rounds || 3, limit = 9 * ctx.ease; let r = 0, sum = 0, t0 = performance.now(), timer = null;
+      const grid = el("div", { class: "simgrid" }), tbar = el("div", { class: "simtime" }); ctx.box.append(grid, tbar);
+      const col = css("--text"), bg = css("--sunk");
+      const round = () => {
+        const base = glyph("o" + Math.random()), odd = base.slice(); const k = Math.floor(Math.random() * odd.length); odd.splice(k, 1); // 한 점이 빠진 것
+        const N = 12, at = Math.floor(Math.random() * N); t0 = performance.now();
+        grid.replaceChildren(...Array.from({ length: N }, (_, i) => { const b = el("button", { type: "button", class: "simcell" }); b.append(glyphCanvas(i === at ? odd : base, 6, col, bg));
+          b.addEventListener("click", () => { const dt = (performance.now() - t0) / 1000; sum += i === at ? clamp(1 - Math.max(0, dt - 2) / limit, 0.4, 1) : 0; next(); }); return b; }));
+      };
+      const next = () => { r++; if (r >= rounds) { clearInterval(timer); ctx.done(sum / rounds); } else round(); };
+      timer = setInterval(() => { const dt = (performance.now() - t0) / 1000; tbar.style.width = `${clamp(1 - dt / limit, 0, 1) * 100}%`; if (dt > limit) next(); }, 100);
+      round();
+      return () => clearInterval(timer);
+    } },
+    // ---------------------------------------------------------------- 순서 외우기
+    memory: { name: "순서 외우기", how: "나타나는 무늬의 순서를 외웠다가 그대로 누른다", play(ctx) {
+      const len = ctx.p.len || 4, opts = Array.from({ length: 6 }, (_, i) => glyph("m" + i + Math.random())), seq = Array.from({ length: len }, () => Math.floor(Math.random() * 6));
+      const show = el("div", { class: "simshow" }), pad = el("div", { class: "simgrid" }); ctx.box.append(show, pad);
+      const col = css("--text"), acc = css("--accent"), bg = css("--sunk"); let i = 0, got = 0, input = false, timers = [];
+      const step = 0.9 / ctx.ease * 1000;
+      seq.forEach((k, j) => timers.push(setTimeout(() => show.replaceChildren(glyphCanvas(opts[k], 10, acc, bg), el("span", { class: "small muted" }, `${j + 1} / ${len}`)), 300 + j * step)));
+      timers.push(setTimeout(() => { show.replaceChildren(el("span", { class: "small muted" }, "이제 순서대로 누른다")); input = true; }, 300 + len * step));
+      pad.append(...opts.map((o, k) => { const b = el("button", { type: "button", class: "simcell" }); b.append(glyphCanvas(o, 6, col, bg));
+        b.addEventListener("click", () => { if (!input) return; if (k === seq[i]) { got++; i++; show.replaceChildren(el("span", { class: "small" }, `${i} / ${len}`)); if (i >= len) ctx.done(1); } else ctx.done(got / len * 0.8); }); return b; }));
+      return () => timers.forEach(clearTimeout);
+    } },
+    // ---------------------------------------------------------------- 낱말 옮기기 (사전을 보고 뜻 고르기)
+    match: { name: "낱말 옮기기", how: "사전을 보고 낯선 글자가 뜻하는 말을 고른다", play(ctx) {
+      const vocab = shuffle(ctx.vocab && ctx.vocab.length >= 4 ? ctx.vocab : ["물", "불", "길", "빛", "돌", "숲"]).slice(0, 6), n = ctx.p.words || 3, limit = 20 * ctx.ease;
+      const seed = ctx.p.script || "glyphs", gl = Object.fromEntries(vocab.map((v) => [v, glyph(seed + v)]));
+      const col = css("--text"), acc = css("--accent"), bg = css("--sunk");
+      const dict = el("div", { class: "simdict" }, vocab.map((v) => el("span", { class: "chip" }, glyphCanvas(gl[v], 3, col, null), " ", v)));
+      const q = el("div", { class: "simtalk" }), tbar = el("div", { class: "simtime" }); ctx.box.append(dict, q, tbar);
+      const words = shuffle(vocab).slice(0, n); let i = 0, sum = 0; const t0 = performance.now();
+      const round = () => {
+        const want = words[i], opts = shuffle([want, ...shuffle(vocab.filter((v) => v !== want)).slice(0, 3)]);
+        q.replaceChildren(el("div", { class: "simshow" }, glyphCanvas(gl[want], 9, acc, bg), el("span", { class: "small muted" }, `${i + 1} / ${n}`)),
+          el("div", { class: "simchoices" }, opts.map((v) => el("button", { type: "button", class: "wbtn", onclick: () => { sum += v === want ? 1 : 0; i++; if (i >= n) end(); else round(); } }, v))));
+      };
+      let done = false; const end = () => { if (done) return; done = true; clearInterval(timer); const dt = (performance.now() - t0) / 1000; ctx.done((sum / n) * clamp(1.15 - dt / limit * 0.4, 0.6, 1)); };
+      const timer = setInterval(() => { const dt = (performance.now() - t0) / 1000; tbar.style.width = `${clamp(1 - dt / (limit * 1.5), 0, 1) * 100}%`; if (dt > limit * 1.5) end(); }, 100);
+      round();
+      return () => clearInterval(timer);
+    } },
   };
   for (const [id, impl] of Object.entries(HANDS)) G.registerHand(id, impl);
   const register = (id, impl) => { HANDS[id] = impl; G.registerHand(id, impl); };
@@ -183,7 +263,7 @@
   // ================================================================ 진행기: 단계를 차례로
   let cur = null;
   /** 업무를 시작한다. host 안에 그린다. onEnd({scores} | {auto:true} | null) */
-  function run(host, wk, lv, onEnd) {
+  function run(host, wk, lv, onEnd, extra = {}) {
     stop();
     const steps = wk.steps, scores = [];
     const ease = 1 + 0.18 * (Math.max(1, lv) - 1);
@@ -196,7 +276,7 @@
       el("button", { type: "button", class: "wbtn", onclick: () => end({ auto: true }) }, "손에 익은 대로 맡기기"),
       el("button", { type: "button", class: "wbtn", onclick: () => end(null) }, "그만두기"));
     const press = (down) => st.pressCb && st.pressCb(down);
-    body.addEventListener("pointerdown", (e) => { if (e.target.tagName !== "BUTTON" && !st.sideCb && HANDS[steps[st.i].tool] && steps[st.i].tool !== "trace") { e.preventDefault(); press(true); } });
+    body.addEventListener("pointerdown", (e) => { if (e.target.closest("button") || !st.pressCb) return; e.preventDefault(); press(true); });
     root.addEventListener("pointerup", st.pu = () => press(false));
     st.keyDown = (e) => {
       if (e.key === "Escape") { stop(); return; } // Esc는 ui가 메뉴를 닫는다
@@ -215,7 +295,7 @@
       how.textContent = `${s.name}: ${hand.how}`;
       body.replaceChildren();
       let finished = false;
-      st.cleanup = hand.play({ box: body, p: s.p || {}, lv, ease,
+      st.cleanup = hand.play({ box: body, p: s.p || {}, lv, ease, client: extra.client || null, vocab: extra.vocab || null,
         press: (cb) => { st.pressCb = cb; }, side: (cb) => { st.sideCb = cb; }, onEnter: (cb) => { st.enterCb = cb; },
         done: (score) => { if (finished || cur !== st) return; finished = true; if (st.cleanup) st.cleanup(); scores[st.i] = clamp(score, 0, 1); st.i++; if (st.i >= steps.length) { chips(); end({ scores }); } else setTimeout(() => cur === st && begin(), 350); } });
     }

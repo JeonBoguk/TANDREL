@@ -288,6 +288,35 @@
       A.CONTENT.jobs = A.CONTENT.jobs.filter((x) => x.id !== "test_glass"); A.CONTENT.works = A.CONTENT.works.filter((x) => x.id !== "test_blow"); A.extend({});
       delete A.TOOL_AUTO.test_breath; delete G.HANDS.test_breath; W.jobsOpen = W.jobsOpen.filter((x) => x !== "test_glass");
     } },
+    { id: "genesis", name: "용족이 오고 용언을 아는 사람이 있으면, 이 세계에 용언 통역가가 생긴다", run(t) {
+      const W = t.w, town = t.town();
+      t.check(!A.JOBS.w_dragon_tongue, "처음엔 그런 직업이 없다");
+      const sage = W.spawn(town, { race: "human", job: "farmer", ageYears: 40 }); sage.traits.ambition = 0.99; A.learn(sage, "dragon_tongue");
+      W.day = W.day - (W.day % 5) + 2; A.genesis(W);
+      t.check(!A.JOBS.w_dragon_tongue, "용족이 없으면 수요가 없다");
+      for (let i = 0; i < 2; i++) W.spawn(town, { race: "dragonkin", job: "adventurer", ageYears: 120 }); if (!W.racesSeen.includes("dragonkin")) W.racesSeen.push("dragonkin");
+      A.genesis(W);
+      const J = A.JOBS.w_dragon_tongue, wk = A.worksOf("w_dragon_tongue")[0];
+      t.check(J && J.name === "용언 통역가" && sage.job === J.id, `새 직업: ${J && J.name}, 첫 사람 ${sage.name}`);
+      t.check(W.events.some((e) => e && e.kind === "job_born" && e.data && e.data.gen), W.events.filter((e) => e && e.kind === "job_born").pop().text);
+      t.check(wk && wk.client === "race:dragonkin" && wk.steps.every((s) => (A.TOOL_DOMAINS[s.tool] || []).includes("language")) && G.workReady(wk), `업무 ‘${wk.name}’: ${wk.steps.map((s) => s.name).join(" → ")}`);
+      // 주민 통역가가 일하면 용족과 마을 사람들 사이가 가까워진다
+      const dk = W.npcs.filter((n) => n.alive && n.race === "dragonkin" && n.town === sage.town), other = W.residents(sage.town).find((n) => n.race !== "dragonkin" && n !== sage);
+      const before = other ? (other.rel[dk[0].id] || 0) : 0;
+      for (let i = 0; i < 6; i++) A._.rWork(sage, W);
+      t.check(other && (other.rel[dk[0].id] || 0) > before, `${other && other.name}의 용족을 향한 마음 ${before} → ${other && other.rel[dk[0].id]}`);
+      // 플레이어도 용언을 알면 이 일을 할 수 있다 (여관에서)
+      const p = t.p(); A.learn(p, "dragon_tongue"); A.setJob(p, J.id); const inn = t.placeOf("inn"); t.standAt(inn.x, inn.y); p.energy = 100;
+      const m = G.buildingMenu(W, inn).find((v) => v.id === "wk:" + wk.id);
+      t.check(m && m.ok && m.client && m.client.race === "dragonkin", `여관 메뉴: ${m && m.label} (${m && m.hint})`);
+      const r = G.finishWork(W, inn, wk.id, [0.9, 0.9, 0.9]); t.check(/금화/.test(r.text), r.text);
+      // 이 세계에 저장되고, 다른 세계엔 없다
+      const w2 = A.World.deserialize(JSON.parse(W.serialize()));
+      t.check(A.JOBS.w_dragon_tongue && w2.npcs[sage.id].job === "w_dragon_tongue", "불러와도 남아 있다");
+      A.newWorld(99, "다른 세계");
+      t.check(!A.JOBS.w_dragon_tongue, "새 세계에는 없다");
+      A.applyDefs(W);
+    } },
     { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
       const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);
       while (W.season !== "가을") G.tick(W, 24 * 60);

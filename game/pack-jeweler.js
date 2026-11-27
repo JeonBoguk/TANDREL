@@ -14,7 +14,7 @@
         color: "#6ec6d8", icon: "💎", workplace: "market", teaches: ["gemcraft"], look: { hat: "bandana", apron: "#5a6a7a", prop: "hammer" } },
     ],
     knowledge: [
-      { id: "gemcraft", name: "세공", desc: "원석의 결을 읽어 쪼개고, 깎고, 갈아 보석을 만든다" },
+      { id: "gemcraft", domain: ["craft", "art"], name: "세공", desc: "원석의 결을 읽어 쪼개고, 깎고, 갈아 보석을 만든다" },
     ],
     items: {
       rough_gem: { name: "원석", sell: 6, foundAt: "rock", chance: 0.1, art: ["rock", "#7fa8b8"], hint: "바위 둘레에서 가끔 나온다. 세공사가 다듬는다" },
