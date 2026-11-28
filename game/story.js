@@ -521,6 +521,11 @@
   }
   /** 지금 하고 있는 일 한마디 (삶의 층 n.life) */
   function nowLine(w, n) {
+    if (n.away && w.towns[n.away.at]) { // 다른 마을에서 다니러 온 손님
+      const a = n.away, home = w.towns[n.town].name, h = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host] : null, left = a.until - w.day;
+      const why = { see: h ? `${jo(h.name, "을/를")} 보러` : "사람 보러", shop: `${a.got || a.item ? jo((G.ITEMS[a.got || a.item] || {}).name || "물건", "을/를") : "물건을"} 사러`, heal: "몸 좀 고치러", tour: "구경 삼아" }[a.why] || "볼일이 있어서";
+      return `${home}에서 ${why} 왔어요. ${left <= 0 ? "내일 아침이면 돌아가요." : `${left}밤 더 묵고 가요.`}`;
+    }
     const L = n.life && n.life.day === w.day ? n.life : null;
     if (!L || w.rng.next() > 0.75) return "";
     const f = L.with !== undefined && w.npcs[L.with] ? w.npcs[L.with] : null, wk = (w.weather || {}).kind;

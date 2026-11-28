@@ -582,6 +582,40 @@
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check((w2.trips || []).length === W.trips.length, "길 위의 일이 저장된다");
     } },
+    { id: "visit", name: "다니러 가기: 친구를 보러, 물건을 사러 다른 마을에 갔다가 돌아온다", run(t) {
+      const W = t.w, T = W.towns[t.town()];
+      const B = Object.values(W.towns).filter((u) => u !== T && !u.fallen && A.routeOf(W, T.id, u.id)).sort((a, b) => A.routeOf(W, T.id, a.id).len - A.routeOf(W, T.id, b.id).len)[0];
+      W.trips = []; W.waiting = [];
+      for (const n of W.alive()) if ((A.JOBS[n.job] || {}).haul) A.setJob(n, "farmer"); // 마차가 없는 세계: 걸어서 간다
+      const me = W.spawn(T.id, { race: "human", job: "farmer", ageYears: 30 }), fr = W.spawn(B.id, { race: "human", job: "farmer", ageYears: 31 });
+      me.rel[fr.id] = 80; me.gold = 50;
+      const now = W.day * 1440 + W.clock;
+      me.going = { to: B.id, kind: "visit", why: "see", stay: 1, host: fr.id };
+      A._.depart(W, me, now);
+      const tr = W.trips.find((x) => x.by === me.id);
+      t.check(tr && tr.kind === "walk" && tr.t1 - tr.t0 > A.routeOf(W, T.id, B.id).len / A.ROAD_SPEED, `${me.name}이 ${B.name}까지 걸어서 간다 (${tr && Math.round((tr.t1 - tr.t0) / 6) / 10}시간, 마차보다 느리다)`);
+      A.arriveDue(W, tr.t1);
+      t.check(me.away && me.away.at === B.id && me.town === T.id && A.locOf(me) === B.id, `${B.name}에 머문다 (사는 곳은 그대로 ${T.name})`);
+      t.check(!W.residents(T.id).includes(me) && !W.residents(B.id).includes(me), "머무는 동안 어느 마을 주민 수에도 들지 않는다");
+      t.check(/손님/.test(G.activity(W, me)), `사람 목록: ${G.activity(W, me)}`);
+      me.away.until = W.day; A._.visitDay(W, now + 1440);
+      const back = W.trips.find((x) => x.by === me.id);
+      t.check(me.going && me.going.kind === "home" && back && back.to === T.id, "머무는 날이 지나면 집으로 돌아간다");
+      A.arriveDue(W, back.t1);
+      t.check(!me.away && !me.trip && me.town === T.id && W.residents(T.id).includes(me), `${T.name}에 돌아왔다`);
+      // 우리 마을에 동난 것을 사러
+      const buyer = W.spawn(T.id, { race: "human", job: "farmer", ageYears: 40 }); buyer.health = 5; buyer.gold = 80; buyer.inv = {};
+      B.stock = { salve: 5 };
+      buyer.going = { to: B.id, kind: "visit", why: "shop", stay: 1, item: "salve" }; A._.land(W, buyer, B.id, null);
+      t.check(buyer.inv.salve === 1 && B.stock.salve === 4, `${buyer.name}이 ${B.name}에서 연고를 사 왔다`);
+      t.check(/연고|사러/.test(A.journeyText(W, buyer, buyer.away)), A.journeyText(W, buyer, buyer.away));
+      // 이주는 닿아야 이사한다
+      const mover = W.spawn(T.id, { race: "human", job: "farmer", ageYears: 25 });
+      A._.rTravel(mover, W, B.id);
+      t.check(mover.town === T.id && mover.trip, "이주하는 사람도 길을 걸어 간다");
+      A.arriveDue(W, W.trips.find((x) => x.by === mover.id).t1);
+      t.check(mover.town === B.id, `닿은 뒤에 ${B.name} 주민이 된다`);
+    } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
       A.setJob(p, "farmer"); p.gold = 60;

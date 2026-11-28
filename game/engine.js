@@ -484,7 +484,7 @@
     job(n) { return JOBS[n.job]; }
     alive() { return this.npcs.filter((n) => n.alive); }
     residents(tid, adultsOnly = false) {
-      return this.npcs.filter((n) => n.alive && n.town === tid && !n.at_war && !n.outside && !n.trip && (!adultsOnly || isAdult(n)));
+      return this.npcs.filter((n) => n.alive && n.town === tid && !n.at_war && !n.outside && !n.trip && !n.away && (!adultsOnly || isAdult(n)));
     }
     foodPrice(t) {
       const r = t.food / Math.max(1, this.residents(t.id).length);
@@ -1016,17 +1016,8 @@
     else if (n.hunger >= 3) { dest = maxBy(open, (x) => x.food / Math.max(1, w.residents(x.id).length)); reason = " 굶주림을 피해"; }
     else dest = w.rng.choice(open);
     const old = w.towns[n.town].name;
-    gainExp(n, "body", "road", 20);
-    // 마차가 다니는 마을이면 기다렸다 마차를 탄다
-    if (!walk && n.controller !== "player" && w.alive().some((m) => m.town === n.town && hauler(m) === "people" && m.controller !== "player")) {
-      w.waiting = (w.waiting || []).filter((x) => x.id !== n.id); w.waiting.push({ id: n.id, to: dest.id, from: n.town, day: w.day }); return;
-    }
-    // 혼자 걷는 먼 길은 고생스럽다
-    const far = (routeOf(w, n.town, dest.id) || { len: 100 }).len;
-    if (n.controller !== "player" && w.rng.next() < Math.min(0.25, far / 1600)) {
-      if (w.rng.next() < 0.5 && n.gold > 10) { const lost = Math.round(n.gold * 0.3); n.gold -= lost; w.record("road_trouble", `${jo(n.name, "이/가")} ${jo(dest.name, "으로/로")} 가는 먼 길에서 도적을 만나 금화 ${lost}닢을 빼앗겼다`, { target: n.id, town: n.town, imp: 2, wr: 0.2 }); }
-      else { n.health = Math.max(1, n.health - 2); w.record("road_trouble", `${jo(n.name, "이/가")} ${jo(dest.name, "으로/로")} 가는 먼 길에서 길을 잃고 며칠을 헤맸다`, { target: n.id, town: n.town, imp: 2, wr: 0.2 }); }
-    }
+    // 주민은 길을 나선다 (마차를 기다리거나 걸어서). 닿으면 land()가 이주시킨다
+    if (n.controller !== "player") { n.away = null; n.going = { to: dest.id, kind: "move", reason }; depart(w, n, w.day * 1440 + w.clock, walk); return; }
     w.move(n, dest.id);
     if (!n.stat.towns.includes(dest.id)) n.stat.towns.push(dest.id);
     w.record("travel", `${jo(n.name, "이/가")}${reason} ${jo(old, "을/를")} 떠나 ${jo(dest.name, "으로/로")} 이주했다`, { actor: n.id, town: dest.id, imp: reason ? 3 : 2, wr: 0 });
@@ -1168,7 +1159,7 @@
     if (!isAdult(n)) return;
     if (n.at_war) { n.lastAct = "soldier"; soldierDay(n, w); return; }
     if (n.jail > 0) { n.lastAct = "jail"; n.jail -= 1; return; }
-    if (n.trip) { n.lastAct = "trip"; return; } // 길 위에 있는 사람은 그날 다른 일을 하지 않는다
+    if (n.trip || n.away) { n.lastAct = n.trip ? "trip" : "visit"; return; } // 길 위에 있거나 다른 마을에 다니러 간 사람은 그날 다른 일을 하지 않는다
     if (n.controller === "player") {
       // 플레이어는 직접 움직인다. '성격대로 맡기기' 중일 때만 성격에 따라 행동한다.
       if (w.autoDays > 0) { w.autoDays -= 1; choose(n, w).run(n, w); }
@@ -1768,7 +1759,7 @@
     while ((w.lifeDone || 0) < upto) {
       const b = w.lifeDone || 0, h = 6 + b, m0 = b * 60;
       haulHour(w, h, w.day * 1440 + m0);
-      for (const n of w.npcs) if (n.alive && !n.at_war && n.jail === 0 && !n.outside && !n.trip && n.controller !== "player") liveHour(w, n, h, m0);
+      for (const n of w.npcs) if (n.alive && !n.at_war && n.jail === 0 && !n.outside && !n.trip && !n.away && n.controller !== "player") liveHour(w, n, h, m0);
       w.lifeDone = b + 1;
     }
   }
@@ -1814,15 +1805,15 @@
     return out;
   }
   /** 장보기: 마을 재고에서 하나 사 가방에 넣는다. 돈은 그 물건을 만드는 사람(없으면 상인)에게 */
-  function shopFor(w, n) {
-    const t = w.towns[n.town]; if (!t || !t.stock) return null;
+  function shopFor(w, n, t = w.towns[n.town]) {
+    if (!t || !t.stock) return null;
     let ask = 0;
     for (const id of wantList(w, n)) {
       if (!(t.stock[id] > 0)) { if (ask++ < 3 && itemOf(id) && !itemOf(id).gen) { t.missed = t.missed || {}; t.missed[id] = (t.missed[id] || 0) + 1; } continue; } // 사러 왔는데 없었다
       const price = stockPrice(w, t, id); if (n.gold < price) continue;
       stockTake(t, id); invAdd(n, id); n.gold -= price;
-      const makers = w.residents(n.town, true).filter((m) => m !== n && worksOf(m.job).some((x) => x.gives && x.gives[id]));
-      const sellers = makers.length ? makers : w.residents(n.town, true).filter((m) => m !== n && m.job === "merchant");
+      const makers = w.residents(t.id, true).filter((m) => m !== n && worksOf(m.job).some((x) => x.gives && x.gives[id]));
+      const sellers = makers.length ? makers : w.residents(t.id, true).filter((m) => m !== n && m.job === "merchant");
       if (sellers.length) w.rng.choice(sellers).gold += price * 0.9;
       return id;
     }
@@ -1931,7 +1922,7 @@
   const tripOf = (w, n) => (w.trips || []).find((t) => t.id === n.trip);
   function startTrip(w, n, kind, from, to, t0, opt = {}) {
     const r = routeOf(w, from, to); if (!r || r.len <= 0) return null;
-    const tr = { id: (w.tripSeq = (w.tripSeq || 0) + 1), by: n.id, kind, from, to, path: r.path, len: Math.round(r.len), t0, t1: t0 + Math.round(r.len / ROAD_SPEED), cargo: opt.cargo || {}, riders: opt.riders || [], back: !!opt.back };
+    const tr = { id: (w.tripSeq = (w.tripSeq || 0) + 1), by: n.id, kind, from, to, path: r.path, len: Math.round(r.len), t0, t1: t0 + Math.round(r.len / (opt.speed || ROAD_SPEED)), cargo: opt.cargo || {}, riders: opt.riders || [], back: !!opt.back };
     (w.trips = w.trips || []).push(tr);
     n.trip = tr.id; for (const id of tr.riders) if (w.npcs[id]) w.npcs[id].trip = tr.id;
     return tr;
@@ -1944,6 +1935,11 @@
     const riders = tr.riders.map((id) => w.npcs[id]).filter(Boolean);
     if (n) n.trip = null;
     for (const r of riders) r.trip = null;
+    if (tr.kind === "walk") { // 혼자 걸어온 길
+      if (n && n.alive && tr.trouble) roadTrouble(w, n, to || from, tr.trouble);
+      if (n && n.alive) land(w, n, tr.to, null);
+      return;
+    }
     if (!n || !n.alive || !to || to.fallen) return;
     n.heard = n.heard || {}; if (from) n.heard[from.id] = { day: w.day, stock: { ...(from.stock || {}) } }; // 떠나온 마을 소식을 갖고 온다
     if (tr.kind === "goods" && Object.keys(tr.cargo).length) {
@@ -1952,20 +1948,14 @@
       n.gold += got; addXp(n, (JOBS[n.job].teaches || [])[0], 2);
       if (w.rng.next() < 0.35) w.record("haul", `${JOBS[n.job].name} ${jo(n.name, "이/가")} ${from ? from.name + "에서 " : ""}${cargoText(tr.cargo)}${jo(cargoText(tr.cargo), "을/를").slice(cargoText(tr.cargo).length)} 싣고 ${to.name}에 왔다`, { actor: n.id, town: to.id, imp: 1, wr: 0, data: { cargo: tr.cargo, from: tr.from } });
     }
-    for (const r of riders) {
-      if (!r.alive || r.controller === "player" || r.town === to.id) continue;
-      const old = from ? from.name : "";
-      w.move(r, to.id); if (!r.stat.towns.includes(to.id)) r.stat.towns.push(to.id);
-      w.waiting = (w.waiting || []).filter((x) => x.id !== r.id);
-      w.record("travel", `${jo(r.name, "이/가")} ${JOBS[n.job].name} ${n.name}의 마차를 타고 ${jo(old, "을/를")} 떠나 ${jo(to.name, "으로/로")} 이주했다`, { actor: r.id, target: n.id, town: to.id, imp: 2, wr: 0 });
-    }
+    for (const r of riders) if (r.alive && r.controller !== "player") land(w, r, to.id, n);
     if (tr.back) return; // 집에 돌아왔다
     // 돌아갈 길: 늦었으면 하룻밤 묵고 이튿날 아침에
     const h = Math.floor((now % 1440) / 60) + 6, t0 = h < 17 ? now + 30 : (Math.floor(now / 1440) + 1) * 1440 + 60;
     const home = w.towns[tr.from];
     if (!home || home.fallen) { w.move(n, to.id); return; }
     const cap = 6 + 2 * skillLv(n, (JOBS[n.job].teaches || [])[0] || ""), cargo = tr.kind === "goods" ? cargoFor(w, to, home, cap) : {};
-    const back = tr.kind === "people" ? (w.waiting || []).filter((x) => x.to === home.id && w.npcs[x.id] && w.npcs[x.id].town === to.id && !w.npcs[x.id].trip).slice(0, 4).map((x) => x.id) : [];
+    const back = tr.kind === "people" ? (w.waiting || []).filter((x) => x.to === home.id && w.npcs[x.id] && locOf(w.npcs[x.id]) === to.id && !w.npcs[x.id].trip).slice(0, 4).map((x) => x.id) : [];
     buyCargo(w, n, to, cargo);
     for (const id of back) { const r = w.npcs[id]; const fare = Math.min(r.gold, 6 + Math.round(tr.len / 25)); r.gold -= fare; n.gold += fare; }
     startTrip(w, n, tr.kind, to.id, home.id, t0, { cargo, riders: back, back: true });
@@ -1982,9 +1972,11 @@
   function haulHour(w, h, now) {
     arriveDue(w, now);
     // 혼자 기다리다 지친 사람은 걸어서 떠난다
-    w.waiting = (w.waiting || []).filter((x) => { const r = w.npcs[x.id]; return r && r.alive && (x.from === undefined || r.town === x.from) && r.town !== x.to; }); // 그새 다른 일로 떠난 사람은 뺀다
-    for (const x of [...(w.waiting || [])]) if (w.day - x.day > 3) { w.waiting = w.waiting.filter((y) => y !== x); const r = w.npcs[x.id]; if (r && r.alive && !r.trip) rTravel(r, w, x.to, true); }
+    w.waiting = (w.waiting || []).filter((x) => { const r = w.npcs[x.id]; return r && r.alive && r.going && (x.from === undefined || locOf(r) === x.from) && locOf(r) !== x.to; }); // 그새 다른 일로 떠난 사람은 뺀다
     if (h !== 7 || (w.weather || {}).kind === "폭풍") return;
+    // 마차를 오래 기다린 사람은 걸어서 간다 (나들이는 하루, 이주는 사흘)
+    for (const x of [...w.waiting]) { const r = w.npcs[x.id]; if (w.day - x.day > (r.going.kind === "move" ? 3 : 1)) { w.waiting = w.waiting.filter((y) => y !== x); depart(w, r, now, true); } }
+    visitDay(w, now);
     for (const n of w.alive()) {
       const kind = hauler(n);
       if (!kind || n.trip || n.controller === "player" || !isAdult(n) || n.at_war || n.jail > 0 || n.health < 5) continue;
@@ -2006,7 +1998,7 @@
         if (tr) n.today = { day: w.day, worked: 7, ate: n.today && n.today.ate };
       } else {
         // 마차: 기다리는 손님이 있는 곳으로 (없으면 사흘에 한 번 가장 가까운 큰 마을까지 다녀온다)
-        const wait = (w.waiting || []).filter((x) => { const r = w.npcs[x.id]; return r && r.alive && r.town === home.id && !r.trip; });
+        const wait = (w.waiting || []).filter((x) => { const r = w.npcs[x.id]; return r && r.alive && locOf(r) === home.id && !r.trip; });
         let to = wait.length ? w.towns[wait[0].to] : null;
         if (!to && (w.day + n.id) % 3 === 0) to = maxBy(Object.values(w.towns).filter((t) => t !== home && !t.fallen && routeOf(w, home.id, t.id)), (t) => w.residents(t.id).length - (routeOf(w, home.id, t.id).len / 40));
         if (!to || to.fallen) continue;
@@ -2015,6 +2007,99 @@
         const tr = startTrip(w, n, "people", home.id, to.id, now, { riders });
         if (tr) n.today = { day: w.day, worked: 7, ate: n.today && n.today.ate };
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- 다니러 가기: 이주가 아닌 다녀오는 길
+  /* 사람들은 이사 말고도 다른 마을에 다녀온다. n.going{to, kind: move|visit|home, why, stay, host, item}은 '떠나려는 길',
+   * n.away{at, until, why, host, since}는 '다른 마을에 머무는 중'(그동안 사는 마을 n.town은 그대로, 주민 수에선 빠진다).
+   *  왜 가나(visitDay, 아침 7시): 가족·친한 사람 보러(see), 우리 마을에 동난 물건 사러(shop), 의원·사제가 없어 몸 고치러(heal), 구경(tour).
+   *  쉬는 날엔 더 많이 다닌다. 머무는 날이 지나면 집으로 돌아온다(kind home).
+   *  마부가 있는 마을이면 마차를 기다렸다 타고, 없으면 걷는다(걷는 길도 길 위에 보이고, 멀면 고생한다). */
+  const locOf = (n) => (n.away ? n.away.at : n.town);
+  const WALK_SPEED = 0.35; // 걸어서는 한 분에 0.35칸
+  const coachAt = (w, tid) => w.alive().some((m) => m.town === tid && !m.away && !m.trip && hauler(m) === "people" && m.controller !== "player");
+  function depart(w, n, now, walk = false) {
+    const g = n.going, from = locOf(n);
+    if (!g || g.to === from || !w.towns[g.to]) { n.going = null; return; }
+    gainExp(n, "body", "road", g.kind === "move" ? 20 : 6);
+    if (!walk && coachAt(w, from)) { w.waiting = (w.waiting || []).filter((x) => x.id !== n.id); w.waiting.push({ id: n.id, to: g.to, from, day: w.day }); return; }
+    w.waiting = (w.waiting || []).filter((x) => x.id !== n.id);
+    const tr = startTrip(w, n, "walk", from, g.to, now, { speed: WALK_SPEED });
+    if (!tr) { land(w, n, g.to, null); return; }
+    if (w.rng.next() < Math.min(n.going.kind === "move" ? 0.15 : 0.05, tr.len / (n.going.kind === "move" ? 2000 : 5000))) tr.trouble = w.rng.next() < 0.5 && n.gold > 10 ? "rob" : "lost";
+  }
+  function roadTrouble(w, n, T, kind) {
+    const where = T ? `${T.name} 가는 ` : "";
+    if (kind === "rob") { const lost = Math.round(n.gold * 0.2); n.gold -= lost; w.record("road_trouble", `${jo(n.name, "이/가")} ${where}먼 길에서 도적을 만나 금화 ${lost}닢을 빼앗겼다`, { target: n.id, town: n.town, imp: 2, wr: 0.2 }); }
+    else { n.health = Math.max(1, n.health - 2); w.record("road_trouble", `${jo(n.name, "이/가")} ${where}먼 길에서 길을 잃고 한참을 헤맸다`, { target: n.id, town: n.town, imp: 2, wr: 0.2 }); }
+  }
+  const healerIn = (w, tid) => w.residents(tid, true).filter((m) => m.controller !== "player" && worksOf(m.job).some((x) => x.effects && x.effects.heal));
+  /** 닿았다: 이주·다니러 옴·집으로 */
+  function land(w, n, to, driver) {
+    const g = n.going || { kind: "move", to }; n.going = null;
+    w.waiting = (w.waiting || []).filter((x) => x.id !== n.id);
+    const T = w.towns[to]; if (!T || !n.alive) return;
+    const by = driver ? ` ${JOBS[driver.job].name} ${driver.name}의 마차를 타고` : "";
+    if (g.kind === "home" || to === n.town) {
+      const a = n.away; n.away = null;
+      if (a && w.rng.next() < 0.5) w.record("journey", journeyText(w, n, a), { actor: n.id, target: a.host ?? null, town: n.town, imp: 1, sent: 1, wr: 0, data: { to: a.at, why: a.why } });
+      return;
+    }
+    if (g.kind === "visit") {
+      n.away = { at: to, until: w.day + (g.stay || 1), why: g.why, host: g.host, item: g.item, since: w.day };
+      if (g.why === "shop") { const got = shopFor(w, n, T); if (got) n.away.got = got; }
+      if (g.why === "heal") { const hs = healerIn(w, to); if (hs.length) { const d = w.rng.choice(hs), fee = Math.min(n.gold, 6); n.gold -= fee; d.gold += fee; n.health = Math.min(10, n.health + 4); n.away.healer = d.id; adjust(n, d.id, 6); } }
+      if (g.host !== undefined && w.npcs[g.host]) { adjust(n, g.host, 6); adjust(w.npcs[g.host], n.id, 6); }
+      return;
+    }
+    const old = w.towns[n.town] ? w.towns[n.town].name : "";
+    n.away = null; w.move(n, to); if (!n.stat.towns.includes(to)) n.stat.towns.push(to);
+    w.record("travel", `${jo(n.name, "이/가")}${g.reason || ""}${by} ${jo(old, "을/를")} 떠나 ${jo(T.name, "으로/로")} 이주했다`, { actor: n.id, target: driver ? driver.id : null, town: to, imp: g.reason ? 3 : 2, wr: 0 });
+  }
+  function journeyText(w, n, a) {
+    const T = w.towns[a.at], tn = T ? T.name : "먼 마을", h = a.host !== undefined ? w.npcs[a.host] : null;
+    const it = a.got || a.item, iname = it ? (itemOf(it) || {}).name || it : "";
+    switch (a.why) {
+      case "see": return h ? `${jo(n.name, "이/가")} ${jo(h.name, "을/를")} 보러 ${tn}에 다녀왔다` : `${jo(n.name, "이/가")} ${tn}에 다녀왔다`;
+      case "shop": return a.got ? `${jo(n.name, "이/가")} 마을에 동난 ${jo(iname, "을/를")} 사러 ${tn}까지 다녀왔다` : `${jo(n.name, "이/가")} ${jo(iname, "을/를")} 사러 ${tn}까지 갔지만 빈손으로 돌아왔다`;
+      case "heal": return a.healer !== undefined ? `${jo(n.name, "이/가")} 몸을 고치러 ${tn}의 ${jo(w.npcs[a.healer].name, "을/를")} 찾아갔다 왔다` : `${jo(n.name, "이/가")} 몸을 고치러 ${tn}에 다녀왔다`;
+      default: return `${jo(n.name, "이/가")} ${tn} 구경을 다녀왔다`;
+    }
+  }
+  /** 아침마다: 돌아올 날이 된 사람은 집으로, 그리고 오늘 다른 마을에 다니러 갈 사람 */
+  function visitDay(w, now) {
+    const rest = w.holiday && w.holiday.kind === "rest", busy = w.weather && (w.weather.kind === "눈" || w.weather.kind === "비");
+    for (const n of w.alive()) {
+      if (n.controller === "player" || !isAdult(n) || n.at_war || n.jail > 0 || n.trip) continue;
+      if (n.away) { if (w.day >= n.away.until && !n.going) { n.going = { to: n.town, kind: "home" }; depart(w, n, now); } continue; }
+      if (n.going || hauler(n) || n.health < 2) continue;
+      const home = w.towns[n.town]; if (!home || home.fallen) continue;
+      const near = (tid) => { if (tid === n.town || !w.towns[tid] || w.towns[tid].fallen) return null; const r = routeOf(w, n.town, tid); return r && r.len <= 380 ? r : null; };
+      const k = (rest ? 3 : 1) * (busy ? 0.4 : 1);
+      let plan = null;
+      // 아픈데 우리 마을에 고쳐 줄 사람이 없으면
+      if (n.health < 6 && !healerIn(w, n.town).length && w.rng.next() < 0.25) {
+        const t = Object.values(w.towns).filter((x) => near(x.id) && healerIn(w, x.id).length).sort((a, b) => near(a.id).len - near(b.id).len)[0];
+        if (t) plan = { to: t.id, why: "heal", stay: 2 };
+      }
+      // 우리 마을에 동난 것을 사러
+      if (!plan && n.gold >= 25 && w.rng.next() < 0.06 * k) {
+        const want = wantList(w, n).filter((id) => (home.short || {})[id] >= 3);
+        for (const id of want) { const t = Object.values(w.towns).filter((x) => near(x.id) && ((x.stock || {})[id] || 0) >= 2).sort((a, b) => near(a.id).len - near(b.id).len)[0]; if (t) { plan = { to: t.id, why: "shop", stay: 1, item: id }; break; } }
+      }
+      // 가족·친한 사람 보러
+      if (!plan && w.rng.next() < 0.02 * k * (0.5 + n.traits.kindness)) {
+        const fam = new Set(family(n));
+        const who = Object.keys(n.rel || {}).map(Number).map((id) => w.npcs[id]).filter((f) => f && f.alive && f.controller !== "player" && !f.away && !f.trip && !f.at_war && near(f.town) && (fam.has(f.id) || opinion(n, f.id) >= 40));
+        if (who.length) { const f = maxBy(who, (x) => opinion(n, x.id) + (fam.has(x.id) ? 40 : 0) + w.rng.next() * 20); plan = { to: f.town, why: "see", stay: w.rng.randint(1, 3), host: f.id }; }
+      }
+      // 구경 (잔치 날이면 이웃 마을 잔치 구경)
+      if (!plan && w.rng.next() < 0.002 * k * (0.5 + n.traits.ambition)) {
+        const opts = Object.values(w.towns).filter((x) => near(x.id));
+        if (opts.length) plan = { to: w.rng.choice(opts).id, why: "tour", stay: w.rng.randint(1, 2) };
+      }
+      if (plan) { n.going = { ...plan, kind: "visit" }; depart(w, n, now); }
     }
   }
 
@@ -2732,7 +2817,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, SPREAD, arriveDue, startTrip, routeOf, tripPoint, tradeGaps, ROAD_SPEED, cargoText, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, visitDay, depart, land, rHeal, rForage, enlist, returnHome, borderTown, DPS };
+  root.Asteria = { SAVE_VERSION, SPREAD, locOf, journeyText, arriveDue, startTrip, routeOf, tripPoint, tradeGaps, ROAD_SPEED, cargoText, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

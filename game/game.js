@@ -935,6 +935,7 @@
       const tr = (w.trips || []).find((x) => x.id === n.trip), pt = tr && A.tripPoint(w, tr);
       if (pt) { const i = n.id === tr.by ? 0 : tr.riders.indexOf(n.id) + 1, d = Math.hypot(pt[2], pt[3]) || 1; return [pt[0] - pt[2] / d * i * 0.9, pt[1] - pt[3] / d * i * 0.9 + 0.5, false, undefined, undefined, undefined, "road"]; }
     }
+    if (n.away && TOWN_POS[n.away.at]) return awaySpot(w, n);
     const h = hour(w), hs = h2(n.id, w.day, 7), t = n.town;
     const [cx, cy] = TOWN_POS[t];
     const hh = houseOfNpc(n);
@@ -1008,6 +1009,19 @@
     }
     return spotNear(w, placeOf(t, kind), n.id, 2);
   }
+  /** 다른 마을에 다니러 온 사람의 자리: 밤엔 여관(보러 온 사람이 있으면 그 집), 낮엔 온 까닭에 따라 */
+  function awaySpot(w, n) {
+    const a = n.away, t = a.at, h = hour(w), slot = Math.floor(h);
+    const bd = (kind) => MAP.buildings.find((q) => q.town === t && q.kind === kind);
+    const host = a.host !== undefined ? w.npcs[a.host] : null, hh = host && host.town === t ? houseOfNpc(host) : null;
+    const hostHouse = hh && MAP.buildings.find((b) => b.town === hh.town && b.kind === "house" && b.hid === hh.hid);
+    if (h >= 21 || h < 7) return (hostHouse && workSpot(w, hostHouse, n, 5)) || workSpot(w, bd("inn"), n, 3) || spotNear(w, placeOf(t, "square"), n.id, 3);
+    if (h >= 12 && h < 13.5) return workSpot(w, bd("tavern"), n, slot + 77) || spotNear(w, placeOf(t, "square"), n.id, 3);
+    if (a.why === "see" && host) { const k = walkers.get(host.id); if (h >= 17 && hostHouse) return workSpot(w, hostHouse, n, slot + 91) || spotNear(w, placeOf(t, "square"), n.id, 3); if (k && !k.inside && !k.road) return [Math.floor(k.x) + 1, Math.floor(k.y)]; return spotNear(w, placeOf(t, "square"), n.id + host.id, 3); }
+    if (a.why === "shop") return workSpot(w, bd("market"), n, slot + 31) || spotNear(w, placeOf(t, "market"), n.id, 2);
+    if (a.why === "heal") return workSpot(w, bd("temple"), n, slot + 41) || spotNear(w, placeOf(t, "temple"), n.id, 2);
+    return slot % 3 === 0 ? (workSpot(w, bd("tavern"), n, slot + 77) || spotNear(w, placeOf(t, "square"), n.id, 3)) : spotNear(w, placeOf(t, slot % 3 === 1 ? "square" : "market"), n.id + slot, 3);
+  }
   /** 건물 안 자리: [문 x, 문 y, 안, 안쪽 x, 안쪽 y, 건물 id]. 가구에 막히지 않고 문간이 아닌 칸 가운데 사람마다·시간마다 다른 곳 */
   function workSpot(w, b, n, slot) {
     if (!b || !b.door) return null;
@@ -1048,8 +1062,8 @@
         k.x += ddx * Math.min(1, dt * 3); k.y += ddy * Math.min(1, dt * 3); k.sayT = Math.max(0, k.sayT - dt);
         continue;
       }
-      if (!k || k.road || k.town !== n.town || k.war !== n.at_war) {
-        k = { x: tx, y: ty, town: n.town, war: n.at_war, path: [], goal: null, inside: !!inside, flee: 0, chase: false, say: null, sayT: 0, dir: "down", hitCd: 0, fight: false };
+      if (!k || k.road || k.town !== A.locOf(n) || k.war !== n.at_war) {
+        k = { x: tx, y: ty, town: A.locOf(n), war: n.at_war, path: [], goal: null, inside: !!inside, flee: 0, chase: false, say: null, sayT: 0, dir: "down", hitCd: 0, fight: false };
         walkers.set(n.id, k);
       }
       k.sayT = Math.max(0, k.sayT - dt); k.flee = Math.max(0, k.flee - dt); k.hitCd -= dt;
@@ -1886,11 +1900,13 @@
 
   // ================================================================ 이곳의 사람들
   function activity(w, n) {
+    if (n.away && w.towns[n.away.at]) { const home = w.towns[n.town].name, a = n.away, hn = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host].name : ""; return `${home}에서 온 손님 · ${{ see: hn ? jo(hn, "을/를") + " 보러" : "다니러", shop: "장 보러", heal: "몸 고치러", tour: "구경하러" }[a.why] || "다니러"}`; }
+    if (n.going && !n.trip) return "마차 기다리는 중";
     const k = walkers.get(n.id);
     if (!k) return n.at_war ? "전선" : "어딘가";
     if (n.jail > 0) return "감옥";
     const tr = n.trip && (w.trips || []).find((x) => x.id === n.trip);
-    if (tr) { const to = w.towns[tr.to].name, wait = w.day * 1440 + w.clock < tr.t0; return tr.by !== n.id ? `${jo(to, "으로/로")} 마차 타고 가는 중` : wait ? `${jo(to, "으로/로")} 떠날 채비 중` : tr.kind === "goods" ? `${jo(to, "으로/로")} 짐 나르는 중` : `${jo(to, "으로/로")} 마차 모는 중`; }
+    if (tr) { const to = w.towns[tr.to].name, wait = w.day * 1440 + w.clock < tr.t0; return tr.by !== n.id ? `${jo(to, "으로/로")} 마차 타고 가는 중` : wait ? `${jo(to, "으로/로")} 떠날 채비 중` : tr.kind === "goods" ? `${jo(to, "으로/로")} 짐 나르는 중` : tr.kind === "walk" ? `${jo(to, "으로/로")} 걸어가는 중` : `${jo(to, "으로/로")} 마차 모는 중`; }
     const L = n.life && n.life.day === w.day ? n.life : null;
     if (L) {
       const where = { tavern: "주점에서 ", market: "시장에서 ", temple: "신전에서 ", meadow: "들판에서 ", river: "냇가에서 ", hill: "언덕에서 ", square: "광장에서 ", house: "집에서 " }[L.place] || "";
@@ -1915,7 +1931,7 @@
     const out = [];
     for (const [id, k] of walkers) {
       const n = w.npcs[id];
-      if (t ? n.town !== t || n.at_war : dist(k.x, k.y, w.ppos.x, w.ppos.y) > 14) continue;
+      if (t ? A.locOf(n) !== t || n.trip || n.at_war : dist(k.x, k.y, w.ppos.x, w.ppos.y) > 14) continue; // 마을 안: 지금 이 마을에 있는 사람 (다니러 온 손님 포함)
       out.push({ n, k, act: activity(w, n), d: dist(k.x, k.y, w.ppos.x, w.ppos.y) });
     }
     return out.sort((a, b) => (a.k.inside - b.k.inside) || a.d - b.d);

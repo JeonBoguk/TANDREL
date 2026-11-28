@@ -416,11 +416,11 @@
       /* 삶에서 태어나는 지식 (born): 오래 한 일, 겪은 일, 사는 곳에서 깨친다. demand가 채워지면 세계 안에서 직업이 된다.
        * jobName·workName: 생길 직업·업무 이름. makes: 물건을 만드는 일. client·effects: 봉사하는 일의 손님과 결과 (없으면 분야대로) */
       { id: "carting", name: "짐 싣기", desc: "수레에 짐을 단단히 싣고 먼 길을 끄는 법", domain: ["body", "knowledge"], noun: "짐", jobName: "짐꾼", workName: "수레 손보기", haul: "goods",
-        born: { life: ["travel", "road_trouble"], n: 2, p: 0.004, text: "먼 길을 여러 번 오가며 짐 꾸리는 요령이 몸에 붙었다. ‘{k}’{k:을/를} 익혔다" },
+        born: { life: ["travel", "road_trouble", "journey"], n: 3, p: 0.004, text: "먼 길을 여러 번 오가며 짐 꾸리는 요령이 몸에 붙었다. ‘{k}’{k:을/를} 익혔다" },
         demand: { gap: 2 }, client: null, effects: { gold: [1, 2] } },
       { id: "coaching", name: "마차 몰기", desc: "길손을 태우고 마을 사이를 오가는 법", domain: ["body", "social"], noun: "마차", jobName: "마부", workName: "말 돌보기", haul: "people",
-        born: { life: ["travel", "road_trouble"], n: 2, p: 0.003, text: "먼 길을 오가며 말 다루는 법과 길을 익혔다. ‘{k}’{k:을/를} 할 줄 알게 되었다" },
-        demand: { events: ["travel", "road_trouble"], within: 120, n: 5 }, client: null, effects: { gold: [1, 2] } },
+        born: { life: ["travel", "road_trouble", "journey"], n: 3, p: 0.003, text: "먼 길을 오가며 말 다루는 법과 길을 익혔다. ‘{k}’{k:을/를} 할 줄 알게 되었다" },
+        demand: { events: ["travel", "road_trouble", "journey"], within: 120, n: 8 }, client: null, effects: { gold: [1, 2] } },
       { id: "field_surgery", name: "상처 꿰매기", desc: "전장에서 배운, 깊은 상처를 꿰매 살리는 법", domain: ["care", "body"], noun: "상처", jobName: "야전 의원", workName: "상처 꿰매기",
         born: { flag: "veteran", p: 0.0015, text: "전선에서 동료의 상처를 꿰매던 손길을 잊지 않았다. ‘{k}’{k:이/가} 몸에 남았다" },
         demand: { war: true }, client: "sick", effects: { heal: 5, gold: [1, 4], rel: 8, record: { kind: "cure", text: "{me:이/가} 깊은 상처를 입은 {client:을/를} 꿰매 살렸다", imp: 3, p: 0.2 } } },
