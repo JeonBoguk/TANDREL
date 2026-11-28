@@ -35,7 +35,7 @@
   /* 사람이 늘면 새로 짓는 집 자리 (hid 6부터). 앞의 셋은 마을 안 빈터, 뒤(wide)는 울타리 밖으로 마을을 넓혀 짓는 자리.
    * 지형(물·절벽·밭)이나 다른 건물과 겹치는 자리는 그 마을에선 쓰지 않는다 (houseSlots) */
   const EXTRA_HOUSES = [
-    { hid: 6, x: 8, y: 11 }, { hid: 7, x: -12, y: 11 }, { hid: 8, x: 12, y: -10 },
+    { hid: 6, x: 9, y: 12 }, { hid: 7, x: -12, y: 11 }, { hid: 8, x: 12, y: -10 }, // 6: 밭 옆 집(1번)의 문 앞을 막지 않게 한 줄 띄운다
     { hid: 9, x: 19, y: -4, wide: true }, { hid: 10, x: 19, y: 4, wide: true }, { hid: 11, x: -23, y: -4, wide: true },
     { hid: 12, x: -23, y: 4, wide: true }, { hid: 13, x: -13, y: 18, wide: true }, { hid: 14, x: 9, y: 18, wide: true },
   ].map((b) => ({ kind: "house", name: "", w: 4, h: 3, ...b }));
@@ -330,6 +330,9 @@
         const t = MAP.getT(x, y), o = MAP.obj[MAP.I(x, y)];
         if (t === T.WATER || t === T.DEEP || t === T.CLIFF || t === T.FIELD || t === T.BRIDGE || MAP.solid[MAP.I(x, y)] >= 0 || o === O.FENCE || o === O.SIGN || o === O.TENT) return false;
       }
+      // 다른 건물의 문 앞(문과 그 아래 두 칸)을 막지 않는다
+      const x0 = cx + b.x, x1 = cx + b.x + b.w - 1, y0 = cy + b.y - 1, y1 = cy + b.y + b.h;
+      if (MAP.buildings.some((o) => [0, 1, 2].some((k) => o.door[0] >= x0 && o.door[0] <= x1 && o.door[1] + k >= y0 && o.door[1] + k <= y1))) return false;
       return true;
     })()).map((b) => ({ hid: b.hid, wide: !!b.wide, x: cx + b.x, y: cy + b.y }));
   }
@@ -736,6 +739,8 @@
   function tick(w, mins) {
     const p = w.player;
     A.advance(w, mins);
+    // 배고픔: 깨어 있는 동안 조금씩 찬다 (반나절에 1). 먹으면 준다. 하루가 끝날 때 마을 밥(밥값)으로도 준다. 4가 넘으면 몸이 상한다
+    if (p && p.alive && !p.at_war && !p.asleep) { p.hunger = Math.min(6, (p.hunger || 0) + mins / 720); if (p.hunger >= 3) p.energy = Math.max(0, p.energy - mins * 0.03); }
     if (p && p.alive && !p.at_war && p.jail === 0 && afterMidnight(w)) {
       p.energy = Math.max(0, p.energy - mins * 0.12);
       if (p.energy <= 0) faint(w, "기력이 다해 그 자리에 쓰러졌다.");
@@ -821,7 +826,13 @@
     const p = w.player;
     if (!p || !w.ppos || p.trip) return;
     if (p.at_war) { const c = placeOf(FRONT, "camp"); w.ppos = { x: c.x + 0.5, y: c.y + 1.5 }; p.outside = false; return; }
-    if (p.jail > 0) { const g = placeOf(p.town, "guild"); w.ppos = { x: g.x + 0.5, y: g.y + 0.6 }; p.outside = false; return; }
+    if (p.jail > 0) { // 갇힌 동안은 경비대 건물 안 감방(안쪽 구석)에
+      const bd = MAP.buildings.find((b) => b.town === p.town && b.kind === "guild");
+      if (bd) { const fur = furnitureIn(w, bd), cell = [[bd.w - 2, bd.h - 1], [bd.w - 1, bd.h - 1], [1, bd.h - 1], [bd.w - 2, 2]].find(([rx, ry]) => !fur.some((f) => f.block && f.rx === rx && f.ry === ry)) || [1, 1];
+        w.ppos = { x: bd.x + cell[0] + 0.5, y: bd.y + cell[1] + 0.5 }; }
+      else { const g = placeOf(p.town, "guild"); w.ppos = { x: g.x + 0.5, y: g.y + 0.6 }; }
+      p.outside = false; return;
+    }
     const t = townAt(w.ppos.x, w.ppos.y);
     if (!p.outside && t !== p.town) placeIn(w, p.town, "square");
   }
@@ -1230,6 +1241,26 @@
     if (inTown && chasers) e.wanted.lastSeen = absMin(w);
     if (absMin(w) - e.wanted.lastSeen > 120) { e.wanted.level -= 1; e.wanted.lastSeen = absMin(w); if (e.wanted.level <= 0) { e.wanted.level = 0; log(w, "수배가 풀렸다."); for (const k of walkers.values()) k.chase = false; } }
   }
+  /** 감옥에서: 하루를 보낸다 (아침까지) */
+  function jailDay(w) {
+    const p = w.player; if (!(p.jail > 0)) return "";
+    const mins = 1440 - w.clock; p.asleep = true; A.advance(w, mins); p.asleep = false;
+    if (p.jailServed !== w.day) { p.jail = Math.max(0, p.jail - 1); p.jailServed = w.day; } // 갇힌 하루를 센다
+    p.energy = Math.min(100, Math.max(p.energy, 60)); syncPos(w);
+    const t = p.jail > 0 ? `차가운 바닥에서 하룻밤을 보냈다. ${p.jail}일 남았다.` : "갇힌 날이 다 지나 풀려났다.";
+    if (!(p.jail > 0)) releaseJail(w);
+    log(w, t); return t;
+  }
+  const bailOf = (w) => 12 * (w.player.jail || 0);
+  /** 보석금을 내고 나간다 */
+  function bail(w) {
+    const p = w.player, cost = bailOf(w);
+    if (!(p.jail > 0)) return "";
+    if (p.gold < cost) { const t = `보석금 ${cost}닢이 없다.`; log(w, t, "warn"); return t; }
+    p.gold -= cost; p.jail = 0; releaseJail(w);
+    const t = `보석금 ${cost}닢을 내고 풀려났다.`; log(w, t); return t;
+  }
+  function releaseJail(w) { const g = placeOf(w.player.town, "guild"); if (g) w.ppos = { x: g.x + 0.5, y: g.y + 1.5 }; }
   function arrest(w, guard) {
     const p = w.player, e = ext(w);
     const lv = Math.max(1, e.wanted.level);
@@ -1292,6 +1323,7 @@
           const c = CROPS[f.crop.type], n = w.rng.randint(c.y[0], c.y[1]) + (p.job === "farmer" && w.rng.next() < 0.4 ? 1 : 0);
           give(w, c.item, n, "밭에서 거두기");
           if (c.regrow) f.crop.g = c.days - c.regrow; else delete f.crop;
+          ext(w).tally = ext(w).tally || {}; ext(w).tally.harvest = (ext(w).tally.harvest || 0) + 1; // 첫 걸음 이야기가 센다
           return out(`${c.name} ${n}개를 거뒀다.`, 5, 1);
         }
         if (f && f.crop) return `${jo(CROPS[f.crop.type].name, "이/가")} 자라는 중이다 (${f.crop.g}/${CROPS[f.crop.type].days}일).${f.watered === w.day ? "" : " 오늘은 아직 물을 주지 않았다."}`;
@@ -1596,6 +1628,7 @@
     if (typeof wk === "string") wk = [...A.worksOf(p.job), ...(p.side ? A.worksOf(p.side) : [])].find((x) => x.id === wk);
     if (!wk) return { text: "할 수 없는 일이다" };
     const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n));
+    if (!lack.length) { const e = ext(w); e.tally = e.tally || {}; e.tally.work = (e.tally.work || 0) + 1; }
     if (lack.length) return { text: "재료가 모자라다" };
     const auto = !scores && !grade;
     if (auto) scores = A.autoScores(p, wk, w.rng, 0.12);
@@ -1877,6 +1910,7 @@
     if (id.startsWith("wk:") && def.work.steps) return { sim: def.work }; // 조작 화면을 연다 (ui → Sims.run → finishWork)
     if (id.startsWith("wk:")) {
       text = SIMS[def.work.sim](w, def.work, { town, pl });
+      e.tally = e.tally || {}; e.tally.work = (e.tally.work || 0) + 1;
     } else if (id.startsWith("job:")) {
       const j = JOBS[id.slice(4)], old = JOBS[p.job].name, from = p.job;
       p.gold -= j.entry_cost; A.setJob(p, j.id);
@@ -1889,6 +1923,7 @@
       return finish(w, text, 0, 0);
     } else if (id.startsWith("sell:")) {
       const it = id.split(":")[1], n = e.inv[it], v = sellPrice(w, it) * n;
+      e.tally = e.tally || {}; e.tally.sold = (e.tally.sold || 0) + 1;
       take(w, it, n); p.gold += v; A.stockAdd(town, it, n); text = `${ITEMS[it].name} ${n}개를 팔아 금화 ${v}닢을 받았다.`;
       return finish(w, text, 0, 0);
     } else if (id === "sharpen") { p.gold -= 10; e.sharp = true; text = "대장장이가 무기를 날카롭게 벼려 주었다."; }
@@ -2044,7 +2079,7 @@
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, standOK, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
-    setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
+    setup, newLife, resetLife, extOf, blockedReason, tick, jailDay, bail, bailOf, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
     updateAnimals, updateWalkers, visibleNPCs, say, npcAtTile, forageReady, farmDawn, canTill, homeBuilding,
     buildingMenu, doBuilding, reportCrime, knownCrimes, crime, peopleHere, activity, weaponDmg, log, attackNPC,
     pendingMins: 0, onLog: null, onHurt: null, onSwing: null, onTalk: null,

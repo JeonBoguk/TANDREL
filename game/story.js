@@ -125,7 +125,70 @@
     if (["career", "treasure", "drought"].includes(kind)) return "살림·장사";
     return "사람들";
   }
-  function afterTick(w) { checkOracle(w); checkAppts(w); seeStock(w); }
+  function afterTick(w) { checkOracle(w); checkAppts(w); seeStock(w); storyTick(w); }
+  /* ---------------------------------------------------------------- 첫 걸음: 직업마다 처음 며칠의 이야기
+   * 새 삶을 시작하면 그 직업의 선배(같은 마을의 같은 일 하는 사람, 없으면 길드)가 처음 할 일을 일러 준다. 단계는 차례로 열리고,
+   * 미션 칸 맨 위에 '첫 걸음'으로 보이며 길 안내가 켜져 있다. 셈은 ext.tally(일·수확·판매·사냥)와 이미 있는 기록(만난 사람·밭·유적·의뢰)
+   * 단계: { text, done(w, m, d) d = 시작 때와의 차이, goal(w, m), reward, say(선배의 한마디) } */
+  const tallyOf = (w) => { const e = EX(w), t = e.tally || {}; return { work: t.work || 0, harvest: t.harvest || 0, sold: t.sold || 0, kill: t.kill || 0, met: Object.keys(e.met || {}).length, looted: Object.keys(e.looted || {}).length, quests: e.missions.filter((m) => m.done && !m.gaveUp && m.type !== "story").length, planted: Object.values(e.farm || {}).filter((f) => f.crop).length }; };
+  const place = (w, town, kind, label) => { const pl = town && G.placeOf(town, kind); return pl ? { x: pl.x + 0.5, y: pl.y + 0.5, label } : null; };
+  function openGround(w) { // 마을 밖 가까운 풀밭 (밭을 일굴 자리)
+    const t = w.player.home, [cx, cy] = G.TOWN_POS[t] || [w.ppos.x, w.ppos.y];
+    for (let r = 20; r < 40; r += 2) for (let a = 0; a < 16; a++) { const x = Math.round(cx + Math.cos(a / 16 * Math.PI * 2) * r), y = Math.round(cy + Math.sin(a / 16 * Math.PI * 2) * r * 0.8); if (G.grassy && G.grassy(w, x, y) && G.walkable(w, x, y)) return { x: x + 0.5, y: y + 0.5, label: "마을 밖 풀밭" }; }
+    return null;
+  }
+  function unmet(w) { const e = EX(w), k = G.walkers; const c = w.residents(w.player.town, true).filter((n) => n.controller !== "player" && A.isAdult(n) && !(e.met || {})[n.id] && k.get(n.id) && !k.get(n.id).inside); if (!c.length) return place(w, w.player.town, "square", "광장에서 사람 만나기"); const n = c.sort((a, b) => Math.hypot(k.get(a.id).x - w.ppos.x, k.get(a.id).y - w.ppos.y) - Math.hypot(k.get(b.id).x - w.ppos.x, k.get(b.id).y - w.ppos.y))[0]; return { x: k.get(n.id).x, y: k.get(n.id).y, label: `${n.name}에게 인사` }; }
+  function nearRuin(w) { const M = G.MAP, lt = EX(w).looted || {}; let best = null, bd = 1e9; for (let y = 2; y < G.MH - 2; y++) for (let x = 2; x < G.MW - 2; x++) { const o = M.obj[M.I(x, y)]; if ((o === G.O.RUIN || o === G.O.MOUND) && lt[M.I(x, y)] === undefined) { const d = Math.hypot(x - w.ppos.x, y - w.ppos.y); if (d < bd) { bd = d; best = [x, y]; } } } return best ? { x: best[0] + 0.5, y: best[1] + 0.5, label: "옛 유적·흙더미" } : null; }
+  const myFarm = (w) => { const e = EX(w); const k = Object.keys(e.farm || {}).find((key) => e.farm[key].crop && e.farm[key].owner === w.player.id); if (!k) return null; const [x, y] = k.split(",").map(Number); return Number.isFinite(x) ? { x: x + 0.5, y: y + 0.5, label: "내 밭" } : null; };
+  const workPlace = (w) => { const J = A.JOBS[w.player.job] || {}; return place(w, w.player.town, J.workplace || "guild", `${J.name || ""} 일터`); };
+  const STARTS = {
+    farmer: [
+      { text: "마을 공동 밭을 괭이로 갈고 씨앗 심기", done: (w, d) => d.planted > 0, goal: (w) => place(w, w.player.town, "fields", "공동 밭") || openGround(w), reward: 6, say: "내가 쓰던 괭이랑 순무 씨앗을 줄게. 공동 밭 빈 자리를 갈고 심어 봐. 씨앗이 더 필요하면 시장에 있어." },
+      { text: "물을 주며 길러 첫 수확 거두기", done: (w, d) => d.harvest > 0, goal: myFarm, reward: 10, say: "매일 물을 주면 며칠이면 자라. 다 자라면 맨손으로 거두면 돼." },
+      { text: "거둔 작물을 시장에 팔기", done: (w, d) => d.sold > 0, goal: (w) => place(w, w.player.town, "market", "시장"), reward: 8, say: "첫 수확은 시장에 내 봐. 마을에 모자란 건 값을 더 쳐 줘." },
+      { text: "마을 사람 셋과 인사하기", done: (w, d) => d.met >= 3, goal: unmet, reward: 8, say: "농사는 혼자 짓는 게 아니야. 이웃들 얼굴을 익혀 둬." },
+    ],
+    adventurer: [
+      { text: "길드 게시판에서 의뢰 하나 받기", done: (w) => EX(w).missions.some((m) => m.board), goal: (w) => place(w, w.player.town, "guild", "길드 게시판"), reward: 5, say: "모험가는 길드에서 시작하지. 게시판 의뢰부터 하나 받아 와." },
+      { text: "사냥감 하나 잡기", done: (w, d) => d.kill > 0, goal: (w) => huntGround(w, "rabbit"), reward: 8, say: "마을 밖 들판엔 토끼가 많아. 몸부터 풀어 봐." },
+      { text: "옛 유적이나 수상한 흙더미 살펴보기", done: (w, d) => d.looted > 0, goal: nearRuin, reward: 10, say: "들판 곳곳에 옛 유적이 있어. 운이 좋으면 두루마리도 나오지." },
+      { text: "의뢰 하나 마치기", done: (w, d) => d.quests > 0, goal: (w) => { const m = EX(w).missions.find((x) => !x.done && x.type !== "story"); return m ? missionGoal(w, m) : place(w, w.player.town, "guild", "길드 게시판"); }, reward: 15, say: "받은 의뢰는 끝까지 해내야 이름이 나." },
+    ],
+    _: [
+      { text: "일터에 가서 처음으로 일해 보기", done: (w, d) => d.work > 0, goal: workPlace, reward: 6, say: "일은 일터에서 해. 들어가서 '일하기'를 골라 봐." },
+      { text: "마을 사람 셋과 인사하기", done: (w, d) => d.met >= 3, goal: unmet, reward: 6, say: "손님이 될 사람들이야. 얼굴을 익혀 둬." },
+      { text: "일을 세 번 더 해서 손에 익히기", done: (w, d) => d.work >= 4, goal: workPlace, reward: 10, say: "솜씨는 해 본 만큼 늘어. 몇 번 더 해 봐." },
+      { text: "주민의 부탁이나 길드 의뢰 하나 들어주기", done: (w, d) => d.quests > 0, goal: (w) => { const m = EX(w).missions.find((x) => !x.done && x.type !== "story"); return m ? missionGoal(w, m) : place(w, w.player.town, "guild", "길드 게시판"); }, reward: 12, say: "이웃 부탁을 들어주다 보면 일거리도 저절로 생겨." },
+    ],
+  };
+  const startsOf = (job) => STARTS[job] || STARTS._;
+  /** 새 삶의 첫 걸음을 연다 (newLife 뒤에 부른다) */
+  function beginStory(w) {
+    const p = w.player, e = EX(w); if (!p) return null;
+    if (e.missions.some((m) => m.type === "story" && !m.done)) return null;
+    const mentor = w.residents(p.town, true).filter((n) => n.controller !== "player" && A.isAdult(n) && n.job === p.job).sort((a, b) => b.fame - a.fame)[0];
+    const m = { type: "story", job: p.job, step: 0, mentor: mentor ? mentor.id : null, base: tallyOf(w), reward: 0, id: ++e.msSeq, got: 0, day: w.day, done: false };
+    e.missions.unshift(m); e.nav = m.id;
+    if (p.job === "farmer") { G.give(w, "hoe", 1, "선배에게 받기", mentor ? mentor.name : "길드"); G.give(w, "seed_turnip", 3, "선배에게 받기", mentor ? mentor.name : "길드"); } // 빈손의 농부에게 헌 괭이와 씨앗
+    G.log(w, `${mentor ? `${A.JOBS[p.job].name} 선배 ${mentor.name}: ` : "길드 사람: "}“${startsOf(p.job)[0].say}”`, "good");
+    return m;
+  }
+  function storyTick(w) {
+    const p = w.player; if (!p || !p.alive) return;
+    const m = EX(w).missions.find((x) => x.type === "story" && !x.done); if (!m) return;
+    const steps = startsOf(m.job), st = steps[m.step]; if (!st) { m.done = true; return; }
+    const now = tallyOf(w), d = Object.fromEntries(Object.keys(now).map((k) => [k, now[k] - (m.base[k] || 0)]));
+    if (!st.done(w, d, m)) return;
+    p.gold += st.reward; m.step += 1; m.base = tallyOf(w);
+    const next = steps[m.step], who = m.mentor !== null && w.npcs[m.mentor] ? w.npcs[m.mentor].name : "길드 사람";
+    if (next) G.log(w, `첫 걸음: ‘${st.text}’ 마침 (금화 ${st.reward}). ${who}: “${next.say}”`, "good");
+    else {
+      m.done = true; p.fame += 2;
+      w.record("quest", `${jo(p.name, "이/가")} ${w.towns[p.town].name}에서 ${(A.JOBS[m.job] || {}).name || ""}로서 첫 걸음을 뗐다`, { actor: p.id, target: m.mentor, town: p.town, imp: 3, sent: 3, wr: 0.2 });
+      if (m.mentor !== null && w.npcs[m.mentor]) adjust(w.npcs[m.mentor], p.id, 10);
+      G.log(w, `첫 걸음을 다 마쳤다! (금화 ${st.reward}, 명성 +2) ${who}: “이제 제 몫을 하는구먼. 앞으로가 기대돼.”`, "good");
+    }
+  }
   // ---- 다른 마을의 재고는 가 보거나(그 마을에 있을 때 본 것), 짐꾼·마부에게 들어야 안다
   function seeStock(w) {
     const p = w.player; if (!p || !p.alive || p.outside || p.trip || !w.towns[p.town]) return;
@@ -402,7 +465,7 @@
   const MAX_MS = 6;
   function addMission(w, m) {
     const e = EX(w);
-    if (e.missions.filter((x) => !x.done).length >= MAX_MS) return null;
+    if (e.missions.filter((x) => !x.done && x.type !== "story").length >= MAX_MS) return null; // 첫 걸음 이야기는 칸을 차지하지 않는다
     m.id = ++e.msSeq; m.got = m.got || 0; m.day = w.day; m.done = false;
     e.missions.push(m);
     G.log(w, `새 미션: ${missionTitle(w, m)}`, "quiet"); // 미션 칸에 바로 보이므로 알림은 띄우지 않는다
@@ -411,6 +474,7 @@
   function missionTitle(w, m) {
     const N = (id) => (w.npcs[id] ? w.npcs[id].name : "누군가");
     switch (m.type) {
+      case "story": { const st = startsOf(m.job)[m.step]; return st ? `첫 걸음 ${m.step + 1}/${startsOf(m.job).length}: ${st.text}` : "첫 걸음"; }
       case "hunt": return `${G.ANIMAL[m.animal].name} ${m.n}마리 잡아오기 (${Math.min(m.got || 0, m.n)}/${m.n})`;
       case "fetch": return `${G.ITEMS[m.item].name} ${m.n}개 ${m.from !== null && m.from !== undefined ? N(m.from) + "에게" : "길드에"} 가져다주기 (${Math.min(G.ext(w).inv[m.item] || 0, m.n)}/${m.n})`;
       case "message": return `${N(m.to)}에게 ${N(m.from)}의 안부 전하기`;
@@ -425,10 +489,28 @@
     return "미션";
   }
   function missionWhere(w, m) {
+    if (m.type === "story") return w.player && w.towns[w.player.town] ? w.towns[w.player.town].name : "";
     const id = m.type === "build" ? m.from : m.type === "visit" || m.type === "appt" ? m.to : m.type === "message" || m.type === "parcel" ? m.to : m.type === "match" ? m.b : m.type === "beat" || m.type === "bounty" ? m.target : m.type === "fetch" && m.from !== null && m.from !== undefined ? m.from : null;
     if (id === null || id === undefined) return m.type === "hunt" ? "들판과 숲" : m.board ? `${w.towns[m.board].name} 길드` : "";
     const n = w.npcs[id];
     return n && n.alive ? (n.at_war ? "전선" : w.towns[n.town].name) : "";
+  }
+  /** 사냥터: 그 짐승이 사는 땅(숲·들판·황무지)이 넓게 펼쳐진, 마을에서 떨어진 가까운 곳 (짐승 한 마리가 아니라 터를 가리킨다) */
+  const huntCache = {};
+  function huntGround(w, animal) {
+    const def = G.ANIMAL[animal]; if (!def) return null;
+    const px = Math.round(w.ppos.x / 12), py = Math.round(w.ppos.y / 12), key = `${animal}|${px}|${py}|${G.MAP.ver || 0}`;
+    if (huntCache[key] !== undefined) return huntCache[key];
+    const M = G.MAP, zone = new Set(def.zone), towns = Object.values(G.TOWN_POS);
+    let best = null, bd = 1e9;
+    for (let y = 4; y < G.MH - 4; y += 3) for (let x = 4; x < G.MW - 4; x += 3) {
+      if (!zone.has(M.getT(x, y)) || towns.some(([cx, cy]) => Math.hypot(cx - x, cy - y) < 24)) continue;
+      let k = 0; for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) if (zone.has(M.getT(x + dx, y + dy))) k++;
+      if (k < 20) continue; // 넓게 펼쳐진 곳만
+      const d = Math.hypot(x - w.ppos.x, y - w.ppos.y); if (d < bd) { bd = d; best = [x, y]; }
+    }
+    const word = def.zone.includes(G.T.WASTE) && !def.zone.includes(G.T.GRASS) ? "황무지" : def.zone.includes(G.T.FLOOR) && !def.zone.includes(G.T.GRASS) ? "숲" : def.zone.includes(G.T.FLOOR) ? "들판과 숲 가장자리" : "들판";
+    return (huntCache[key] = best ? { x: best[0] + 0.5, y: best[1] + 0.5, label: `사냥터: ${word} (${def.name})` } : null);
   }
   /** 길 안내: 이 미션을 지금 하려면 어디로 가야 하는가 {x, y, label}. 할 일을 마쳤으면 마무리할 곳(맡긴 사람·길드)으로 */
   function missionGoal(w, m) {
@@ -443,14 +525,14 @@
     const house = (town, hid, label) => { const b = G.MAP.buildings.find((x) => x.town === town && x.kind === "house" && x.hid === hid); return b ? { x: b.door[0] + 0.5, y: b.door[1] + 0.5, label } : null; };
     const here = G.townAt(w.ppos.x, w.ppos.y) || w.player.town;
     switch (m.type) {
+      case "story": { const st = startsOf(m.job)[m.step]; return st && st.goal ? st.goal(w, m) : null; }
       case "fetch": {
         if ((e.inv[m.item] || 0) >= m.n) return m.from !== null && m.from !== undefined ? npcAt(m.from, `${N(m.from)}에게 건네기`) : place(m.board, "guild", "길드에 내기");
         return place(here, "market", `${G.ITEMS[m.item].name} 구하기`);
       }
       case "hunt": {
         if ((m.got || 0) >= m.n) return place(m.board, "guild", "길드에 알리기");
-        const a = G.animals.filter((x) => x.type === m.animal).sort((p, q) => Math.hypot(p.x - w.ppos.x, p.y - w.ppos.y) - Math.hypot(q.x - w.ppos.x, q.y - w.ppos.y))[0];
-        return a ? { x: a.x, y: a.y, label: `${G.ANIMAL[m.animal].name} 사냥` } : null;
+        return huntGround(w, m.animal);
       }
       case "build": return !m.started && Object.entries(m.needs || {}).some(([id, k]) => (e.inv[id] || 0) < k) ? place(m.town, "market", "공사 재료 구하기") : house(m.town, m.hid, `${N(m.from)}의 집 공사`);
       case "visit": return house(m.town, m.hid, `${N(m.to)}의 집`);
@@ -470,6 +552,7 @@
     if (Story.onMission) Story.onMission(m);
   }
   function onKill(w, type) {
+    { const e = EX(w); e.tally = e.tally || {}; e.tally.kill = (e.tally.kill || 0) + 1; }
     for (const m of EX(w).missions) if (!m.done && m.type === "hunt" && m.animal === type) { m.got++; if (m.got >= m.n) completeMission(w, m, `${G.ANIMAL[type].name} 사냥 의뢰를 마쳤다!`); }
   }
   function onItem() {}
@@ -1400,7 +1483,7 @@
     return out.sort((a, b) => b.e.imp - a.e.imp || b.e.day - a.e.day).slice(0, n);
   }
 
-  const Story = { setup, onDawn, welcomePaper, knowsDream, offerBuild, completeMission, afterTick, sourceText, SRC_LABEL, paperSection, resolve, checkOracle, addMission, missionTitle, missionWhere, missionGoal, takeBoard, deliverToBoard, refreshBoard,
+  const Story = { setup, onDawn, welcomePaper, knowsDream, offerBuild, completeMission, afterTick, sourceText, SRC_LABEL, paperSection, resolve, checkOracle, addMission, missionTitle, missionWhere, missionGoal, beginStory, storyTick, STARTS, takeBoard, deliverToBoard, refreshBoard,
     onKill, onItem, onHitNPC, onArrest, onEnterTown, talk, toMenu, endTalk, tone, speak, tier, attitudeWord, relTag, familyList, relGraph, reasons,
     onEpisode: null, onOpenTalk: null, onMission: null };
   root.Story = Story;

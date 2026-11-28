@@ -1261,7 +1261,7 @@
     if (!n.grown && n.age_days >= adultAge(n.race) * DPY) comeOfAge(n, w);
     if (!isAdult(n)) return;
     if (n.at_war) { n.lastAct = "soldier"; soldierDay(n, w); return; }
-    if (n.jail > 0) { n.lastAct = "jail"; n.jail -= 1; return; }
+    if (n.jail > 0) { n.lastAct = "jail"; if (n.jailServed !== w.day) n.jail -= 1; return; } // 플레이어가 '하루 보내기'로 이미 센 날은 다시 세지 않는다
     if (n.trip || n.away) { n.lastAct = n.trip ? "trip" : "visit"; return; } // 길 위에 있거나 다른 마을에 다니러 간 사람은 그날 다른 일을 하지 않는다
     if (n.controller === "player") {
       // 플레이어는 직접 움직인다. '성격대로 맡기기' 중일 때만 성격에 따라 행동한다.

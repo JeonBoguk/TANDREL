@@ -633,7 +633,7 @@
       let pr = W.residents(T, true).find((n) => n.job === "priest" && A.isAdult(n));
       if (!pr) { pr = W.spawn(T, { race: "human", job: "priest", ageYears: 40 }); A.setJob(pr, "priest"); }
       pr.ill = null; pr.retired = null;
-      const kid = W.spawn(T, { race: "human", job: "farmer", ageYears: 9 });
+      const kid = W.spawn(T, { race: "human", job: "farmer", ageYears: 9 }); kid.parents = [pr.id]; pr.gold = 100; // 글을 아는 부모 → 글방에 자주 간다
       W.holiday = null;
       let plan = null; for (let k = 0; k < 40 && !(plan && plan.act === "school"); k++) plan = A.planHour(W, kid, 9);
       t.check(plan.act === "school", `${A.age(kid)}세 ${kid.name}: ${A.LIFE_LABEL[plan.act]}`);
@@ -730,6 +730,35 @@
       const rr = W.rng.next; W.rng.next = () => 0.01; A._.shortDay(W); W.rng.next = rr;
       const ev = W.events.filter((e) => e && e.kind === "side_job" && e.town === T).pop();
       t.check(ev && ev.data && ev.data.learned && W.residents(T, true).some((n) => n.side && A.worksOf(n.side).some((x) => x.gives && x.gives.bread)), ev ? ev.text : "아무도 빵을 만들기 시작하지 않았다");
+    } },
+    { id: "firststeps", name: "첫 걸음 이야기, 사냥터 안내, 감옥에서 하루 보내기·보석금, 배고픔", run(t) {
+      const W = t.w, p = t.p(), e = t.e();
+      e.missions = e.missions.filter((m) => m.type !== "story");
+      const m = S.beginStory(W);
+      t.check(m && m.type === "story" && e.nav === m.id && e.inv.hoe >= 1 && e.inv.seed_turnip >= 3, `${S.missionTitle(W, m)} (괭이와 씨앗을 받았다, 길 안내 켜짐)`);
+      const g = S.missionGoal(W, m);
+      t.check(g && /공동 밭/.test(g.label), `길 안내: ${g && g.label}`);
+      e.farm = e.farm || {}; e.farm["9999"] = { crop: "turnip", owner: p.id, watered: W.day };
+      const g0 = p.gold; S.storyTick(W);
+      t.check(m.step === 1 && p.gold > g0 && /수확/.test(S.missionTitle(W, m)), `다음 단계: ${S.missionTitle(W, m)}`);
+      delete e.farm["9999"];
+      // 사냥터: 짐승 한 마리가 아니라 그 짐승이 사는 넓은 땅
+      const hm = S.addMission(W, { type: "hunt", animal: "deer", n: 1, reward: 5, board: t.town() });
+      const hg = S.missionGoal(W, hm);
+      t.check(hg && /사냥터/.test(hg.label) && G.ANIMAL.deer.zone.includes(G.MAP.getT(Math.floor(hg.x), Math.floor(hg.y))) && !G.townAt(hg.x, hg.y), `${hg && hg.label} (${hg && Math.round(hg.x)}, ${hg && Math.round(hg.y)})`);
+      hm.done = true;
+      // 감옥: 경비대 건물 안에서 지내고, 하루를 보내거나 보석금을 내고 나간다
+      p.jail = 2; G.syncPos(W);
+      const bd = G.insideBuilding(W);
+      t.check(bd && bd.kind === "guild", "갇히면 경비대 건물 안(감방)에 있다");
+      G.jailDay(W);
+      t.check(p.jail === 1, `하루를 보냈다 (${p.jail}일 남음)`);
+      p.gold = 100; G.bail(W);
+      t.check(p.jail === 0 && p.gold === 100 - 12 && !(G.insideBuilding(W) && G.insideBuilding(W).kind === "guild" && G.blockedReason(W)), "보석금 12닢을 내고 풀려났다");
+      // 배고픔: 깨어 있는 동안 차오르고, 먹으면 준다
+      p.hunger = 0; G.tick(W, 360);
+      const h1 = p.hunger; G.give(W, "bread", 1); G.eat(W, "bread");
+      t.check(h1 >= 0.4 && p.hunger < h1, `여섯 시간 뒤 배고픔 ${h1.toFixed(2)} → 빵을 먹고 ${p.hunger.toFixed(2)}`);
     } },
     { id: "rites", name: "혼례와 장례: 풍습대로 치르고, 먼 마을의 가족이 찾아온다", run(t) {
       const W = t.w, T = t.town();

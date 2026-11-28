@@ -299,8 +299,12 @@ function renderHud() {
   const st = h("div", { class: "frame stats" },
     h("div", { class: "who" }, p.name, h("span", { class: "job" }, `${A.RACES[p.race].name} ${W.jobName(p)}`), e.wanted.level ? h("span", { class: "wanted", title: "수배" }, "★".repeat(e.wanted.level)) : null),
     bar("체력", p.health, 10, "#e5574a"), bar("기력", p.energy, 100, p.energy > 30 ? "#6cc26a" : "#e0b03a"),
+    bar("배부름", Math.max(0, 4 - (p.hunger || 0)) * 25, 100, (p.hunger || 0) < 2 ? "#e0a050" : (p.hunger || 0) < 3 ? "#e0b03a" : "#e5574a"),
     h("div", { class: "row", style: "justify-content:space-between;font-size:12px;margin-top:2px" }, h("span", { class: "gold" }, `₲ ${Math.floor(p.gold)}`), p.hunger >= 2 ? h("span", { style: "color:var(--red)" }, p.hunger >= 4 ? "몹시 배고픔" : "배고픔") : h("span", { class: "muted" }, `명성 ${p.fame}`)),
-    br ? h("div", { class: "small", style: "color:var(--gold)" }, br) : null);
+    br ? h("div", { class: "small", style: "color:var(--gold)" }, br) : null,
+    p.jail > 0 ? h("div", { class: "row", style: "gap:6px;margin-top:4px" }, // 감옥: 하루를 보내거나 보석금을 낸다
+      h("button", { class: "wbtn", type: "button", onclick: () => { toast(G.jailDay(W)); renderAll(); } }, "하루 보내기"),
+      h("button", { class: "wbtn", type: "button", disabled: p.gold < G.bailOf(W), onclick: () => { toast(G.bail(W)); renderAll(); } }, `보석금 ${G.bailOf(W)}닢`)) : null);
   const bl = $("#bl");
   if (!bl.firstChild || bl.dataset.pid !== String(p.id)) { bl.dataset.pid = String(p.id); bl.replaceChildren(h("div", { class: "portrait", title: "정보 (C)", onclick: () => openWin("info") }, portraitCanvas(p, 64)), st); }
   else bl.replaceChild(st, bl.children[1]);
@@ -1002,7 +1006,7 @@ function winBorn() {
   const birth = (opts) => {
     G.newLife(W, opts);
     view.cam = { x: W.ppos.x, y: W.ppos.y }; speed = settings.speed; obsRun = false; hotSig = ""; $("#bl").dataset.pid = ""; bornMode = null;
-    S.welcomePaper(W);
+    S.welcomePaper(W); S.beginStory(W); // 직업마다 첫 걸음 이야기 (길 안내가 켜진다)
     autosave(); closeWin(); toast(touchMode ? "왼쪽 아래 막대로 걷고, 오른쪽 버튼으로 말 걸기·도구 쓰기" : "이동 WASD · 말 걸기 E · 도구 Space · 도움말 H");
   };
   form.addEventListener("submit", (e) => {
