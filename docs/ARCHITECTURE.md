@@ -73,7 +73,7 @@ Asteria.extend({
 
 ## 저장
 
-- 형식 버전 `Asteria.SAVE_VERSION`(지금 8). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
+- 형식 버전 `Asteria.SAVE_VERSION`(지금 9). 형식을 바꾸면 버전을 올리고 engine.js의 `MIGRATIONS[옛 버전]`에 이전 함수를 더한다. `deserialize`가 차례로 적용한다.
 - `w.nations{id}`: 나라 목록 `{name, since, founder, from(갈라져 나온 나라), ended, revolution}`. 마을은 `town.nation`에 **나라 id**를 가진다. 이름은 `Asteria.nationName(w, id)`. 이 세계에서 생긴 나라는 `n1, n2…`
 - `w.assets{id}`: 자산. 지금은 주민 집 `house:마을:번호` = `{kind, town, hid, owner, style(roof·wall·floor), mods(dx·dw·dh·grown)}`. 인물은 사는 집 `n.house`를 가진다. 배정·승계는 engine.js의 `settleIn`, `joinHousehold`, `pickHouse`, `passHouses`. 마을마다 집 수는 `CONTENT.housesPerTown`(game.js `BUILD_DEF`와 맞출 것)
 - 인물의 혈통·외형: `n.heritage{종족: 비율}`(아이는 부모 평균 `blendHeritage`), `n.look{skin, hair, style, eye}`(태어날 때 정해짐, 아이는 `inheritLook`으로 부모를 닮음. 그림은 `render.js lookOf`가 이 값을 쓴다), `n.birthplace{town, nation, day}`, `n.culture`(나라 id, 어른이 될 때 사는 나라).

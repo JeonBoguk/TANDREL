@@ -119,6 +119,7 @@ canvas.icon { image-rendering: pixelated; flex: none; vertical-align: middle; }
 .opts { flex: 1 1 auto; min-height: 0; padding: 6px 10px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 .opt { text-align: left; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r1); padding: 6px 10px; min-height: 44px; }
 .opt:hover:not([disabled]) { border-color: var(--accent); }
+.opt.kf { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .opt b { font-weight: 500; display: block; }
 .opt span { font-size: var(--fs-1); color: var(--text-2); display: block; line-height: 1.4; }
 .opt .k { display: inline; color: var(--text-3); margin-right: 6px; font-size: var(--fs-1); }

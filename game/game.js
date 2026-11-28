@@ -615,6 +615,15 @@
     rebuildMap(w);
     w.onMapChange = (quiet) => { rebuildMap(w); if (G.onMapChange) G.onMapChange(quiet); };
     const e0 = ext(w);
+    if (e0.respread) { // 마을 사이가 넓어진 저장: 땅의 기록을 가장 가까운 마을과의 거리를 지켜 새 마을 자리로 옮긴다
+      const k = e0.respread, oldW = e0.mw || MW, towns = A.allTownDefs(w).map((t) => ({ nx: t.pos[0], ny: t.pos[1], ox: Math.round(t.pos[0] / k), oy: Math.round(t.pos[1] / k) }));
+      const move = (x, y) => { const t = towns.reduce((b, c) => (Math.hypot(c.ox - x, c.oy - y) < Math.hypot(b.ox - x, b.oy - y) ? c : b)); return [Math.max(1, Math.min(MW - 2, t.nx + (x - t.ox))), Math.max(1, Math.min(MH - 2, t.ny + (y - t.oy)))]; };
+      const mvIdx = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([key, v]) => { const pre = /^[a-z]/.test(key) ? key[0] : "", i = +key.slice(pre.length); const [x, y] = move(i % oldW, Math.floor(i / oldW)); return [pre + (y * MW + x), v]; }));
+      e0.removed = mvIdx(e0.removed); e0.picked = mvIdx(e0.picked); e0.looted = mvIdx(e0.looted);
+      e0.farm = Object.fromEntries(Object.entries(e0.farm || {}).map(([key, v]) => { const [x, y] = key.split(",").map(Number); const [nx, ny] = move(x, y); return [nx + "," + ny, v]; }));
+      if (w.ppos) { const [x, y] = move(Math.floor(w.ppos.x), Math.floor(w.ppos.y)); w.ppos = { ...w.ppos, x: x + 0.5, y: y + 0.5 }; }
+      e0.mw = MW; delete e0.respread;
+    }
     if (e0.mw !== MW) { // 지도 크기가 바뀐 저장: 타일 번호로 적어 둔 기록을 옮긴다
       if (e0.mw === undefined) { e0.removed = {}; e0.picked = {}; }
       else { const mv = (obj) => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => { const pre = /^[a-z]/.test(k) ? k[0] : "", i = +k.slice(pre.length); return [pre + ((Math.floor(i / e0.mw)) * MW + i % e0.mw), v]; })); e0.removed = mv(e0.removed); e0.picked = mv(e0.picked); e0.looted = mv(e0.looted); }
@@ -912,8 +921,33 @@
     const rn = w.ext && w.ext.reno;
     if (rn && rn.builder === n.id && h >= 8 && h < 17) { const hb = MAP.buildings.find((b) => b.town === rn.town && b.kind === "inn"); if (hb && n.town === rn.town) return [hb.x + hb.w, hb.y + hb.h + 1]; }
     const kind = n.job === "guard" && n.id % 2 ? "square" : (JOBS[n.job] && JOBS[n.job].workplace) || "square";
-    if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3) % 9, cy + FIELD_BOX.y0 + (n.id % 5)];
+    const slot = Math.floor(h); // 한 시간마다 자리를 바꾼다
+    // 손님: 일하는 시간에도 한 시간쯤 시장·주점·신전에 들른다
+    if (h >= 9 && h < 17 && h2(n.id, slot * 7 + w.day, 13) < 0.12) {
+      const shops = MAP.buildings.filter((b) => b.town === t && ["market", "tavern", "temple", "forge"].includes(b.kind));
+      if (shops.length) { const b = shops[Math.floor(h2(n.id, slot, 17) * shops.length)]; const sp = workSpot(w, b, n, slot + 50); if (sp) return sp; }
+    }
+    if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slot) % 9, cy + FIELD_BOX.y0 + ((n.id + slot) % 5)];
+    // 일터 건물이 있으면 대개 안에서 일한다 (가끔 문 앞에 나와 있다)
+    if (ENTER.has(kind) && h2(n.id, slot + w.day * 24, 19) > 0.22) {
+      const b = MAP.buildings.find((q) => q.town === t && q.kind === kind);
+      const sp = b && workSpot(w, b, n, slot);
+      if (sp) return sp;
+    }
     return spotNear(w, placeOf(t, kind), n.id, 2);
+  }
+  /** 건물 안 자리: [문 x, 문 y, 안, 안쪽 x, 안쪽 y, 건물 id]. 가구에 막히지 않고 문간이 아닌 칸 가운데 사람마다·시간마다 다른 곳 */
+  function workSpot(w, b, n, slot) {
+    if (!b || !b.door) return null;
+    const fur = furnitureIn(w, b), [ex, ey] = entryOf(b), free = [];
+    for (let ry = 1; ry < b.h; ry++) for (let rx = 0; rx < b.w; rx++) {
+      const x = b.x + rx, y = b.y + ry;
+      if ((x === ex && y === ey) || fur.some((f) => f.block && f.rx === rx && f.ry === ry)) continue;
+      free.push([x, y]);
+    }
+    if (!free.length) return null;
+    const [ix, iy] = free[Math.floor(h2(n.id, slot, 23) * free.length)];
+    return [b.door[0], b.door[1], true, ix, iy, b.id];
   }
   function spotNear(w, pl, id, r) {
     for (let k = 0; k < 12; k++) {
@@ -931,7 +965,7 @@
       if (!spot) continue;
       seen.add(n.id);
       let k = walkers.get(n.id);
-      const [sx, sy, inside] = spot;
+      const [sx, sy, inside, ix, iy, bid] = spot;
       const tx = sx + 0.5, ty = sy + 0.5;
       if (!k || k.town !== n.town || k.war !== n.at_war) {
         k = { x: tx, y: ty, town: n.town, war: n.at_war, path: [], goal: null, inside: !!inside, flee: 0, chase: false, say: null, sayT: 0, dir: "down", hitCd: 0, fight: false };
@@ -939,7 +973,15 @@
       }
       k.sayT = Math.max(0, k.sayT - dt); k.flee = Math.max(0, k.flee - dt); k.hitCd -= dt;
       const near = dist(k.x, k.y, px, py) < 45;
-      const goalKey = sx + "," + sy;
+      const goalKey = sx + "," + sy + (ix !== undefined ? ">" + ix + "," + iy : "");
+      // 이미 그 건물 안이면 안에서 걸어 자리를 옮긴다
+      if (k.inside && ix !== undefined && k.bd === bid && k.goal !== goalKey) { k.goal = goalKey; k.tix = ix + 0.5; k.tiy = iy + 0.5; }
+      if (k.inside && k.tix !== undefined && k.bd === bid) {
+        const d = dist(k.x, k.y, k.tix, k.tiy), sp = 1.6 * dt;
+        if (d > 0.05) { k.dir = Math.abs(k.tix - k.x) > Math.abs(k.tiy - k.y) ? (k.tix > k.x ? "right" : "left") : k.tiy > k.y ? "down" : "up"; if (d <= sp) { k.x = k.tix; k.y = k.tiy; } else { k.x += (k.tix - k.x) / d * sp; k.y += (k.tiy - k.y) / d * sp; } }
+        else if (Math.random() < dt * 0.2) k.dir = ["down", "left", "right", "down"][Math.floor(Math.random() * 4)]; // 일하는 몸짓
+        continue;
+      }
       if (k.chase || k.fight) {
         const d = dist(k.x, k.y, px, py);
         const p = w.player;
@@ -961,15 +1003,16 @@
         if (dist(k.x, k.y, px, py) < 1.3) { const f = k.seek; k.seek = null; f(); }
         continue;
       }
+      const enter = () => { k.inside = !!inside; k.bd = bid; k.tix = undefined; if (ix !== undefined) { k.x = ix + 0.5; k.y = iy + 0.5; k.tix = k.x; k.tiy = k.y; } }; // 문에 닿으면 안쪽 자리로
       if (k.goal !== goalKey) {
-        k.goal = goalKey; k.inside = false;
+        k.goal = goalKey; k.inside = false; k.bd = undefined; k.tix = undefined;
         k.path = near ? findPath(w, k.x, k.y, tx, ty, 4000) || [] : [];
-        if (!near) { k.x = tx; k.y = ty; k.inside = !!inside; }
+        if (!near) { k.x = tx; k.y = ty; enter(); }
       }
       if (k.path.length) {
         const [nx, ny] = k.path[0], d = dist(k.x, k.y, nx, ny), sp = 2.6 * dt;
         k.dir = Math.abs(nx - k.x) > Math.abs(ny - k.y) ? (nx > k.x ? "right" : "left") : ny > k.y ? "down" : "up";
-        if (d <= sp) { k.x = nx; k.y = ny; k.path.shift(); if (!k.path.length) k.inside = !!inside; }
+        if (d <= sp) { k.x = nx; k.y = ny; k.path.shift(); if (!k.path.length) enter(); }
         else { k.x += (nx - k.x) / d * sp; k.y += (ny - k.y) / d * sp; }
       } else if (!k.inside && Math.random() < dt * 0.15) {
         const ox = (Math.random() - 0.5) * 1.2, oy = (Math.random() - 0.5) * 1.2;
@@ -987,8 +1030,8 @@
     k.dir = Math.abs(tx - k.x) > Math.abs(ty - k.y) ? (tx > k.x ? "right" : "left") : ty > k.y ? "down" : "up";
   }
   function visibleNPCs(w) {
-    const out = [];
-    for (const [id, k] of walkers) { if (k.inside) continue; out.push({ n: w.npcs[id], k }); }
+    const out = [], here = insideBuilding(w); // 플레이어가 들어간 건물 안의 사람은 보인다
+    for (const [id, k] of walkers) { if (k.inside && !(here && k.bd === here.id && k.tix !== undefined)) continue; out.push({ n: w.npcs[id], k }); }
     return out;
   }
   function say(id, text, t = 3) { const k = walkers.get(id); if (k) { k.say = text; k.sayT = t; } }

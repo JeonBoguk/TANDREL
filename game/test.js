@@ -245,7 +245,7 @@
       // 옛 형식(v5): 한 덩어리 ext
       const old = JSON.parse(json); old.ext = { ...old.land, ...old.session, ...old.npcs[p2.id].ext, inv: { apple: 2 } }; delete old.land; delete old.session; delete old.npcs[p2.id].ext; old.version = 5;
       const w3 = A.World.deserialize(old); G.setup(w3);
-      t.check(w3.player.ext.inv.apple === 2 && w3.land.farm["1,1"] && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다");
+      t.check(w3.player.ext.inv.apple === 2 && Object.keys(w3.land.farm).length === Object.keys(W.land.farm).length && w3.session.facing, "옛 저장의 ext가 인물·세계·화면으로 나뉜다 (밭은 넓어진 마을 자리로 옮겨진다)");
     } },
     { id: "works", name: "직업의 업무는 단계(조작 부품)로 이뤄지고, 주민도 같은 단계를 거친다", run(t) {
       const W = t.w, p = t.p(), fields = t.placeOf("fields"), market = t.placeOf("market");

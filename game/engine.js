@@ -80,6 +80,12 @@
     worldEvents: [],  // 플레이어와 상관없이 세계에 일어나는 일 (content.js)
     eventKinds: {},   // 사건 종류별 신문 지면 {kind: "사람들"|"전황"|...}
   };
+  /* 마을 사이를 넓게: 콘텐츠의 마을 위치(pos)와 새 나라 후보지(frontier)에 곱한다. 팩의 마을도 extend에서 같게.
+   * 바꾸면 저장 이전이 필요하다 (MIGRATIONS[8] 참고) */
+  const SPREAD = 1.7;
+  const spreadPos = (t) => { if (t.pos && !t._spread) { t.pos = t.pos.map((v) => Math.round(v * SPREAD)); t._spread = true; } return t; };
+  CONTENT.towns.forEach(spreadPos);
+  CONTENT.frontier = CONTENT.frontier.map((p) => p.map((v) => Math.round(v * SPREAD)));
   const RACES = {}, JOBS = {}, DREAMS = {};
   function reindex() {
     for (const [map, list] of [[RACES, CONTENT.races], [JOBS, CONTENT.jobs], [DREAMS, CONTENT.dreams]]) {
@@ -90,6 +96,7 @@
   /** 콘텐츠 팩을 더한다. 같은 id가 있으면 덮어쓰고(필드 병합), 없으면 새로 붙인다.
    *  pack: { races, jobs, dreams, worldEvents, items, eventKinds, demonLords } */
   function extend(pack) {
+    for (const t of pack.towns || []) spreadPos(t);
     for (const key of ["races", "jobs", "dreams", "worldEvents", "towns", "recipes", "works", "npcs", "knowledge", "loot", "renovations", "subjects", "innovations"]) {
       for (const x of pack[key] || []) {
         const i = CONTENT[key].findIndex((y) => y.id === x.id);
@@ -296,10 +303,10 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 8;
+  const SAVE_VERSION = 9;
   /* 플레이어로 살며 생기는 상태가 어디에 사는가 (game.js의 ext()가 이 표대로 나눠 담는다)
    *  land: 세계에 남는 흔적 · session: 화면·조작 · 나머지: 그 인물의 것(n.ext). 인물이 바뀌어도 인물의 것은 그 인물에게 남는다 */
-  const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", board: "land", chickenGone: "land", v: "land",
+  const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", respread: "land", board: "land", chickenGone: "land", v: "land",
     facing: "session", trail: "session" };
   const extStore = (k) => EXT_STORE[k] || "char";
   const newWorldId = (seed) => `w${(seed >>> 0).toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1679616).toString(36).padStart(4, "0")}`;
@@ -378,6 +385,12 @@
         return ext ? { ...rest, ext, skills } : { ...rest, skills };
       });
       return { ...d, npcs, version: 8 };
+    },
+    // v8 → v9: 마을 사이가 넓어졌다(SPREAD). 이 세계에서 세운 마을 자리도 같은 배수로 옮기고,
+    // 땅에 남긴 기록(밭·벌목·채집·유적)과 플레이어 위치는 game.js가 가까운 마을 기준으로 옮긴다 (land.respread)
+    8: (d) => {
+      const founded = (d.founded || []).map((f) => ({ ...f, pos: f.pos ? f.pos.map((v) => Math.round(v * SPREAD)) : f.pos }));
+      return { ...d, founded, land: { ...(d.land || {}), respread: SPREAD }, version: 9 };
     },
   };
   function migrate(d) {
@@ -1465,7 +1478,7 @@
     // 빈 땅을 찾는다 (지도가 있으면 지도에서, 없으면 기본 후보지에서). 빈 땅이 없거나, 고향 사람 다수가 따르면 고향을 독립시킨다
     const home = w.towns[n.town];
     const finder = w.findSite || (root.Game && root.Game.findSite);
-    const site = finder ? finder(w, [home.x, home.y]) : (() => { const taken = allTownDefs(w).map((t) => t.pos); const ok = CONTENT.frontier.filter((s) => taken.every((p) => Math.hypot(p[0] - s[0], p[1] - s[1]) > 30)); return ok.length ? w.rng.choice(ok) : null; })();
+    const site = finder ? finder(w, [home.x, home.y]) : (() => { const taken = allTownDefs(w).map((t) => t.pos); const ok = CONTENT.frontier.filter((s) => taken.every((p) => Math.hypot(p[0] - s[0], p[1] - s[1]) > 30 * SPREAD)); return ok.length ? w.rng.choice(ok) : null; })();
     const localShare = followers0.filter((x) => x.town === n.town).length / Math.max(1, w.residents(n.town, true).length);
     if (!site || (!home.border && localShare > 0.3 && w.rng.next() < 0.5)) {
       const oldId = home.nation, oldNation = nameOfNation(w, oldId), newId = newNation(w, nationName, { since: w.day, founder: n.id, from: oldId });
@@ -1530,7 +1543,7 @@
     }
     // 퍼지기: 가까운 마을(거리 60 안)의 농법을 배워 온다
     for (const t of towns) for (const u of towns) {
-      if (t === u || !u.agri || !t.agri || Math.hypot(t.x - u.x, t.y - u.y) > 60) continue;
+      if (t === u || !u.agri || !t.agri || Math.hypot(t.x - u.x, t.y - u.y) > 60 * SPREAD) continue;
       const learnable = u.agri.ids.find((id) => !t.agri.ids.includes(id) && ((I.find((x) => x.id === id) || {}).after || []).every((a) => t.agri.ids.includes(a)));
       if (learnable && w.rng.next() < 0.08) { t.agri.ids.push(learnable); const N = I.find((x) => x.id === learnable); w.record("farm_spread", `${u.name}의 ‘${N.name}’${jo(N.name, "이/가").slice(N.name.length)} ${t.name}에도 전해졌다`, { town: t.id, imp: 3, wr: 0.2, data: { innov: learnable, from: u.id } }); }
       if ((u.agri.breed || 0) > (t.agri.breed || 0) + 1 && w.rng.next() < 0.05) t.agri.breed++;
@@ -1620,7 +1633,7 @@
   };
   const ELEMENTS = [["불", "불꽃", "#e86a3a"], ["물", "물결", "#4a90d8"], ["바람", "바람", "#a8d8c8"], ["땅", "바위", "#a08058"], ["빛", "빛", "#f0e090"], ["어둠", "그늘", "#6a5a8a"]];
   /** 마을의 땅 (지도 위치로 정한다) */
-  function envOf(t) { if (!t || t.x === undefined) return null; return t.y < 40 ? "frost" : t.x < 40 ? "wood" : t.x > 160 ? "shore" : t.y > 105 ? "sun" : null; }
+  function envOf(t) { if (!t || t.x === undefined) return null; const S = SPREAD; return t.y < 40 * S ? "frost" : t.x < 40 * S ? "wood" : t.x > 160 * S ? "shore" : t.y > 105 * S ? "sun" : null; }
   const mixHex = (a, b, k = 0.5) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b); return "#" + x.map((v, i) => Math.round(v * (1 - k) + y[i] * k).toString(16).padStart(2, "0")).join(""); };
   /** 두 이름 무리의 음절을 섞어 새 이름들 */
   function blendNames(w, poolA, poolB, n = 14) {
@@ -2196,6 +2209,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, SPREAD, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

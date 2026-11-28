@@ -88,7 +88,7 @@ function frame(now) {
     let walking = false;
     if (playing()) {
       if (!paused()) {
-        carry += dt * 2 * speed + G.pendingMins; G.pendingMins = 0;
+        carry += dt * 1 * speed + G.pendingMins; G.pendingMins = 0; // 현실 1초 = 게임 1분 (×2·×4로 빠르게)
         if (W.autoDays > 0 || G.blockedReason(W)) carry += dt * 60 * speed;
         const whole = Math.floor(carry);
         if (whole >= 1) { carry -= whole; const d0 = W.day; G.tick(W, whole); if (W.day !== d0) onNewDay(); }
@@ -172,13 +172,9 @@ document.addEventListener("keydown", (e) => {
   if (k === "escape") { if (win) closeWin(); else if (bmenu) closeMenu(); else if (session) endSession(); else if (epView) { epView = null; renderTalk(); } return; }
   if (session || epView || blockingEp() || bmenu) {
     if (/^[1-9]$/.test(k)) { const opt = $$(".talk .opt")[+k - 1]; if (opt && !opt.disabled) { e.preventDefault(); opt.click(); } return; }
-    // 방향키를 누르면 대화·건물 메뉴를 닫고 바로 걷는다 (반드시 골라야 하는 일은 예외)
-    if (KEYMAP[k] && KEYMAP[k] !== "run" && !blockingEp() && !win) {
-      e.preventDefault();
-      if (session) endSession(); if (bmenu) closeMenu(); if (epView) { epView = null; renderTalk(); }
-      keys.add(KEYMAP[k]);
-      return;
-    }
+    // 방향키로 선택지를 옮기고, Space·Enter로 고른다 (나가기는 Esc 또는 '나가기')
+    if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(k) && !win) { e.preventDefault(); moveOptFocus(k); return; }
+    if ((k === " " || k === "enter") && optFocus >= 0) { const opt = $$(".talk .opt")[optFocus]; if (opt && !opt.disabled) { e.preventDefault(); opt.click(); return; } }
     if (session && session.over && (k === " " || k === "e" || k === "enter")) { e.preventDefault(); endSession(); return; }
     return;
   }
@@ -193,6 +189,20 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => { const m = KEYMAP[e.key.toLowerCase()]; if (m) keys.delete(m); });
 window.addEventListener("blur", () => keys.clear());
 
+/* 선택지 키보드 이동: 같은 줄(위치가 같은 것)끼리 칸, 위아래로 줄 */
+let optFocus = -1;
+function moveOptFocus(k) {
+  const opts = $$(".talk .opt"); if (!opts.length) return;
+  if (optFocus < 0 || optFocus >= opts.length) optFocus = 0;
+  else {
+    const cur = opts[optFocus], cols = opts.filter((o) => o.offsetTop === opts[0].offsetTop).length || 1;
+    const d = { arrowleft: -1, a: -1, arrowright: 1, d: 1, arrowup: -cols, w: -cols, arrowdown: cols, s: cols }[k] || 0;
+    optFocus = Math.max(0, Math.min(opts.length - 1, optFocus + d));
+    if (cur === opts[optFocus] && (d === cols || d === -cols)) optFocus = Math.max(0, Math.min(opts.length - 1, optFocus + Math.sign(d)));
+  }
+  opts.forEach((o, i) => o.classList.toggle("kf", i === optFocus));
+  opts[optFocus].scrollIntoView({ block: "nearest" });
+}
 function interactFront() {
   const [tx, ty] = G.facingTile(W);
   const inHouse = G.insideBuilding(W) && G.insideBuilding(W).kind === "house"; // 초대받은 집 안: 바로 앞 사람과만 말하고, 아니면 집 안에서 할 일을 연다
@@ -347,13 +357,14 @@ function renderSpeed() {
 }
 function renderMenubar() {
   const eps = W.episodes.filter((e) => !e.block).length, unread = W.papers.some((p) => p.unread);
-  const sig = `${eps}|${unread}|${playing()}|${groupOf(win)}`;
+  const sig = `${eps}|${unread}|${playing()}|${groupOf(win)}|${win === "bag"}`;
   if ($("#menubar").dataset.sig === sig) return;
   $("#menubar").dataset.sig = sig;
   const g = groupOf(win);
   const btn = (id, label, key, extra = {}) => h("button", { class: "mbtn" + (extra.primary ? " primary" : ""), type: "button", "aria-pressed": String(g === (GROUP_OF[id] || id)), onclick: () => (g === (GROUP_OF[id] || id) ? closeWin() : openWin(id)) }, label, key ? h("kbd", null, key) : null, extra.badge ? h("span", { class: "badge" }, extra.badge) : null);
   $("#menubar").replaceChildren(
     btn("info", "나", "C"),
+    playing() ? h("button", { class: "mbtn", type: "button", "aria-pressed": String(win === "bag"), onclick: () => (win === "bag" ? closeWin() : openWin("bag")) }, "가방", h("kbd", null, "I")) : null,
     btn(eps ? "news" : "paperToday", "소식", "N", { badge: eps ? String(eps) : unread ? "새" : null }),
     btn("people", "세계", "P"),
     btn("map", "지도", "M"),
@@ -380,6 +391,7 @@ function openTalk(id, opener) {
 }
 function renderTalk() {
   const box = $("#talk");
+  optFocus = -1;
   const ep = blockingEp();
   if (!session && !epView && !ep && !bmenu) { box.hidden = true; return; }
   box.hidden = false;
@@ -417,6 +429,7 @@ function openMenu(pl) { if (busy()) return; path = []; keys.clear(); bmenu = { p
 function closeMenu() { if (window.Sims) Sims.stop(); bmenu = null; renderTalk(); renderAll(); refocus(); }
 function renderMenu() {
   const pl = bmenu.pl, p = W.player;
+  optFocus = -1;
   if (bmenu.pick === "sim") { // 업무 조작 화면: 진행 중에는 다시 그리지 않는다
     if (window.Sims && Sims.running() && $("#talk .simwrap")) return;
     const wk = bmenu.sim, host = h("div", { class: "simwrap" });

@@ -812,13 +812,25 @@
       back(w, s)];
   }
   // ---- 소문
+  /* 지난 소식 거르기: 그 사람에게 뒤이은 일이 있고, 듣는 사람이나 말하는 사람이 이미 그 뒤 일을 알면 옛 소식은 꺼내지 않는다
+   * (말하는 사람만 안다면 그 뒤 일이 소문 후보에 따로 있다). 말하는 사람 자신의 일은 소문으로 전하지 않는다 */
+  const NEXT = { enlist: ["return"], travel: ["travel", "return"], lovers: ["marriage", "quarrel"], vow: ["revenge_done", "forgive", "give_up"], dream_start: ["dream_done", "dream_lost", "give_up"], career: ["career", "job_born"], job_born: ["career"] };
+  const aboutSelf = (e, n) => e.actor === n.id || e.target === n.id;
+  function stale(w, e, p, n) {
+    if (e.actor === null || e.actor === undefined) return false;
+    const a = w.npcs[e.actor];
+    if (a && !a.alive && a.death_day > e.day && NEXT[e.kind]) return true; // 그 뒤로 세상을 떠났다
+    const later = (NEXT[e.kind] || []);
+    if (!later.length) return false;
+    return w.lifeOf(e.actor).some((x) => x.actor === e.actor && x.id > e.id && later.includes(x.kind) && (p.known.has(x.id) || n.known.has(x.id)));
+  }
   function rumor(w, s) {
     tick5(s);
     const p = w.player, n = w.npcs[s.nid];
     s.say("me", s.rumors ? pick(w, ["다른 소식은요?", "또 없어요?"]) : pick(w, ["무슨 소식 없어요?", "요즘 마을에 무슨 일 있어요?", "재밌는 얘기 없어요?"]));
     if (opinion(n, p.id) < -25) { s.say("npc", "당신한테 해 줄 얘기는 없어요."); toMenu(w, s); return; }
     if (s.rumors >= 3) { s.say("npc", "오늘은 아는 게 그게 다예요."); toMenu(w, s); return; }
-    const news = n.mem.filter((m) => !p.known.has(m.e) && w.events[m.e] && w.events[m.e].imp >= 2 && w.events[m.e].kind !== "theft_unknown");
+    const news = n.mem.filter((m) => !p.known.has(m.e) && w.events[m.e] && w.events[m.e].imp >= 2 && w.events[m.e].kind !== "theft_unknown" && !aboutSelf(w.events[m.e], n) && !stale(w, w.events[m.e], p, n));
     if (!news.length) { s.say("npc", pick(w, ["글쎄요, 요즘 조용하네요.", "딱히 새로운 건 없어요.", `${w.season}이라 다들 바쁘죠, 뭐.`])); toMenu(w, s); return; }
     const m = maxBy(news, (x) => w.events[x.e].imp * x.s * (0.6 + w.rng.next() * 0.8));
     const e = w.events[m.e];
