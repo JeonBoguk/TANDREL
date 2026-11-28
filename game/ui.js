@@ -831,6 +831,15 @@ function winNations() {
     born.length ? h("ul", { class: "list" }, born.map((e) => h("li", null, h("span", { class: "d" }, W.date(e.day)), h("span", { class: "t" }, e.text)))) : h("p", { class: "small muted" }, "아직 없다. 사람들의 삶에 필요가 쌓이면 누군가 새 일을 시작한다."),
     h("p", { class: "small muted" }, `아직 이 세계에 없는 일: ${A.CONTENT.jobs.filter((j) => !W.jobOpen(j.id)).map((j) => j.name).join(", ") || "없음"}`)];
 }
+/** 마을 재고: 지금 있는 마을은 눈앞의 것, 다른 마을은 가 봤거나 짐꾼에게 들은 만큼만 */
+function stockLine(t) {
+  const p = W.player, here = p && !p.outside && !p.trip && p.town === t.id;
+  const seen = here ? { day: W.day, stock: t.stock || {} } : (G.ext(W).stockSeen || {})[t.id];
+  if (!seen) return h("div", { class: "small muted" }, "재고: 모른다");
+  const items = Object.entries(seen.stock).filter(([id]) => G.ITEMS[id]).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const when = here ? "" : ` (${W.day - seen.day === 0 ? "오늘" : W.day - seen.day + "일 전"} ${seen.how && seen.how !== "seen" ? seen.how + "에게 들음" : "본 것"})`;
+  return h("div", { class: "small muted" }, `재고${when} ${items.length ? items.map(([id, k]) => `${G.ITEMS[id].name} ${k}${here ? `(${A.stockPrice(W, t, id)}닢)` : ""}`).join(" · ") : "없음"}`);
+}
 /** 마을: 세계를 마을 단위로 훑어본다 */
 function winTowns() {
   const p = playing() ? W.player : null, sc = A.storyScore(W);
@@ -844,7 +853,7 @@ function winTowns() {
       return h("div", { class: "town card" + (p && p.town === t.id ? " here" : "") },
         h("div", { class: "ttl" }, h("span", null, t.name, h("span", { class: "small muted" }, ` · ${A.nationName(W, t.nation)}${t.border ? " · 국경" : ""}`)), h("span", { class: "chip " + mood[1] }, mood[0])),
         h("div", { class: "small" }, `주민 ${res.length}명 · 곡식 한 끼 ${price}닢${t.store >= 1 ? ` · 곳간 비축 ${Math.round(t.store)}` : ""}${p && p.home === t.id ? " · 내 집" : ""}`),
-        t.stock && Object.keys(t.stock).length ? h("div", { class: "small muted" }, `재고 ${Object.entries(t.stock).filter(([id]) => G.ITEMS[id]).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id, k]) => `${G.ITEMS[id].name} ${k}(${A.stockPrice(W, t, id)}닢)`).join(" · ")}`) : null,
+        stockLine(t),
         t.agri && (t.agri.ids.length || t.agri.breed) ? h("div", { class: "small muted" }, `농법 ${t.agri.ids.map((id) => (A.CONTENT.innovations.find((x) => x.id === id) || {}).name).join("·")}${t.agri.breed ? ` · ${t.agri.breed}대 개량` : ""} · 수확 ×${A.farmMult(t).toFixed(2)}`) : null,
         h("div", { class: "jobs" }, Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, c]) => h("span", { class: "chip" }, `${A.JOBS[j].name} ${c}`))),
         h("div", { class: "sub" }, "이름난 사람"), h("div", { class: "fam" }, notable.map((n) => h("button", { type: "button", onclick: () => { bioId = n.id; openWin("people"); } }, following(n.id) ? "★ " : "", n.name, h("span", { class: "muted" }, ` ${W.jobName(n)}`)))),

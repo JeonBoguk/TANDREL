@@ -23,7 +23,8 @@ ui.js      ─ (화면 전체) HUD·창·대화·제목 화면·저장 칸·터�
 - 주민의 하루: 큰 결정(`ACTIONS`)은 하루 한 번, 할 일은 한 시간마다(`lifeUntil` → `liveHour` → `planHour`·`placeFor`). 지금 할 일은 `n.life{act, until, place, with, host}`, 그날의 기록은 `n.today{intent, worked, ate}`, 피로 `n.fatigue`·기분 `n.mood`. 일은 하루 끝 `settleWork`에서 일한 시간만큼 정산. 화면(game.js `scheduleSpot`)은 `n.life`를 따른다.
 - 달력: `holidayOf`(철마다 15일 잔치, 이레마다 쉬는 날), 그날의 것은 `w.holiday`·`w.festivalToday{마을}`(`calendarDay`). 잔치 날 오후엔 `n.life.feast`로 광장에 모인다.
 - 약속: `w.appts[{id, a, b, day, hour, act(fish·play·meal), place, state(planned·kept·moved·broken)}]`. 함께 있을 때 `maybePromise`, 그 시간에 `apptNow`. 플레이어 쪽 결과는 story.js `checkAppts`(미션 type "appt").
-- 마을 재고: `t.stock{물건: 개수}`, 주민 소지품 `n.inv`. 넣기 `stockAdd`·빼기 `stockTake`, 하루 끝에 만든 것 보태기와 넘침 나눔(`stockSupply`, 어른 수만큼 상한), 값 `stockPrice`/`stockSellPrice`. 장보기 `shopFor`(필요는 `wantList`), 쓰기 `useOwn`. game.js `buyPrice`가 시장·대장간 값에 쓴다.
+- 마을 재고: `t.stock{물건: 개수}`, 주민 소지품 `n.inv`. 넣기 `stockAdd`·빼기 `stockTake`, 하루 끝에 만든 것 보태기와 넘침 나눔(`stockSupply`, 어른 수만큼 상한), 값 `stockPrice`/`stockSellPrice`. 장보기 `shopFor`(필요는 `wantList`), 쓰기 `useOwn`. game.js `buyPrice`가 시장·대장간 값에 쓴다. 모자람 `t.short`(`shortDay`).
+- 길 위의 일: `w.trips`·`w.waiting`, 사람은 `n.trip`. 아침 7시 `haulHour`가 짐꾼(`job.haul: goods`)·마부(`people`)를 내보내고 `arriveDue`가 도착을 처리한다. 경로 `routeOf`, 자리 `tripPoint`(game.js `scheduleSpot`이 길 위에 그림). 플레이어의 마차는 game.js `boardCoach`·`rideTick`.
 - 주민 행동은 `ACTIONS`(행동 후보)의 효용 점수 + 꿈(`dreams[].bias`) + 성격 가중치로 고른다.
 - 일어난 일은 `w.record(kind, text, {actor, target, town, imp, ...})`로 사건이 되고,
   본 사람·들은 사람의 기억(`n.mem`)으로 퍼진다. 중요한 사건은 신문과 연대기에 오른다.

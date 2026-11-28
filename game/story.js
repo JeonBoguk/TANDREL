@@ -125,7 +125,45 @@
     if (["career", "treasure", "drought"].includes(kind)) return "살림·장사";
     return "사람들";
   }
-  function afterTick(w) { checkOracle(w); checkAppts(w); }
+  function afterTick(w) { checkOracle(w); checkAppts(w); seeStock(w); }
+  // ---- 다른 마을의 재고는 가 보거나(그 마을에 있을 때 본 것), 짐꾼·마부에게 들어야 안다
+  function seeStock(w) {
+    const p = w.player; if (!p || !p.alive || p.outside || p.trip || !w.towns[p.town]) return;
+    const e = EX(w); e.stockSeen = e.stockSeen || {};
+    const t = w.towns[p.town], old = e.stockSeen[t.id];
+    if (!old || old.day !== w.day || w.rng.next() < 0.05) e.stockSeen[t.id] = { day: w.day, stock: { ...(t.stock || {}) }, short: Object.keys(t.short || {}).filter((id) => t.short[id] >= 2), how: "seen" };
+  }
+  /** 짐꾼·마부가 들려주는 다른 마을 사정 */
+  function hearTrade(w, s) {
+    const n = w.npcs[s.nid], e = EX(w); e.stockSeen = e.stockSeen || {};
+    tick5(s);
+    s.say("me", "다른 마을 사정은 좀 어때요?");
+    const got = Object.entries(n.heard || {}).filter(([tid]) => tid !== w.player.town && w.towns[tid]).sort((a, b) => b[1].day - a[1].day);
+    if (!got.length) { s.say("npc", "아직 멀리 다녀온 적이 없어서요. 다녀오면 알려 줄게요."); toMenu(w, s); return; }
+    const lines = [];
+    for (const [tid, h] of got.slice(0, 2)) {
+      const mine = e.stockSeen[tid];
+      if (!mine || mine.day < h.day) e.stockSeen[tid] = { day: h.day, stock: { ...h.stock }, short: [], how: n.name };
+      const items = Object.entries(h.stock).filter(([id]) => G.ITEMS[id]).sort((a, b) => b[1] - a[1]);
+      const lots = items.slice(0, 2).map(([id]) => G.ITEMS[id].name), want = ["bread", "hoe", "salve", "wheat", "meat", "axe"].filter((id) => G.ITEMS[id] && !h.stock[id]).slice(0, 2).map((id) => G.ITEMS[id].name);
+      const ago = w.day - h.day === 0 ? "오늘" : `${w.day - h.day}일 전`;
+      lines.push(`${ago} 들른 ${w.towns[tid].name}엔 ${lots.length ? lots.join("·") + jo(lots[lots.length - 1], "이/가").slice(lots[lots.length - 1].length) + " 넉넉하고" : "물건이 별로 없고"}${want.length ? `, ${want.join("·")}${jo(want[want.length - 1], "은/는").slice(want[want.length - 1].length)} 없더라고요` : ""}.`);
+    }
+    s.say("npc", lines.join(" "));
+    toMenu(w, s);
+  }
+  /** 마차 타기: 갈 마을 고르기 */
+  function coachMenu(w, s) {
+    const n = w.npcs[s.nid], p = w.player;
+    s.say("me", "마차 좀 탈 수 있을까요?");
+    const towns = Object.values(w.towns).filter((t) => t.id !== n.town && !t.fallen && G.rideFare(w, n.town, t.id) !== null).sort((a, b) => G.rideFare(w, n.town, a.id) - G.rideFare(w, n.town, b.id)).slice(0, 6);
+    s.say("npc", "어디까지 가요? 길이 멀수록 삯이 좀 더 들어요.");
+    s.options = [...towns.map((t) => { const fare = G.rideFare(w, n.town, t.id), r = A.routeOf(w, n.town, t.id); return O(`${t.name} (금화 ${fare})`, `${Math.round(r.len / A.ROAD_SPEED / 6) / 10}시간 · ${r.path.length - 2 > 0 ? r.path.slice(1, -1).map((x) => w.towns[x].name).join("·") + "를 지나" : "곧장"}`, () => {
+      if (p.gold < fare) { s.say("npc", "삯이 모자라네요. 다음에 타요."); toMenu(w, s); return; }
+      if (!G.boardCoach(w, n, t.id)) { s.say("npc", "지금은 떠날 수가 없네요."); toMenu(w, s); return; }
+      s.say("me", `${t.name}까지 부탁해요.`); s.say("npc", "꽉 잡아요, 출발합니다!"); s.over = true;
+    }); }), O("다음에 탈게요", "", () => toMenu(w, s))];
+  }
   // ---- 약속 (플레이어와 주민)
   const pendingAppt = (w, n) => (w.appts || []).some((a) => a.state === "planned" && ((a.a === n.id && a.b === w.player.id) || (a.b === n.id && a.a === w.player.id)));
   function apptMission(w, n, ap) { return addMission(w, { type: "appt", to: n.id, appt: ap.id, reward: 0, fame: 0 }); }
@@ -488,7 +526,8 @@
     const f = L.with !== undefined && w.npcs[L.with] ? w.npcs[L.with] : null, wk = (w.weather || {}).kind;
     const withF = f ? `${jo(f.name, "이랑/랑")} ` : "";
     switch (L.act) {
-      case "work": return pick(w, ["일하던 참이라 길게는 못 얘기해요.", "손이 좀 바빠서요, 금방 얘기해요.", `오늘은 ${(A.JOBS[n.job] || {}).name || "일"} 일이 많네요.`]);
+      case "work": if ((A.JOBS[n.job] || {}).haul) return pick(w, ["내일 아침 일찍 또 길을 나서요.", "수레 바퀴 좀 손보던 참이에요.", "먼 길 다녀왔더니 다리가 뻐근하네요."]);
+        return pick(w, ["일하던 참이라 길게는 못 얘기해요.", "손이 좀 바빠서요, 금방 얘기해요.", `오늘은 ${(A.JOBS[n.job] || {}).name || "일"} 일이 많네요.`]);
       case "meal": return pick(w, ["밥 먹던 참이었어요.", L.place === "tavern" ? "여기 스튜가 오늘 괜찮아요." : "집밥이 제일이죠."]);
       case "play": if (L.feast) return pick(w, ["잔치잖아요! 오늘은 일 생각 안 해요.", "음식이 끝도 없이 나오네요. 하나 드셔 봐요."]);
         return wk === "맑음" ? pick(w, [`날씨가 좋아서 ${withF}놀러 나왔어요.`, `이런 날엔 일 손에 안 잡히죠. ${withF}바람 쐬러 나왔어요.`]) : `${withF}잠깐 나와 있었어요.`;
@@ -555,6 +594,9 @@
     if (date && G.hour(w) >= 18.5 && G.hour(w) < 22.5) opts.push(O("(데이트) 함께 저녁을 먹는다", "약속한 데이트", () => dateNight(w, s, date), "heart"));
     opts.push(O("요즘 어때요?", "그 사람의 사정을 듣는다", () => howAreYou(w, s)));
     opts.push(O("무슨 소식 없어요?", "소문을 듣는다", () => rumor(w, s)));
+    const haul = (A.JOBS[n.job] || {}).haul;
+    if (haul && !n.trip) opts.push(O("다른 마을 사정은 어때요?", "다녀온 마을의 재고를 듣는다", () => hearTrade(w, s)));
+    if (haul === "people" && !n.trip && !G.isNight(w)) opts.push(O("마차 타고 갈래요", "삯을 내고 다른 마을로", () => coachMenu(w, s), "quest"));
     if (isAdult(n) && n.controller !== "player" && !pendingAppt(w, n)) opts.push(O("같이 놀러 갈래요?", "약속을 잡는다", () => askAppt(w, s)));
     if (isAdult(n) && !related(p, n) && !e.missions.some((m) => !m.done && m.type === "visit" && m.to === n.id)) opts.push(O("집에 놀러 가도 돼요?", "친한 사이라면 초대해 준다", () => askVisit(w, s), "heart"));
     if (p.job === "builder" && isAdult(n) && n.id !== p.id && !e.missions.some((m) => !m.done && m.type === "build" && m.from === n.id)) opts.push(O("집에 고칠 데 없어요?", "목수로서 일감을 얻는다", () => askBuild(w, s), "quest"));

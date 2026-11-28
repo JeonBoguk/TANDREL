@@ -538,6 +538,50 @@
       t.check((T.stock.salve || 0) === before + 3, "플레이어가 판 물건은 마을 재고가 된다");
       const w2 = A.World.deserialize(JSON.parse(W.serialize())); t.check(w2.towns[T.id].stock.salve === T.stock.salve, "재고가 저장된다");
     } },
+    { id: "haul", name: "짐꾼과 마부: 모자란 마을로 물건을 싣고 가고, 사람을 태워 나른다", run(t) {
+      const W = t.w, p = t.p(), T = W.towns[t.town()];
+      const B = Object.values(W.towns).filter((u) => u !== T && !u.fallen && A.routeOf(W, T.id, u.id)).sort((a, b) => A.routeOf(W, T.id, a.id).len - A.routeOf(W, T.id, b.id).len)[0];
+      t.check(!!B, `길로 이어진 이웃 마을: ${B && B.name} (${B && Math.round(A.routeOf(W, T.id, B.id).len)}칸)`);
+      const mk = (kid) => { const { job, work } = A.makeJobDef(W, A.KNOW(kid)); W.defs.jobs.push(job); W.defs.works.push(work); A.applyDefs(W); return job; };
+      const cj = mk("carting"), dj = mk("coaching");
+      t.check(cj.name === "짐꾼" && cj.haul === "goods" && dj.name === "마부" && dj.haul === "people", "짐 싣기 → 짐꾼, 마차 몰기 → 마부");
+      W.trips = []; W.waiting = [];
+      for (const n of W.alive()) if (A.JOBS[n.job].haul && n !== p) A.setJob(n, "farmer");
+      const carter = W.spawn(T.id, { race: "human", job: cj.id, ageYears: 35 }); carter.gold = 300; carter.health = 10;
+      T.stock = { salve: 30 }; B.stock = {}; B.short = { salve: 5 };
+      W.weather = { kind: "맑음" };
+      const now = W.day * 1440 + 60;
+      A._.haulHour(W, 7, now);
+      const tr = W.trips.find((x) => x.by === carter.id);
+      const D = tr && W.towns[tr.to];
+      t.check(tr && tr.cargo.salve > 0 && T.stock.salve < 30, `${carter.name}이 ${tr && A.cargoText(tr.cargo)}을 싣고 ${D && D.name}으로 떠났다`);
+      t.check(!W.residents(T.id).includes(carter), "길 위에 있는 동안은 마을 사람 수에서 빠진다");
+      const mid = A.tripPoint(W, tr, (tr.t0 + tr.t1) / 2), st = A.tripPoint(W, tr, tr.t0);
+      t.check(mid && Math.hypot(mid[0] - st[0], mid[1] - st[1]) > 5, "길 한가운데 자리가 있다 (화면에 수레가 보인다)");
+      A.arriveDue(W, tr.t1);
+      t.check(D.stock.salve > 0, `${D.name}에 연고 ${D.stock.salve}개가 들어왔다`);
+      t.check(carter.trip && W.trips.some((x) => x.id === carter.trip && x.back), "짐을 풀고 집으로 돌아가는 길에 오른다");
+      t.check(carter.heard && carter.heard[T.id], "떠나온 마을의 사정을 알고 있다");
+      // 마부가 있는 마을에서 떠나는 사람은 마차를 기다린다
+      const driver = W.spawn(T.id, { race: "human", job: dj.id, ageYears: 40 }); driver.health = 10;
+      const goer = W.spawn(T.id, { race: "human", job: "farmer", ageYears: 30 }); goer.gold = 20;
+      A._.rTravel(goer, W, B.id);
+      t.check(goer.town === T.id && W.waiting.some((x) => x.id === goer.id), `${goer.name}은 걸어가지 않고 마차를 기다린다`);
+      // 플레이어가 마차를 탄다
+      p.gold = 100; p.trip = null;
+      const fare = G.rideFare(W, T.id, B.id);
+      t.check(G.boardCoach(W, driver, B.id) && p.trip && p.gold === 100 - fare, `마차 삯 금화 ${fare}을 내고 탔다`);
+      const ct = W.trips.find((x) => x.id === p.trip);
+      t.check(ct.riders.includes(goer.id), "기다리던 사람도 같은 마차에 탔다");
+      t.check(/마차/.test(G.blockedReason(W) || ""), "타고 가는 동안은 걸을 수 없다");
+      A.arriveDue(W, ct.t1); G.tick(W, 0);
+      t.check(!p.trip && p.town === B.id && !p.outside, `${B.name}에 내렸다`);
+      t.check(goer.town === B.id, `${goer.name}도 마차로 ${B.name}에 이주했다`);
+      // 재고는 그 마을에 가 본 것만 안다
+      t.check(G.ext(W).stockSeen && G.ext(W).stockSeen[B.id] && G.ext(W).stockSeen[B.id].how === "seen", "닿은 마을의 재고를 보게 된다");
+      const w2 = A.World.deserialize(JSON.parse(W.serialize()));
+      t.check((w2.trips || []).length === W.trips.length, "길 위의 일이 저장된다");
+    } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
       A.setJob(p, "farmer"); p.gold = 60;

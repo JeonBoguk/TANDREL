@@ -681,6 +681,7 @@
     if (p.at_war) return p.role === "hero" ? "용사로서 전선에 있다" : `전선에서 복무 중 (${p.service_left}일 남음)`;
     if (p.jail > 0) return `감옥에 갇혀 있다 (${p.jail}일 남음)`;
     if (w.autoDays > 0) return `성격대로 지내는 중 (${w.autoDays}일 남음)`;
+    if (p.trip) return "마차를 타고 가는 중";
     return null;
   }
   function tick(w, mins) {
@@ -691,6 +692,8 @@
       if (p.energy <= 0) faint(w, "기력이 다해 그 자리에 쓰러졌다.");
     }
     decayWanted(w);
+    A.arriveDue(w);
+    rideTick(w);
     syncPos(w);
     seeOut(w);
     if (w.ppos && w.player && w.player.alive) unstick(w);
@@ -730,9 +733,43 @@
     if (w.rng.next() < 0.3) { const lost = Math.round(p.gold * 0.15); p.gold -= lost; if (lost) text += ` 금화 ${lost}닢이 없어졌다.`; }
     log(w, text, "warn");
   }
+  /** 마차: 타고 가는 동안은 수레를 따라가고, 닿으면 그 마을 광장에 내린다 */
+  function rideTick(w, dt) {
+    const p = w.player, e = ext(w); if (!p || !w.ppos) return;
+    if (p.trip) {
+      const tr = (w.trips || []).find((x) => x.id === p.trip);
+      if (!tr) { p.trip = null; return; }
+      e.ride = { to: tr.to };
+      const pt = A.tripPoint(w, tr), d = Math.hypot(pt[2], pt[3]) || 1, i = tr.riders.indexOf(p.id) + 1;
+      const tx = pt[0] - pt[2] / d * i * 0.9 + 0.5, ty = pt[1] - pt[3] / d * i * 0.9 + 1;
+      const f = dt === undefined ? 1 : Math.min(1, dt * 3);
+      w.ppos = { x: w.ppos.x + (tx - w.ppos.x) * f, y: w.ppos.y + (ty - w.ppos.y) * f }; p.outside = true;
+      return;
+    }
+    if (e.ride) {
+      const to = e.ride.to; e.ride = null;
+      p.outside = false; p.town = to; placeIn(w, to, "square");
+      log(w, `마차가 ${w.towns[to].name}에 닿았다.`, "good");
+      if (root.Story) root.Story.onEnterTown(w, to);
+    }
+  }
+  /** 마부의 마차를 탄다 (요금은 길이에 따라) */
+  function rideFare(w, from, to) { const r = A.routeOf(w, from, to); return r ? Math.max(4, Math.round(3 + r.len / 25)) : null; }
+  function boardCoach(w, driver, to) {
+    const p = w.player, fare = rideFare(w, driver.town, to);
+    if (fare === null || p.gold < fare || driver.trip) return false;
+    p.gold -= fare; driver.gold += fare;
+    const now = w.day * 1440 + w.clock;
+    const waiting = (w.waiting || []).filter((x) => x.to === to && w.npcs[x.id] && w.npcs[x.id].town === driver.town && !w.npcs[x.id].trip).slice(0, 3).map((x) => x.id);
+    const tr = A.startTrip(w, driver, "people", driver.town, to, now + 2, { riders: [p.id, ...waiting] });
+    if (!tr) { p.gold += fare; driver.gold -= fare; return false; }
+    ext(w).ride = { to };
+    log(w, `${driver.name}의 마차에 올랐다. ${w.towns[to].name}까지 ${Math.round((tr.t1 - tr.t0) / 60 * 10) / 10}시간.`);
+    return true;
+  }
   function syncPos(w) {
     const p = w.player;
-    if (!p || !w.ppos) return;
+    if (!p || !w.ppos || p.trip) return;
     if (p.at_war) { const c = placeOf(FRONT, "camp"); w.ppos = { x: c.x + 0.5, y: c.y + 1.5 }; p.outside = false; return; }
     if (p.jail > 0) { const g = placeOf(p.town, "guild"); w.ppos = { x: g.x + 0.5, y: g.y + 0.6 }; p.outside = false; return; }
     const t = townAt(w.ppos.x, w.ppos.y);
@@ -894,6 +931,10 @@
   function scheduleSpot(w, n) {
     if (!n.alive || n.outside || n.controller === "player") return null;
     if (n.at_war) { const c = placeOf(FRONT, "camp"); return [c.x + ((n.id % 7) - 3), c.y + 2 + (n.id % 3)]; }
+    if (n.trip) { // 길 위: 짐꾼·마부와 탄 사람들은 길을 따라 움직인다
+      const tr = (w.trips || []).find((x) => x.id === n.trip), pt = tr && A.tripPoint(w, tr);
+      if (pt) { const i = n.id === tr.by ? 0 : tr.riders.indexOf(n.id) + 1, d = Math.hypot(pt[2], pt[3]) || 1; return [pt[0] - pt[2] / d * i * 0.9, pt[1] - pt[3] / d * i * 0.9 + 0.5, false, undefined, undefined, undefined, "road"]; }
+    }
     const h = hour(w), hs = h2(n.id, w.day, 7), t = n.town;
     const [cx, cy] = TOWN_POS[t];
     const hh = houseOfNpc(n);
@@ -988,6 +1029,7 @@
     return [pl.x, pl.y];
   }
   function updateWalkers(w, dt) {
+    if (w.player && w.player.trip) rideTick(w, dt);
     const px = w.ppos ? w.ppos.x : 75, py = w.ppos ? w.ppos.y : 60;
     const seen = new Set();
     for (const n of w.npcs) {
@@ -996,9 +1038,17 @@
       if (!spot) continue;
       seen.add(n.id);
       let k = walkers.get(n.id);
-      const [sx, sy, inside, ix, iy, bid] = spot;
+      const [sx, sy, inside, ix, iy, bid, road] = spot;
       const tx = sx + 0.5, ty = sy + 0.5;
-      if (!k || k.town !== n.town || k.war !== n.at_war) {
+      if (road) { // 길 위: 정해진 자리를 부드럽게 따라간다
+        k = walkers.get(n.id);
+        if (!k || !k.road || dist(k.x, k.y, sx, sy) > 6) { k = { x: sx, y: sy, town: n.town, war: false, road: true, path: [], goal: null, inside: false, flee: 0, chase: false, say: k ? k.say : null, sayT: k ? k.sayT : 0, dir: "down", hitCd: 0, fight: false }; walkers.set(n.id, k); }
+        const ddx = sx - k.x, ddy = sy - k.y;
+        if (Math.abs(ddx) + Math.abs(ddy) > 0.01) k.dir = Math.abs(ddx) > Math.abs(ddy) ? (ddx > 0 ? "right" : "left") : ddy > 0 ? "down" : "up";
+        k.x += ddx * Math.min(1, dt * 3); k.y += ddy * Math.min(1, dt * 3); k.sayT = Math.max(0, k.sayT - dt);
+        continue;
+      }
+      if (!k || k.road || k.town !== n.town || k.war !== n.at_war) {
         k = { x: tx, y: ty, town: n.town, war: n.at_war, path: [], goal: null, inside: !!inside, flee: 0, chase: false, say: null, sayT: 0, dir: "down", hitCd: 0, fight: false };
         walkers.set(n.id, k);
       }
@@ -1839,6 +1889,8 @@
     const k = walkers.get(n.id);
     if (!k) return n.at_war ? "전선" : "어딘가";
     if (n.jail > 0) return "감옥";
+    const tr = n.trip && (w.trips || []).find((x) => x.id === n.trip);
+    if (tr) { const to = w.towns[tr.to].name, wait = w.day * 1440 + w.clock < tr.t0; return tr.by !== n.id ? `${jo(to, "으로/로")} 마차 타고 가는 중` : wait ? `${jo(to, "으로/로")} 떠날 채비 중` : tr.kind === "goods" ? `${jo(to, "으로/로")} 짐 나르는 중` : `${jo(to, "으로/로")} 마차 모는 중`; }
     const L = n.life && n.life.day === w.day ? n.life : null;
     if (L) {
       const where = { tavern: "주점에서 ", market: "시장에서 ", temple: "신전에서 ", meadow: "들판에서 ", river: "냇가에서 ", hill: "언덕에서 ", square: "광장에서 ", house: "집에서 " }[L.place] || "";
@@ -1894,7 +1946,7 @@
     return out.length ? out : ["얻는 곳이 알려지지 않았다"];
   }
 
-  const G = {
+  const G = { boardCoach, rideFare,
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
