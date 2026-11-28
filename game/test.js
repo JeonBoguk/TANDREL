@@ -359,7 +359,7 @@
       const smiths = [0, 1, 2, 3].map(() => { const n = W.spawn(town, { race: "dwarf", job: "blacksmith", ageYears: 60 }); A.addXp(n, "smithing", 900); return n; });
       const r0 = W.rng.next; W.rng.next = () => 0.01; W.day = W.day - (W.day % 30) + 7; A.jobLife(W); W.rng.next = r0;
       const sev = W.events.filter((e) => e && e.data && e.data.spec).pop(), spec = sev && A.JOBS[sev.data.job], who = sev && W.npcs[sev.actor];
-      t.check(spec && spec.spec === "blacksmith" && A.worksOf(spec.id).length === 1 && who.job === spec.id && who.side === "blacksmith", sev ? sev.text : "전문화 없음");
+      t.check(spec && spec.spec && A.worksOf(spec.id).length === 1 && who.job === spec.id && who.side === spec.spec, sev ? sev.text : "전문화 없음");
       t.check(spec && A.worksOf(spec.id)[0].steps.every((s) => s.p.hard < 0), "전문 직업은 단계가 수월하다");
       // 소멸과 부활: 아무도 없고 수요도 없이 2년이 지나면 사라진다
       const vet = W.spawn(town, { race: "human", job: "merchant", ageYears: 40 }); A.learn(vet, "field_surgery");
@@ -401,7 +401,8 @@
       f.traits.ambition = 1; const tw = W.towns[f.town]; tw.food = 9999; tw.worry = false; W.lastGenesis = -999;
       for (const k of A.CONTENT.knowledge) if (k.id !== "x_body_beast" && k.demand) k._d = k.demand, k.demand = null;
       A.genesis(W, true); for (const k of A.CONTENT.knowledge) if (k._d) k.demand = k._d, delete k._d;
-      t.check(A.JOBS.w_x_body_beast && f.job === "w_x_body_beast", `새 직업: ${A.JOBS.w_x_body_beast && A.JOBS.w_x_body_beast.name} (${A.worksOf("w_x_body_beast").map((x) => x.name + ": " + x.steps.map((s) => s.name).join("→")).join("")})`);
+      const pion = W.npcs.find((x) => x.pioneer === "w_x_body_beast");
+      t.check(A.JOBS.w_x_body_beast && pion && A.knows(pion, "x_body_beast") && pion.job === "w_x_body_beast", `새 직업: ${A.JOBS.w_x_body_beast && A.JOBS.w_x_body_beast.name} (${A.worksOf("w_x_body_beast").map((x) => x.name + ": " + x.steps.map((s) => s.name).join("→")).join("")})`);
       // 혼혈이 굳어 새 종족이 된다
       const mixed = [0, 1, 2, 3].map(() => { const n = W.spawn(town, { race: "human", job: "merchant", ageYears: 20 }); n.heritage = { human: 0.5, dwarf: 0.5 }; n.birthplace.day = 0; return n; });
       for (const r of A.CONTENT.races) if (r.mix && r.mix.includes("human") && r.mix.includes("dwarf") && r.gen) r.mix = null;
@@ -461,6 +462,14 @@
       t.check(sunny.kinds >= 6, `맑은 날 하루에 하는 일 ${sunny.kinds}가지: ${Object.entries(sunny.acts).map(([k, v]) => k + " " + v).join(", ")}`);
       t.check(sunny.lunch > W.alive().filter((n) => A.isAdult(n)).length * 0.3, `점심때 밥 먹은 사람 ${sunny.lunch}명`);
       t.check(share(rainy.acts, "play") < share(sunny.acts, "play") && share(rainy.acts, "rest") > share(sunny.acts, "rest"), `비 오는 날은 덜 놀고 더 쉰다 (놀기 ${(share(sunny.acts, "play") * 100).toFixed(0)}% → ${(share(rainy.acts, "play") * 100).toFixed(0)}%, 쉬기 ${(share(sunny.acts, "rest") * 100).toFixed(0)}% → ${(share(rainy.acts, "rest") * 100).toFixed(0)}%)`);
+      // 잔치 날: 일을 쉬고 오후엔 광장에 모인다
+      while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+      W.day = W.day - (W.day % A.DPS) + 13; G.tick(W, 1); // 다음 날이 그 철의 15일
+      while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+      const tw = t.town(), fest = W.festivalToday && W.festivalToday[tw];
+      G.tick(W, 9 * 60 + 30); // 15:30
+      const at = W.residents(tw, true).filter((n) => n.controller !== "player"), feasting = at.filter((n) => n.life && n.life.feast).length;
+      t.check(fest && feasting >= at.length * 0.3, `${W.holiday && W.holiday.name}: 오후 3시 반, 광장에서 잔치 중 ${feasting}/${at.length}명`);
       // 화면 자리는 지금 하는 일을 따른다
       const worker = W.alive().find((n) => n.life && n.life.act === "work" && ["market", "forge", "temple", "tavern"].includes((A.JOBS[n.job] || {}).workplace));
       if (worker) { const sp = G.scheduleSpot ? G.scheduleSpot(W, worker) : null; t.check(!sp || sp[2] === true || sp.length === 2, `${worker.name}: ${A.LIFE_LABEL.work}`); }
@@ -618,7 +627,9 @@
         const w = A.World.deserialize(base);
         G.setup(w);
         if (w.player && w.player.alive) w.player.controller = "ai"; // 원래 인물은 NPC로 돌리고
-        G.newLife(w, { name: "테스터", race: "human", job: "farmer", town: Object.values(w.towns).find((x) => !x.fallen && !x.border).id });
+        // 시험은 사람이 가장 많은 마을에서 (세계의 흐름에 따라 마을 하나가 작아져도 흔들리지 않게)
+        const home = Object.values(w.towns).filter((x) => !x.fallen && !x.border).sort((a, b) => w.residents(b.id, true).length - w.residents(a.id, true).length)[0];
+        G.newLife(w, { name: "테스터", race: "human", job: "farmer", town: home.id });
         const t = { w, ...helpers(w), check: (ok, msg) => checks.push({ ok: !!ok, msg }), note: (msg) => notes.push(msg) };
         sc.run(t);
       } catch (e) { error = (e && e.stack) || String(e); }

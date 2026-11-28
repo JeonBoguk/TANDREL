@@ -1825,6 +1825,7 @@
       const withN = L.with !== undefined && w.npcs[L.with] ? ` (${jo(w.npcs[L.with].name, "과/와")})` : "";
       if (k.path && k.path.length && L.act !== "sleep") return { work: "일하러 가는 중", meal: "밥 먹으러 가는 중", play: "놀러 가는 중", social: "만나러 가는 중", shop: "장 보러 가는 중", pray: "기도하러 가는 중" }[L.act] || "걷는 중";
       if (L.act === "work") return `${(JOBS[n.job] || {}).name || ""} 일하는 중`;
+      if (L.feast) return `광장에서 ${A.LIFE_LABEL_FEAST}`;
       return (L.act === "meal" || L.act === "social" || L.act === "play" ? where : "") + A.LIFE_LABEL[L.act] + withN;
     }
     if (k.inside) return isNight(w) ? "집에서 자는 중" : "건물 안";

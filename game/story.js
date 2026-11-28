@@ -453,7 +453,8 @@
     switch (L.act) {
       case "work": return pick(w, ["일하던 참이라 길게는 못 얘기해요.", "손이 좀 바빠서요, 금방 얘기해요.", `오늘은 ${(A.JOBS[n.job] || {}).name || "일"} 일이 많네요.`]);
       case "meal": return pick(w, ["밥 먹던 참이었어요.", L.place === "tavern" ? "여기 스튜가 오늘 괜찮아요." : "집밥이 제일이죠."]);
-      case "play": return wk === "맑음" ? pick(w, [`날씨가 좋아서 ${withF}놀러 나왔어요.`, `이런 날엔 일 손에 안 잡히죠. ${withF}바람 쐬러 나왔어요.`]) : `${withF}잠깐 나와 있었어요.`;
+      case "play": if (L.feast) return pick(w, ["잔치잖아요! 오늘은 일 생각 안 해요.", "음식이 끝도 없이 나오네요. 하나 드셔 봐요."]);
+        return wk === "맑음" ? pick(w, [`날씨가 좋아서 ${withF}놀러 나왔어요.`, `이런 날엔 일 손에 안 잡히죠. ${withF}바람 쐬러 나왔어요.`]) : `${withF}잠깐 나와 있었어요.`;
       case "social": return f ? pick(w, [`${withF}얘기하던 중이에요.`, `${jo(f.name, "이/가")} 불러서 나왔어요.`]) : "그냥 사람 구경 나왔어요.";
       case "rest": return wk === "비" || wk === "폭풍" ? "비가 와서 오늘은 쉬어요." : wk === "눈" ? "눈이 와서 집에 있었어요." : n.fatigue > 0.6 ? "좀 지쳐서 쉬는 중이에요." : "잠깐 쉬고 있었어요.";
       case "shop": return "장 보러 나왔어요.";

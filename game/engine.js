@@ -710,7 +710,7 @@
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, land: this.land || {}, session: this.session || {}, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
-        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, weather: this.weather || null, lifeDone: this.lifeDone || 0, jobSeen: this.jobSeen || {}, lastGenesis: this.lastGenesis ?? null, raceGone: this.raceGone || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
+        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, weather: this.weather || null, holiday: this.holiday || null, festivalToday: this.festivalToday || {}, lifeDone: this.lifeDone || 0, jobSeen: this.jobSeen || {}, lastGenesis: this.lastGenesis ?? null, raceGone: this.raceGone || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
       });
     }
@@ -719,7 +719,7 @@
       if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
       d = migrate(d);
       const w = new World(d.seed);
-      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w); w.jobSeen = d.jobSeen || {}; w.weather = d.weather || null; w.lifeDone = d.lifeDone || 0; w.lastGenesis = d.lastGenesis ?? null; w.raceGone = d.raceGone || [];
+      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w); w.jobSeen = d.jobSeen || {}; w.weather = d.weather || null; w.holiday = d.holiday || null; w.festivalToday = d.festivalToday || {}; w.lifeDone = d.lifeDone || 0; w.lastGenesis = d.lastGenesis ?? null; w.raceGone = d.raceGone || [];
       w.worldId = d.worldId;
       w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
@@ -1140,6 +1140,7 @@
     raceLife(w);
     agriLife(w);
     newWeather(w);
+    calendarDay(w);
     w.lifeDone = 0;
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
@@ -1554,6 +1555,18 @@
     가을: [["맑음", 0.5], ["흐림", 0.3], ["비", 0.2]],
     겨울: [["맑음", 0.3], ["흐림", 0.3], ["눈", 0.4]],
   };
+  /* 달력: 철마다 15일은 마을 잔치(모두 일을 쉬고 오후부터 광장에 모인다), 이레마다 하루는 쉬는 날 */
+  const FESTIVALS = { 봄: "봄맞이 잔치", 여름: "한여름 밤 잔치", 가을: "거둠 잔치", 겨울: "겨울 등불 잔치" };
+  const dayInSeason = (w) => (w.day % DPS) + 1;
+  function holidayOf(w) { if (dayInSeason(w) === 15) return { kind: "festival", name: FESTIVALS[w.season] }; if (w.day % 7 === 6) return { kind: "rest", name: "쉬는 날" }; return null; }
+  function calendarDay(w) {
+    const hd = holidayOf(w); w.holiday = hd; w.festivalToday = {};
+    if (hd && hd.kind === "festival") for (const t of Object.values(w.towns)) {
+      if (t.fallen || w.residents(t.id, true).length < 3) continue;
+      w.festivalToday[t.id] = hd.name;
+      w.record("town_festival", `${t.name}에 ${hd.name}${jo(hd.name, "이/가").slice(hd.name.length)} 열려 온 마을 사람들이 광장에 모였다`, { town: t.id, imp: 3, wr: 0.8 });
+    }
+  }
   function newWeather(w) {
     const prev = w.weather && w.weather.kind, opts = WEATHER[w.season] || WEATHER.봄;
     const keep = prev && opts.some(([k]) => k === prev) && w.rng.next() < 0.4;
@@ -1580,13 +1593,13 @@
     if (!isAdult(n)) return { act: h < 19 ? "kid" : "rest", hours: 2 };
     const sick = n.health < 6, rainy = wet(w), outdoorJob = J.workplace === "fields";
     const lunch = h >= 11.5 && h < 13.5 && !t.ate.L, dinner = h >= 18 && h < 20.5 && !t.ate.D;
-    const intent = t.intent, holiday = w.festivalToday && w.festivalToday[n.town];
+    const intent = t.intent, holiday = w.festivalToday && w.festivalToday[n.town], restDay = w.holiday && w.holiday.kind === "rest";
     const S = {};
     if (lunch || dinner) S.meal = 3;
     const workHours = h >= 7 && h < 18;
-    if (workHours) S.work = Math.max(0, (intent === "work" ? 1.7 : intent ? 0.7 : 1.0) * (0.75 + tr.ambition * 0.35 + tr.greed * 0.25) * (1 - n.fatigue) * (rainy && outdoorJob ? 0.55 : 1) * (t.worked >= 8 ? 0.15 : 1) * (sick ? 0.3 : 1) * (holiday ? 0.3 : 1));
+    if (workHours) S.work = Math.max(0, (intent === "work" ? 1.7 : intent ? 0.7 : 1.0) * (0.75 + tr.ambition * 0.35 + tr.greed * 0.25) * (1 - n.fatigue) * (rainy && outdoorJob ? 0.55 : 1) * (t.worked >= 8 ? 0.15 : 1) * (sick ? 0.3 : 1) * (holiday ? 0.15 : restDay ? 0.5 : 1));
     S.rest = n.fatigue * 1.4 + (rainy ? 0.5 : 0) + (sick ? 1.2 : 0) + (intent === "rest" ? 1 : 0) + 0.05;
-    if (h >= 9 && h < 20) S.play = (fine(w) ? 0.9 : rainy ? 0.15 : 0.45) * (0.4 + (1 - n.mood) * 1.1 + tr.bravery * 0.3) * (holiday ? 2.5 : 1) * (intent === "social" ? 1.4 : 1);
+    if (h >= 9 && h < 20) S.play = (fine(w) ? 0.9 : rainy ? 0.15 : 0.45) * (0.4 + (1 - n.mood) * 1.1 + tr.bravery * 0.3) * (holiday && h >= 13 ? 4 : holiday ? 2 : restDay ? 1.5 : 1) * (intent === "social" ? 1.4 : 1);
     S.social = (0.15 + tr.kindness * 0.3 + (1 - n.mood) * 0.35) * (intent === "social" || intent === "help" ? 2 : 1) * (h >= 17 ? 1.6 : workHours ? 0.5 : 1);
     if (h >= 9 && h < 18 && n.gold > 25) S.shop = 0.25 + tr.greed * 0.25;
     if (J.healer || tr.kindness > 0.75) S.pray = 0.2 + (rainy ? 0.15 : 0);
@@ -1599,7 +1612,10 @@
   /** 할 일의 자리와 함께할 사람 정하기 */
   function placeFor(w, n, act) {
     if (act === "meal") return { place: n.gold >= 3 && (n.traits.kindness > 0.4 || w.rng.next() < 0.5) && !wet(w) || n.gold >= 6 ? "tavern" : "home" };
-    if (act === "play") { const o = OUTINGS[(w.weather || {}).kind] || OUTINGS.맑음; return { place: o.length ? w.rng.choice(o) : "home", spot: w.rng.randint(0, 999) }; }
+    if (act === "play") {
+      if (w.festivalToday && w.festivalToday[n.town]) return { place: "square", feast: true }; // 잔치 날은 광장으로
+      const o = OUTINGS[(w.weather || {}).kind] || OUTINGS.맑음; return { place: o.length ? w.rng.choice(o) : "home", spot: w.rng.randint(0, 999) };
+    }
     if (act === "social") { const f = friendFor(w, n); return f ? { place: w.rng.next() < 0.5 ? "tavern" : "house", with: f.id, host: w.rng.next() < 0.5 ? n.id : f.id } : { place: "square" }; }
     if (act === "shop") return { place: "market" };
     if (act === "pray") return { place: "temple" };
@@ -1614,7 +1630,9 @@
     // 점심·저녁 때가 되면 하던 일을 잠깐 멈추고 밥을 먹으러 간다 (자는 중이거나 이미 먹었으면 그대로)
     const mealTime = (h >= 12 && h < 13.5 && !t.ate.L) || (h >= 18.5 && h < 20 && !t.ate.D);
     const hungryBreak = mealTime && isAdult(n) && n.life && !["meal", "sleep"].includes(n.life.act) && w.rng.next() < 0.8;
-    if (!n.life || m0 >= n.life.until || n.life.day !== w.day || hungryBreak) {
+    // 잔치 날 오후: 하던 일을 놓고 광장으로
+    const festBreak = isAdult(n) && w.festivalToday && w.festivalToday[n.town] && h >= 13 && h < 22 && n.life && !n.life.feast && !["sleep", "meal"].includes(n.life.act) && w.rng.next() < 0.75;
+    if (!n.life || m0 >= n.life.until || n.life.day !== w.day || hungryBreak || festBreak) {
       const { act, hours } = planHour(w, n, h);
       const pl = placeFor(w, n, act);
       n.life = { act, until: m0 + hours * 60, day: w.day, ...pl };
@@ -1637,7 +1655,14 @@
         break;
       }
       case "rest": n.fatigue = Math.max(0, n.fatigue - 0.15); n.health = Math.min(10, n.health + 0.04); n.mood += (0.6 - n.mood) * 0.05; break;
-      case "play": n.mood = Math.min(1, n.mood + 0.14); n.fatigue = Math.min(1, n.fatigue + 0.03); if (L.with !== undefined) adjust(n, L.with, 1); if (L.with !== undefined && w.rng.next() < 0.015) smallMoment(w, n, L); break;
+      case "play":
+        if (L.feast) { // 잔치: 광장에 모인 사람들끼리 가까워지고, 곳간에서 음식을 낸다
+          const others = w.residents(n.town, true).filter((m) => m !== n && m.life && m.life.feast);
+          if (others.length) { const o = w.rng.choice(others); adjust(n, o.id, 2); adjust(o, n.id, 1); }
+          const tw = w.towns[n.town]; if (tw) tw.food = Math.max(0, tw.food - 0.15);
+          n.mood = Math.min(1, n.mood + 0.2); break;
+        }
+        n.mood = Math.min(1, n.mood + 0.14); n.fatigue = Math.min(1, n.fatigue + 0.03); if (L.with !== undefined) adjust(n, L.with, 1); if (L.with !== undefined && w.rng.next() < 0.015) smallMoment(w, n, L); break;
       case "social": n.mood = Math.min(1, n.mood + 0.1); if (L.with !== undefined) { adjust(n, L.with, 2); if (w.rng.next() < 0.01) smallMoment(w, n, L); } break;
       case "shop": { const sellers = w.residents(n.town, true).filter((m) => ["merchant", "baker"].includes(m.job) && m !== n); const v = Math.min(n.gold * 0.1, 4); n.gold -= v; if (sellers.length) w.rng.choice(sellers).gold += v * 0.9; n.mood = Math.min(1, n.mood + 0.05); break; }
       case "pray": n.mood = Math.min(1, n.mood + 0.08); { const pr = w.residents(n.town, true).find((m) => m.job === "priest" && m !== n); if (pr && n.gold > 1) { n.gold -= 0.3; pr.gold += 0.3; } } break;
@@ -1670,6 +1695,7 @@
     }
   }
   /** 지금 무얼 하는지 (말 걸 때·사람 목록에 쓰인다) */
+  const LIFE_LABEL_FEAST = "잔치 중";
   const LIFE_LABEL = { sleep: "자는 중", work: "일하는 중", meal: "밥 먹는 중", rest: "쉬는 중", play: "놀러 나감", social: "친구와 함께", shop: "장 보는 중", pray: "기도하는 중", chores: "집안일", kid: "노는 중" };
 
   // ================================================================ 농업의 발전
@@ -2365,6 +2391,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, SPREAD, LIFE_LABEL, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, SPREAD, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

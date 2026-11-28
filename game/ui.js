@@ -285,7 +285,7 @@ function onWorldClick({ tx, ty, hit, right }) {
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 function renderHud() {
   $("#clock").textContent = playing() || W.dayOpen ? G.clockText(W) : "—";
-  $("#date").textContent = `${W.date()}${W.weather ? " · " + W.weather.kind : ""}${W.day < W.droughtUntil ? " · 가뭄" : ""}${W.war.active ? ` · 전선 ${Math.round(W.war.front)}` : " · 평화"}`;
+  $("#date").textContent = `${W.date()}${W.weather ? " · " + W.weather.kind : ""}${W.holiday ? " · " + W.holiday.name : ""}${W.day < W.droughtUntil ? " · 가뭄" : ""}${W.war.active ? ` · 전선 ${Math.round(W.war.front)}` : " · 평화"}`;
   renderQuests(); renderMenubar();
   const p = W.player, e = G.ext(W);
   if (!playing()) { $("#bl").replaceChildren(); $("#handname").textContent = ""; return; }
