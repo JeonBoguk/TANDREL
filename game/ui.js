@@ -806,13 +806,13 @@ function winNations() {
       const f = N.founder !== null && N.founder !== undefined ? { founder: N.founder, day: N.since, indep: N.from ? nm(N.from) : null } : null;
       const pop = ts.reduce((s, t) => s + W.residents(t.id).length, 0);
       return h("div", { class: "card town" + (f ? " here" : "") }, h("div", { class: "ttl" }, h("span", null, name), f ? h("span", { class: "chip gold" }, f.indep ? `${f.indep}에서 독립` : "이 세계에서 세워짐") : h("span", { class: "chip" }, "옛 나라")),
-        h("div", { class: "small" }, `마을 ${ts.map((t) => t.name).join(", ")} · 주민 ${pop}명`),
+        h("div", { class: "small" }, `마을 ${ts.map((t) => t.name).join(", ")} · 주민 ${pop}명${N.race && A.RACES[N.race] ? ` · ${A.RACES[N.race].name}의 나라` : ""}`),
         f ? h("div", { class: "small", style: "margin-top:4px" }, `${W.date(f.day)}, `, who(f.founder), W.npcs[f.founder] ? jo(W.npcs[f.founder].name, "이/가").slice(W.npcs[f.founder].name.length) + " 세웠다" : " 세웠다", W.npcs[f.founder] && W.npcs[f.founder].title ? ` · ${W.npcs[f.founder].title}` : "") : null);
     })),
     (() => { const gone = Object.values(W.nations).filter((N) => N.ended !== undefined && N.ended !== null); return gone.length ? h("p", { class: "small muted", style: "margin:8px 0 0" }, "사라진 나라: ", gone.map((N) => `${N.name} (${W.date(N.since)} ~ ${W.date(N.ended)})`).join(", ")) : null; })(),
     dreamer ? h("div", { class: "card soft", style: "margin-top:10px" }, h("div", { class: "ttl" }, "새 나라를 꿈꾸는 사람"), h("div", { class: "small" }, who(dreamer.id), ` (${W.towns[dreamer.town].name}) — ${A.DREAMS.nation.text(dreamer, W, dreamer.dream)}`), h("div", { class: "small muted" }, "그를 찾아가 ‘꿈이 뭐예요?’라고 물으면 함께할 수 있다.")) : null,
     h("h3", null, "이 세계의 종족"),
-    h("div", { class: "chips" }, A.racesInWorld(W).map((r) => h("span", { class: "chip" + (r.hidden || r.mix ? " gold" : ""), title: r.mix ? "두 종족 사이에서 태어났다" : r.hidden ? "어느 날 나타났다" : "" }, `${r.name} ${W.alive().filter((n) => n.race === r.id).length}명`))),
+    h("div", { class: "chips" }, A.racesInWorld(W).map((r) => h("span", { class: "chip" + (r.hidden || r.mix ? " gold" : ""), title: r.culture ? `${({ honor: "명예", wealth: "재물", harmony: "조화", lore: "앎", wild: "자연", craft: "솜씨" })[r.culture.value]}를 귀하게 여긴다 · ${r.culture.festival.season} ‘${r.culture.festival.name}’` : r.mix ? "두 종족 사이에서 태어났다" : r.hidden ? "어느 날 나타났다" : "" }, `${r.name} ${W.alive().filter((n) => n.race === r.id).length}명`))),
     (() => { const ev = W.events.filter((e) => e && ["race_born", "contact", "independence", "discovery"].includes(e.kind)); return ev.length ? h("ul", { class: "list", style: "margin-top:6px" }, ev.slice(-8).reverse().map((e) => h("li", null, h("span", { class: "d" }, W.date(e.day)), h("span", { class: "t" }, e.text)))) : null; })(),
     h("h3", null, "이 세계에서 처음 생긴 일"),
     born.length ? h("ul", { class: "list" }, born.map((e) => h("li", null, h("span", { class: "d" }, W.date(e.day)), h("span", { class: "t" }, e.text)))) : h("p", { class: "small muted" }, "아직 없다. 사람들의 삶에 필요가 쌓이면 누군가 새 일을 시작한다."),

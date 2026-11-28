@@ -417,6 +417,12 @@
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check(A.RACES[R.id] && w2.npcs[mixed[0].id].race === R.id && A.KNOW("x_body_beast").jobName === "사냥꾼", "불러와도 새 종족·지식·직업이 남는다");
       A.newWorld(55, "다른 세계"); t.check(!A.RACES[R.id] && !A.JOBS.w_x_body_beast, "다른 세계엔 없다"); A.applyDefs(W);
+      // 문화: 새 종족은 귀하게 여기는 것과 잔치를 갖고, 늘어나면 자기 나라를 세운다
+      t.check(R.culture && R.culture.value && R.culture.festival.name, `${R.name}의 문화: ${R.culture.value} · ${R.culture.festival.season} ‘${R.culture.festival.name}’ · 나라 꼴 ${R.culture.nationKind}`);
+      const more = [0, 1, 2, 3].map(() => { const n = W.spawn(town, { race: "human", job: "merchant", ageYears: 30 }); n.race = R.id; return n; }); more[0].traits.ambition = 1;
+      W.day = W.day - (W.day % 30) + 17; W.rng.next = () => 0.1; A.raceLife(W); W.rng.next = r0;
+      const RN = Object.values(W.nations).find((x) => x.race === R.id);
+      t.check(RN && RN.name.includes(R.culture.nationKind), RN ? `${RN.name} (${R.name}의 나라)` : "나라 없음");
       // 사라짐: 마지막 한 사람이 죽으면
       for (const n of W.npcs) if (n.race === R.id) n.alive = false;
       W.day = W.day - (W.day % 30) + 47; A.raceLife(W);

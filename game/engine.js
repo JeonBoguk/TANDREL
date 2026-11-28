@@ -1456,10 +1456,11 @@
   }
   const allTownDefs = (w) => [...CONTENT.towns, ...(w.founded || [])];
   /** 꿈을 이룬 개척자가 무리를 이끌고 빈 땅에 새 나라를 세운다 */
-  function foundNation(n, w) {
+  function foundNation(n, w, opts = {}) {
     const NN = CONTENT.nationNames, used = new Set(Object.values(w.towns).map((t) => t.name)), usedN = new Set(Object.values(w.nations).map((x) => x.name));
-    const style = n.traits.ambition > 0.85 && n.traits.bravery > 0.6 ? "proud" : n.traits.kindness > 0.6 ? "kind" : "plain";
-    let nationName; for (let i = 0; i < 20; i++) { nationName = `${w.rng.choice(NN.pre)} ${w.rng.choice(NN.kind[style])}`; if (!usedN.has(nationName)) break; }
+    const style = opts.style || (n.traits.ambition > 0.85 && n.traits.bravery > 0.6 ? "proud" : n.traits.kindness > 0.6 ? "kind" : "plain");
+    let nationName = opts.name && !usedN.has(opts.name) ? opts.name : null;
+    if (!nationName) for (let i = 0; i < 20; i++) { nationName = `${w.rng.choice(NN.pre)} ${w.rng.choice(NN.kind[style])}`; if (!usedN.has(nationName)) break; }
     const followers0 = w.alive().filter((x) => x.follows === n.id && x.controller !== "player" && !x.at_war);
     // 빈 땅을 찾는다 (지도가 있으면 지도에서, 없으면 기본 후보지에서). 빈 땅이 없거나, 고향 사람 다수가 따르면 고향을 독립시킨다
     const home = w.towns[n.town];
@@ -1643,10 +1644,30 @@
     if (tint && w.rng.next() < 0.6) L.eyes = [tint, mixHex(tint, "#000000", 0.4), mixHex(tint, "#ffffff", 0.2)]; // 눈빛
     return L;
   }
+  /* 문화: 새 종족은 귀하게 여기는 것(value)과 철마다의 잔치(festival), 나라를 세울 때의 이름 꼴을 갖는다.
+   * value는 그 종족 사람의 성격을 기울게 하고, 잔치는 그 종족이 셋 이상 사는 마을에서 철마다 열려 서로를 가깝게 한다 */
+  const VALUES = {
+    honor:   { name: "명예", trait: "bravery", feast: ["겨루기 잔치", "맹세의 날"], nation: ["기사단", "왕국"], style: "proud" },
+    wealth:  { name: "재물", trait: "greed", feast: ["장터 잔치", "금화 축제"], nation: ["상회 연맹", "자유도시"], style: "plain" },
+    harmony: { name: "조화", trait: "kindness", feast: ["나눔 잔치", "화해의 밤"], nation: ["연맹", "자치령"], style: "kind" },
+    lore:    { name: "앎", trait: "ambition", feast: ["이야기 밤", "별 보는 날"], nation: ["학당 공국", "현자회"], style: "plain" },
+    wild:    { name: "자연", trait: "kindness", feast: ["숲의 날", "첫 열매 잔치"], nation: ["부족 연합", "숲 자치령"], style: "kind" },
+    craft:   { name: "솜씨", trait: "ambition", feast: ["솜씨 겨루기", "불꽃 축제"], nation: ["장인 연맹", "공국"], style: "proud" },
+  };
+  const VALUE_HINT = { frost: "honor", wood: "wild", shore: "wealth", sun: "craft", 불: "honor", 물: "harmony", 바람: "lore", 땅: "craft", 빛: "lore", 어둠: "wealth" };
+  const SEASONS_K = ["봄", "여름", "가을", "겨울"];
+  function makeCulture(w, hint, parents = []) {
+    const pv = parents.map((r) => r && r.culture && r.culture.value).filter(Boolean);
+    const value = VALUE_HINT[hint] && w.rng.next() < 0.7 ? VALUE_HINT[hint] : pv.length && w.rng.next() < 0.6 ? w.rng.choice(pv) : w.rng.choice(Object.keys(VALUES));
+    const V = VALUES[value];
+    return { value, festival: { name: w.rng.choice(V.feast), season: w.rng.choice(SEASONS_K) }, nationKind: w.rng.choice(V.nation), style: V.style };
+  }
   function newRace(w, def, people, text, data) {
     w.defs.races = w.defs.races || [];
     const id = "r" + (w.defs.races.length + 1) + "_" + w.day;
     const R = { id, adultAge: 18, magic: 0.3, traitsGenetic: 0.6, ...def, born: w.day };
+    if (!R.culture) R.culture = makeCulture(w, (data && (data.env || data.element)) || null, (data && data.parents ? data.parents.map((p) => RACES[p]) : [RACES[R.base]]));
+    const V = VALUES[R.culture.value]; R.traits = { ...(R.traits || {}), [V.trait]: ((R.traits || {})[V.trait] || 0) + 0.12 }; // 귀하게 여기는 것이 성격을 기울인다
     // 이 종족의 말: 새 지식이 되고, 수요가 맞으면 통역하는 직업이 생긴다
     const lang = { id: "lang_" + id, name: `${R.name}의 말`, desc: `${jo(R.name, "이/가")} 쓰는 말`, domain: ["language"], noun: `${R.name}말`, lang: id, jobName: `${R.name}말 통역가`, demand: { race: id, nations: 2 }, client: "race:" + id, made: w.day };
     R.knows = [...new Set([...(R.knows || []), lang.id])];
@@ -1686,7 +1707,9 @@
       const mixed = alive.filter((n) => (n.heritage || {})[a] >= 0.25 && (n.heritage || {})[b] >= 0.25 && n.controller !== "player");
       if (mixed.length < 4) continue;
       const A_ = RACES[a], B_ = RACES[b], la = A_.look || {}, lb = B_.look || {};
-      newRace(w, { name: blendNames(w, A_.names, B_.names, 1)[0] + "족", mix: [a, b], lifespan: [0, 1].map((k) => Math.round((A_.lifespan[k] + B_.lifespan[k]) / 2)), adultAge: Math.round(((A_.adultAge || 16) + (B_.adultAge || 16)) / 2),
+      const BAD = ["가", "귀", "민", "친", "수", "유가", "만", "부", "왕", "혈", "종", "씨", "해", "외", "동"]; // '가족·귀족·민족…'처럼 이미 뜻이 있는 낱말은 피한다
+      const rname = blendNames(w, A_.names, B_.names, 8).find((x) => !BAD.includes(x) && !BAD.some((b) => x === b)) || blendNames(w, A_.names, B_.names, 1)[0];
+      newRace(w, { name: rname + "족", mix: [a, b], lifespan: [0, 1].map((k) => Math.round((A_.lifespan[k] + B_.lifespan[k]) / 2)), adultAge: Math.round(((A_.adultAge || 16) + (B_.adultAge || 16)) / 2),
         magic: ((A_.magic || 0.3) + (B_.magic || 0.3)) / 2 + 0.05, traits: Object.fromEntries(["kindness", "bravery", "ambition", "greed"].map((k) => [k, (((A_.traits || {})[k] || 0) + ((B_.traits || {})[k] || 0)) / 2])),
         look: shapeLook(w, { skin: [...(la.skin || []).slice(0, 1), ...(lb.skin || []).slice(0, 1), mixHex((la.skin || ["#e0c0a0"])[0], (lb.skin || ["#e0c0a0"])[0])], hair: [...(la.hair || ["#5a3a20"]).slice(0, 2), ...(lb.hair || ["#5a3a20"]).slice(0, 2)],
           ears: w.rng.choice([la.ears, lb.ears].filter(Boolean).concat([null])), horns: la.horns || lb.horns, hornColor: la.hornColor || lb.hornColor, tail: la.tail || lb.tail, marks: la.marks || lb.marks, markColor: la.markColor || lb.markColor, beard: la.beard && lb.beard, short: la.short && lb.short, eyes: la.eyes || lb.eyes }, null, null),
@@ -1706,6 +1729,30 @@
           look: shapeLook(w, { ...rl, skin: (rl.skin || ["#e0c0a0"]).map((c) => mixHex(c, E.tint, 0.25)), hair: (rl.hair || ["#5a3a20"]).map((c) => mixHex(c, E.tint, 0.2)) }, env, E.color), names: blendNames(w, R.names, R.names), knows: R.knows || [] },
           ps, `${t.name}에서 대를 이어 온 ${R.name}들이 ${E.land}에 맞게 달라졌다. 사람들은 그들을 ‘{r}’{r~이라/라} 불렀다`, { how: "env", env, from: rid });
       }
+    }
+    // 문화: 철이 바뀌는 날, 그 종족의 잔치가 열린다
+    for (const R of CONTENT.races.filter((r) => r.culture && r.culture.festival && r.culture.festival.season === w.season)) {
+      for (const t of Object.values(w.towns)) {
+        const ms = w.residents(t.id).filter((n) => n.race === R.id);
+        if (ms.length < 3) continue;
+        for (const a of ms) for (const b of ms) if (a !== b) adjust(a, b.id, 3);
+        for (const o of w.residents(t.id, true).filter((n) => n.race !== R.id).slice(0, 4)) adjust(o, ms[0].id, 1);
+        w.record("culture_feast", `${t.name}의 ${R.name}들이 ‘${R.culture.festival.name}’${jo(R.culture.festival.name, "을/를").slice(R.culture.festival.name.length)} 열었다. ${VALUES[R.culture.value].name}${jo(VALUES[R.culture.value].name, "을/를").slice(VALUES[R.culture.value].name.length)} 귀하게 여기는 그들의 풍습이다`, { town: t.id, imp: 3, wr: 0.3, data: { species: R.id } });
+      }
+    }
+    // 나라: 늘어난 겨레에 뜻 있는 사람이 나오면 같은 겨레를 이끌고 나라를 세운다 (문화에 맞는 이름)
+    for (const R of CONTENT.races.filter((r) => r.gen && r.culture)) {
+      if (Object.values(w.nations).some((x) => x.race === R.id && !x.ended)) continue;
+      const ms = alive.filter((n) => n.race === R.id && isAdult(n) && !n.at_war && n.controller !== "player");
+      if (ms.length < 4 || w.rng.next() > 0.25) continue;
+      const lead = maxBy(ms.filter((n) => !n.title), (n) => n.traits.ambition + n.fame / 30);
+      if (!lead || lead.traits.ambition < 0.4) continue;
+      for (const m of ms) if (m !== lead && !m.title) m.follows = lead.id;
+      const stem = R.name.replace(/족$/, "").split(" ").join("");
+      const before = new Set(Object.keys(w.nations));
+      foundNation(lead, w, { name: `${stem} ${R.culture.nationKind}`, style: R.culture.style });
+      const nid = Object.keys(w.nations).find((k) => !before.has(k));
+      if (nid) w.nations[nid].race = R.id;
     }
     // 사라짐
     w.raceGone = w.raceGone || [];
