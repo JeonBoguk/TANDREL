@@ -1,7 +1,8 @@
 # 죽음과 사후 세계 설계
 
-> 상태: **설계**. 아직 구현되지 않았다. **확정**은 정해진 요구사항, **미정**은 결정 전이며 대안을 함께 적는다.
-> 심판자의 정체, 사후 세계의 종교적·세계관적 구조는 **별도 논의 예정**이다. 이 문서는 그것을 정하지 않은 채로도 구현할 수 있게 짰다.
+> 상태: **설계**. 아래 사후 세계 전용 데이터와 흐름은 아직 구현되지 않았다.
+> 현재 저장 형식은 **v10**이다. 이 문서의 과거 초안에 있던 v4 표기는 오래된 기준이므로 사용하지 않는다.
+> 심판자의 정체와 사후 세계의 종교적·세계관적 구조는 별도 논의 사항이며 여기서 확정하지 않는다.
 
 ## 1. 성격 (확정)
 
@@ -9,128 +10,131 @@
 - 사후 세계는 또 하나의 생활 시뮬레이션이 아니라, 영혼이 다음 운명을 정하기 전까지 머무는 **중간 공간**이다. 경제·직업·일상·사회는 없다.
 - 역할: 회고, 심판, (필요하면) 속죄, 다음 운명(환생 또는 안식) 결정.
 - 플레이어와 NPC에 **같은 규칙**. 플레이어는 장면을 직접 경험하고 고르며, NPC는 성격·행적·판정으로 자동 처리한다.
-- 세 가지를 구분한다.
+- 다음 세 가지는 서로 다른 개념이다.
   - **기존 세계에서 환생**: 사후 세계에서 정하는 영혼의 운명
   - **기존 세계 관전**: 죽은 플레이어의 플레이 방식
   - **새로운 세계 시작**: 사후 시스템과 무관한 게임 진행 기능
 
 ## 2. 현재 코드에 있는 것
 
-| 항목 | 근거 |
+| 항목 | 현재 근거 |
 |---|---|
-| 단일 사망 입구 | `World.die(n, how, {killer, imp, cause, kind, demon})` (engine.js). 사망 경로 11곳이 모두 이 함수를 쓴다 |
-| 사망 상태 | `n.alive`, `n.death_day`, `n.death_cause`(문장). 사망자는 `w.npcs`에서 지우지 않는다 |
-| 사망의 여파 | 사망 사건, 애도자 통지, 배우자 `spouse = null` + `widowed`, 살인자 `killer`·추방, `demon_grudge` |
-| 플레이어 사망 후 | `winBorn`: "새로운 세계에서 처음부터 / 이 세계에서 이어 살기", 창을 닫으면 관전(`obsRun`, 하루 단위) |
-| 장례 | `Story` 에피소드(`funeral`, 복수 다짐) |
-| 행적 사건 | 해악 `murder assault theft theft_unknown(secret) caught arrest insult gossip quarrel duel revenge exile` + `crime()`. 선행 `help gift thanks lend funeral plague_heal bandits_beaten deed bless treat`. 속죄·화해 `forgive reconcile`, 자수, 감옥 |
-| 맥락 | `cause` 사슬(복수 → 다짐 → 원래 피해), `chain()`, `feuds()` |
-| 가족 | `parents`, `children`은 사후에도 유지 |
-| 지식 계승 수단 | 두루마리 아이템(`teaches`, `readScroll`) |
+| 단일 사망 입구 | `World.die(n, how, {killer, imp, cause, kind, demon})` (engine.js) |
+| 사망 상태 | `n.alive`, `n.death_day`, `n.death_cause`; 사망자는 `w.npcs`에서 삭제하지 않음 |
+| 사망의 여파 | 사망 사건, 애도자 통지, 배우자 `spouse = null` 및 `widowed`, 살인자 `killer`·추방, `demon_grudge`, 주택 승계 |
+| 플레이어 사망 후 | ui.js `winBorn`: 새 세계 생성 또는 기존 세계에서 `Game.newLife`로 새 인물 시작 |
+| 관전 | 기존 `obsRun` 경로가 있으며 현재는 하루 단위 진행. 사후 세계의 실시간 관전 연출과는 별개 |
+| 장례 | Story 에피소드와 장례·복수 다짐 흐름 |
+| 행적 사건 | 살인·폭행·절도·체포·다툼·복수·추방 및 도움·선물·치료·화해 등 여러 사건 종류 |
+| 맥락 | 사건의 `cause` 연결, `chain()`, `feuds()` |
+| 가족 | `parents`, `children` 등 기존 가족 필드 |
+| 지식 전승 수단 | 두루마리 아이템의 `teaches`, `readScroll` |
 
-**부족한 것**: 원인 종류(문장뿐), 맥락·피해 규모, 인물별 행적 집계, 사건 정리 시 유실(중요도 3 미만이고 2년 지나 아무도 기억하지 않으면 버림), 배우자 기록 소실, 유산(금화가 사라짐), 가문, 영혼 연결, 실시간 관전, 이전 세계의 보관 상태.
+현재 `World.die`의 `how`와 `death_cause`는 문장 중심이다. 사후 판정에 필요한 원인 분류, 의도·맥락, 피해 규모를 모든 사망 경로에서 구조화해 보존하는 체계는 아직 없다.
 
-## 3. 데이터 (제안)
+또한 `n.soul`, `n.ledger`, `n.after`, `w.souls`, 사후 판정·속죄·환생 함수는 현재 구현된 것으로 간주하지 않는다.
+
+## 3. 사후 세계 데이터 (제안)
+
+아래 구조는 구현 목표를 논의하기 위한 제안이며 현재 저장 데이터에 존재하지 않는다.
 
 ```js
 n.death = { day, cause: "starve"|"age"|"war"|"murder"|"plague"|"accident"|"raid"|"unknown", killer, event }
-n.lateSpouse = id                       // die()에서 산 배우자에게 남김
-n.soul = id                             // 처음 태어날 때 자기 id. 환생하면 이어받음. 세계 안에서만 유효
-n.pastLives = [id, ...]                 // 환생한 인물에게
-n.ledger = { harm:{종류:{맥락:횟수}}, help:{…}, victims:[id], atoned:[…], notable:[eventId] }  // 사건이 정리돼도 남는 집계
-ev.data.moral = { harm, help, ctx: "war"|"defense"|"revenge"|"crime"|"duty"|"tyranny", victims, community }
-
-n.after = {                             // 사망자에게만
-  stage: "arrival"|"review"|"judgment"|"atonement"|"gate"|"rest"|"reborn",
-  since: day, fate: "pending"|"rebirth"|"rest", next: null|charId,
-  verdict: null | { aspects:{harm, help, repeat, atoned, impact}, themes:["murder:crime"], allowRebirth, atonementNeeded:[…] },
-  atone: null | { themes:[…], steps:[{kind, ref, done}], refused:false },
+n.lateSpouse = id
+n.soul = id
+n.pastLives = [id, ...]
+n.ledger = {
+  harm: { /* 유형·맥락별 집계 */ },
+  help: { /* 선행 집계 */ },
+  victims: [id],
+  atoned: [/* 사건 또는 행위 id */],
+  notable: [/* event id */]
 }
-w.souls = [soulId, ...]                 // 환생을 기다리는 영혼 대기열
-w.worldId, w.archived = null | {day, reason}     // 세계 보관 상태
-// 세계 밖(저장 칸 메타): 플레이 방식 "alive"|"afterlife"|"watching"|"archived", 살았던 삶 목록(포인터만)
+ev.data.moral = { harm, help, ctx, victims, community }
 
-CONTENT.judgment = { aspects:[{id, from, weightByCtx?, rule?}], combine:"default" }   // 무엇을 보는가. 누가 보는가는 정하지 않는다
-CONTENT.atonements = { "murder:crime": {...}, ... }                                    // 형식만. 방식·난이도는 미정
-CONTENT.afterlife = { stages:[…], texts:{…} }                                           // 중립 서술. 세계관이 정해지면 교체
+n.after = {
+  stage: "arrival"|"review"|"judgment"|"atonement"|"gate"|"rest"|"reborn",
+  since: day,
+  fate: "pending"|"rebirth"|"rest",
+  next: null|charId,
+  verdict: null|{ aspects, themes, allowRebirth, atonementNeeded },
+  atone: null|{ themes, steps, refused }
+}
+
+w.souls = [soulId, ...]
+w.archived = null | { day, reason }
 ```
 
-장소와 단계는 1:1이다. 맵이든 화면이든 데이터는 같다.
+- `n.soul`은 한 영혼의 여러 생애를 연결하기 위한 세계 내부 식별자 제안이다.
+- `n.ledger`는 사건 원본이 정리되더라도 심판에 필요한 집계가 남도록 하기 위한 제안이다.
+- `ev.data.moral`은 행위의 피해·도움·맥락을 자연어 문장과 분리해 저장하기 위한 제안이다.
+- `n.after`는 사후 진행 상태를 저장하기 위한 제안이다.
+- 실제 필드 이름과 스키마는 구현 전에 기존 저장 구조와 충돌 여부를 확인하고 확정한다.
 
-| 장소 | stage | NPC | 플레이어 |
-|---|---|---|---|
-| 도착의 장소 | arrival | 즉시 통과 | 첫 화면 |
-| 기억의 회랑 | review | 생략 | 회고 |
-| 심판의 전당 | judgment | 즉시 계산 | 판정 장면 |
-| 속죄의 영역 | atonement | 세계 날짜만큼 대기 | 속죄 장면 |
-| 윤회의 문 | gate | 대기열로 | 환생 선택 |
-| 안식의 영역 | rest | 최종 | 최종 → 플레이 방식 선택 |
-
-## 4. 흐름
+## 4. 흐름 (제안)
 
 ```
-World.die(n) ─▶ settleEstate(유산) ─▶ n.after = {stage:"arrival", fate:"pending"}
-NPC     : arrival → judgment(judge) → [atonement: 규칙표만큼 대기] → gate: 성격·판정으로 rebirth|rest
-          rebirth → w.souls → births()에서 태어나는 아기에 soul 연결 (인구 규칙은 그대로)
-플레이어: arrival → review(lifeReview) → judgment(같은 judge, 연출) → atonement 장면|거부 → gate(afterlifeOptions)
-          rebirth → 출생 화면(허용 범위의 가문·장소) → 플레이 계속
-영혼의 운명이 정해진 뒤 (세계 밖 선택): 환생했으면 계속 / 관전 / 새로운 세계 시작(이전 세계는 archived)
+World.die(n)
+  └─ 사망 원인·사건 구조화
+     └─ 유산 처리(settleEstate)
+        └─ 사후 상태(after = arrival)
+
+NPC:
+arrival → judgment → [atonement 또는 생략] → rebirth | rest
+rebirth → 영혼 대기열 → births()에서 태어나는 인물에 soul 연결
+
+플레이어:
+arrival → review → judgment → atonement 또는 거부 → gate
+gate → 기존 세계 환생 또는 안식
+이후 플레이어는 기존 세계 관전 또는 새로운 세계 시작을 별도로 선택
 ```
 
-공통 함수(engine.js): `judge`, `afterlifeStep`, `afterlifeOptions`, `reincarnate`, `settleEstate`. 플레이어용은 같은 결과를 화면으로 보여 주는 것뿐이다(story.js `lifeReview`, ui.js 화면).
+플레이어와 NPC는 동일한 판정·결과 규칙을 사용한다. 차이는 플레이어는 장면을 직접 경험하고 선택하며 NPC는 성격·행적·판정에 따라 자동 처리한다는 점이다.
 
-사후에도 이어지는 것: 사건·연대기·신문, 남은 사람들의 기억과 관계(기존), 원수 목표 정리(`checkGoal`, 기존), 유산·유고·가게 승계(제안), 후손 소식(제안).
+## 5. 최소 화면 방향 (확정된 범위)
 
-## 5. 최소 화면 (맵 없음, 기존 창과 대화 UI 재사용)
+사후 세계는 별도의 생활 시뮬레이션 맵으로 만들지 않는다. 기존 창과 대화 UI를 재사용하는 소규모 화면 중심으로 시작한다.
 
-1. **도착·회고**: 사망 문장 + 탭(생애 연대표 `bioCard` 생애 목록 / 관계 `relGraph` / 남긴 것: 가족·후손·유산·제자·업적)
-2. **심판·속죄**: 관점별 판정을 **문장**으로(점수·막대 금지), 이어서 대화창 형식의 속죄 장면과 선택지
-3. **문**: 환생(조건·출생 범위) / 안식 → 이어서 플레이 방식(관전, 새 세계)
+1. **도착·회고**: 사망 정보, 생애 기록, 관계, 가족·후손·유산·업적을 확인한다. 기존 `lifeOf`와 관계도 데이터를 재사용한다.
+2. **심판·속죄**: 판정의 이유를 문장과 장면으로 전달한다. 단순 선악 점수나 점수 막대에 의존하지 않는다.
+3. **다음 운명**: 환생 또는 안식 등 심판 결과에 맞는 선택을 제공한다.
 
-단계마다 정적 도트 배경 한 장은 선택. 나중에 걸어 다니는 작은 방으로 키워도 `stage`가 그대로 쓰인다.
+도착의 장소·기억의 회랑·심판의 전당·속죄의 영역·윤회의 문·안식의 영역은 공간 이름과 기능 구상이다. 각각을 독립된 대형 맵으로 만들기로 확정한 것은 아니다.
 
-## 6. 미정 사항과 대안
+## 6. 미정 사항
 
-| 항목 | 대안 |
+| 항목 | 대안 또는 논의 상태 |
 |---|---|
-| 플레이어가 사후 화면에 있는 동안 기존 세계 시간 | **A 정지(추천)** / B 흐름 / C 회고·심판은 정지, 속죄는 세계 날짜 소모 |
-| 속죄 형식 | A 사후 장면형(피해자 기억·이후의 삶을 마주하고 선택) / B 다음 생으로 이어지는 책임(피해자 후손 돕기 미션) / C 혼합. 데이터(`n.after.atone`)는 공통 |
-| 환생이 막히거나 안식을 택한 플레이어가 이 세계에서 계속 플레이 | 1 관전·새 세계만 / 2 새 영혼으로 이 세계에 오기(지금의 "이어 살기") / 3 살아 있는 인물에게 깃들기(`takeOver`, 세계관 논의 필요) |
-| 심판자의 정체·수·법칙 | **세계관 논의 대기**. 판정 데이터(관점별)와 연출을 분리해 어느 쪽이든 수용 |
-| 속죄 거부의 운명 | `afterlifeOptions`의 조건 하나로 연결(예: 환생 금지 / 제한된 환생 / 안식만) |
-| 전생 기억 | 없음 / 단편 / 조건부. `n.pastLives`와 플래그 자리만 둔다 |
-| 상속 비율·순서, 상속자 없을 때 | 배우자·자녀 우선, 없으면 마을. 비율은 미정 |
-| 보관된 세계의 재진행 | 영구 읽기 전용 / "돌아가기" 허용 |
+| 사후 화면에 있는 동안 기존 세계 시간 | A 정지 / B 흐름 / C 회고·심판은 정지, 속죄는 세계 날짜 소모 |
+| 속죄 형식 | A 사후 장면형 / B 다음 생으로 이어지는 책임 / C 혼합 |
+| 환생이 막히거나 안식을 택한 플레이어가 이 세계에서 계속 플레이 | 1 관전·새 세계만 / 2 새 영혼으로 이 세계에 오기 / 3 살아 있는 인물에게 깃들기 |
+| 심판자의 정체·수·법칙 | 세계관 논의 대기. 판정 데이터와 심판 연출은 분리 |
+| 속죄 거부의 운명 | 환생 금지 / 제한된 환생 / 안식만 등 미정 |
+| 전생 기억 | 없음 / 단편 / 조건부 |
+| 상속 비율·순서, 상속자 없을 때 | 배우자·자녀 우선은 대안일 뿐, 비율과 최종 규칙 미정 |
+| 보관된 세계의 재진행 | 영구 읽기 전용 / 돌아가기 허용 |
 | 가문 범위 | 성씨만 / 가문 평판·재산까지 |
-| NPC 속죄가 살아 있는 세계에 주는 영향 | 기본 없음(중간 공간 원칙). 필요하면 "징조" 정도 |
+| NPC 속죄가 살아 있는 세계에 주는 영향 | 기본 없음이 제안. 필요하면 징조 정도 |
 
-## 7. 로드맵
+## 7. 구현 로드맵 (현재 저장소 기준으로 갱신)
 
-데이터 아키텍처의 S0(저장 버전, `worldId`, `ev.data`, 인물별 사건 색인)이 선행 조건이다.
+현재 엔진의 저장 형식은 **v10**이며, 세계 식별자 `worldId`, 구조화 사건 값 `ev.data`, 인물별 사건 조회 `w.lifeOf`는 이미 구현되어 있다. 따라서 예전 초안의 S0를 미구현 선행 작업으로 취급하지 않는다.
+
+사후 전용 필드를 저장하는 첫 변경이 들어갈 때는 v10에서 다음 버전으로 올리고, `MIGRATIONS[10]` 및 구버전 회귀 테스트를 추가한다. 실제 구현 범위에 따라 이후 버전은 순차적으로 올린다.
 
 | 단계 | 내용 | 주요 파일 |
 |---|---|---|
-| S1 | 죽음 데이터: `n.death`, 호출 11곳에 원인 종류, `lateSpouse`, `n.after`(기본 rest), `n.soul`, 저장 v4 이전 | engine.js, content.js, game.js, test.js |
-| S2 | 행적 장부: `deed()` 헬퍼, `ev.data.moral`, `ledger`, 정리 대상에서 보호 | engine.js, game.js, story.js |
-| S3 | 유산 1차: 금화, 플레이어 소지품, 유고 두루마리 | engine.js, game.js, content.js |
-| S4a | 사후 화면 골격: 도착·회고 (기존 데이터만으로) | story.js, ui.js |
-| S5 | 심판: `CONTENT.judgment` + `judge()` + 중립 연출 | engine.js, content.js, story.js |
-| S5.5 | NPC 사후 자동 처리: `afterlifeStep`을 `upkeep`에, 속죄 기간, 영혼 대기열 | engine.js |
-| S6 | 환생: `reincarnate`, `births()` 연결, 플레이어 출생 선택, `pastLives` | engine.js, game.js, ui.js |
-| S7 | 속죄: 대안 A부터 | story.js, content.js |
-| S8 | 자산 승계 2차(집·가게): 데이터 아키텍처 2단계 이후 | game.js, engine.js |
-| 별도 트랙 | S4b 실시간 관전, S9 새 세계 + 보관 세계 열람 | ui.js |
-| S10 | 가문·혈통 연결 | engine.js, ui.js |
+| S1 | 구조화된 죽음 데이터, 사망 원인 분류, 배우자 기록, 기본 사후 상태, 영혼 id | engine.js, test.js |
+| S2 | 행적 장부와 `ev.data.moral`, 사건 정리 후에도 남는 집계 | engine.js, game.js, story.js, test.js |
+| S3 | 유산 1차: 금화·플레이어 소지품·유고 | engine.js, game.js, content.js, test.js |
+| S4a | 사망 후 회고 화면: 기존 인물 기록·관계도·연대기 연결 | ui.js, story.js |
+| S4b | 관전 경험 개선과 저장 칸 상태 구분 | ui.js, engine.js |
+| S5 | 심판 규칙과 판정 결과 | engine.js, content.js, test.js |
+| S5.5 | NPC 사후 처리와 영혼 대기열 | engine.js, test.js |
+| S6 | 환생과 출생 연결 | engine.js, ui.js, test.js |
+| S7 | 속죄 경험 | story.js, engine.js, content.js, test.js |
+| S8 | 집·가게 등 자산 승계 | engine.js, game.js, test.js |
+| S9 | 새 세계 시작과 이전 세계 보관·열람 | ui.js, 저장 슬롯 코드, test.js |
+| S10 | 가문·혈통·전생 기록 연결 | engine.js, story.js, ui.js, test.js |
 
-권장 순서: S0 → S1 → S2 → S3 → S4a → S5 → S5.5 → S6 → S7 → (S4b·S9 별도) → S8 → S10.
-
-## 8. 저장 호환 (v4)
-
-| 옛 데이터 | 처리 |
-|---|---|
-| 사망자에 `after` 없음 | `{stage:"rest", fate:"rest", since: death_day}`. 단, 사망한 플레이어 인물은 `arrival`(다음에 사후 화면) |
-| `soul` 없음 | `soul = id` |
-| `death` 없음 | `death_cause` 문장과 사망 사건 `kind`로 추정, 실패하면 `unknown` |
-| 배우자 기록 소실 | 남아 있는 `marriage` 사건으로 `lateSpouse` 복원 |
-| `ledger` 없음 | 남은 사건으로 한 번 집계 (정리된 사건은 복원 불가) |
-| 시체에 남은 금화 | 그대로 (과거를 바꾸지 않음) |
+단계 순서는 의존 관계를 반영한 제안이다. 심판자의 정체, 속죄 방식, 전생 기억 등 미정 사항을 임의로 확정하는 근거로 사용하지 않는다.
