@@ -1,128 +1,188 @@
-# 데이터 아키텍처: 현재 진단과 목표
+# 데이터 아키텍처: 현재 구현과 확장 기준
 
-> 이 문서는 코드에서 확인한 사실과 설계 제안을 구분한다. **현재**는 실제 코드(파일·함수·필드)에 있는 것, **제안**은 아직 없는 것이다.
-> 사후 세계 설계는 [`AFTERLIFE.md`](AFTERLIFE.md).
+> 이 문서는 2026-11-28 기준 `main`의 실제 코드와 `docs/ARCHITECTURE.md`, `ROADMAP.md`를 대조해 정리한다.
+> **현재 구현**과 **미구현/제안**을 구분한다. 기능이 일부 구현된 경우 완료로 표현하지 않는다.
+> 죽음과 사후 세계의 상세 설계는 [`AFTERLIFE.md`](AFTERLIFE.md)를 참고한다.
 
 ## 1. 설계 원칙
 
-- 종족, 직업, 기술, 인물, 관계, 경제, 창작, 정치, 역사는 따로 노는 기능이 아니라 하나의 세계 시뮬레이션 안에서 서로 영향을 준다.
-- 플레이어는 특별한 규칙이 아니라 `controller === "player"`인 같은 인물이다. (현재 이미 그렇다: `Asteria.addPlayer` → `World.spawn`)
-- 새 콘텐츠는 엔진 수정 없이 데이터(`Asteria.extend`)로 더한다. 다만 무리한 범용화는 하지 않는다.
-- 플레이어 창작물과 세계에서 생긴 정의는 그 세계에 귀속된다.
-- 저장 키 `asteria.*`, 저장 형식 `"asteria-world"`, 전역 이름 `Asteria/Game/Story`는 호환 때문에 유지한다.
+- 플레이어와 NPC는 같은 인물 구조를 사용한다. 플레이어는 `controller === "player"`인 NPC다.
+- 종족·혈통·문화·직업·기술·관계·경제·사건은 하나의 World 상태를 공유한다.
+- 세계에서 새로 생긴 직업·업무·지식·아이템·종족·마을 정의는 해당 세계에 귀속한다.
+- 화면은 별도 데이터 사본을 만들지 않고 World와 인물 데이터를 읽고 갱신한다.
+- 저장 형식과 기존 저장 키·전역 이름은 호환성을 위해 유지한다. 코드 전역은 `Asteria`, `Game`, `Story`, 저장 키는 `asteria.*`다.
+- NPC 판단은 규칙 기반이다. NPC 의사결정에 외부 AI 호출을 사용하지 않는다.
 
-## 2. 현재 구조 요약
+## 2. 현재 데이터 구조
 
-```
-CONTENT (engine.js, 전역) ← Asteria.extend(pack) ← content.js, pack-greenhill.js
-  races[] jobs[] dreams[] knowledge[] recipes[] items{} towns[] npcs[] worldEvents[] loot[] renovations[] styles{} nations{id→이름}
-  RACES/JOBS/DREAMS = reindex() 색인          ITEMS(game.js) = 기본 + CONTENT.items
+### 2.1 콘텐츠 정의와 세계별 정의
 
-World (engine.js, 저장됨)
-  worldId(제안→S0 구현) seed name day rng.s  towns{id:{nation:"이름", food, races, job_bias, indep}}  founded[] jobsOpen[] racesSeen[] war{}
-  npcs[]   번호 = 인물 id. 죽어도 지우지 않는다
-     { race, job, town, home, traits, age_days, lifespan, gold, hunger, health, rel{id:값}, mem[{e,s,f,v}], known, spouse, lover,
-       parents[], children[], goal, vowed, dream, know[], follows, title, pioneer, flags, stat, controller, alive, death_day, death_cause }
-  events[] 번호 = 사건 id. 정리된 사건은 자리만 남긴다 { day, kind, text, actor, target, town, imp, sent, cause, secret, data(S0) }
-  chronicle[] (imp ≥ 7)
-  플레이어 쪽: playerId ppos clock journal papers episodes todayLog
-  ext { inv hot codex stats missions wanted farm picked removed looted furn stations home reno dates dreams follow board … }  ← 플레이어 한 명 전용
-  houseStyle{"town:hid"} innMods{town}
-game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만듦. buildings[] 번호 = bd.id
-```
+기본 콘텐츠는 `engine.js`의 `CONTENT`와 `Asteria.extend(pack)`로 등록한다. `content.js`, `pack-jeweler.js` 등이 콘텐츠 팩이다. `pack-greenhill.js`는 기본 세계에서 자동으로 쓰지 않는 예시 팩이다.
 
-호출 의존: `engine → game`(`root.Game.findSite`), `content → game`(`Game.houseExpandOptions`), `game ↔ story`(서로 호출). 엔진의 `onEvent/onLearn/onApproach` 훅은 느슨한 연결이라 괜찮다.
+주요 정의 영역은 종족(`races`), 직업(`jobs`), 지식(`knowledge`), 업무(`works`), 아이템(`items`), 마을(`towns`), 주민(`npcs`), 국가(`nations`) 등이다.
 
-## 3. 시스템별 진단 (✅ 구현 · ◐ 일부 · △ 데이터만 · ✗ 없음)
+세계에서 생성된 정의는 `w.defs`에 보관한다. 현재 세계에서 생긴 직업·업무·지식·아이템·종족·마을 등이 여기에 포함된다. `applyDefs(w)`는 해당 세계를 불러올 때 정의를 콘텐츠 레지스트리에 적용한다. 이 정의는 다른 세계에 자동으로 나타나지 않는다.
 
-| 시스템 | 상태 | 핵심 근거와 한계 |
+주의: 현재 기본 콘텐츠 레지스트리 `CONTENT`와 `Asteria.extend`는 전역이다. 한 번에 한 세계를 플레이하는 구조에 맞춰져 있다. 서로 다른 세계를 동시에 독립적으로 시뮬레이션하려면 세계별 콘텐츠 레지스트리 분리가 별도 과제가 된다.
+
+### 2.2 World
+
+저장되는 주요 영역은 다음과 같다.
+
+| 필드 | 역할 |
+|---|---|
+| `worldId` | 세계 식별자 |
+| `seed`, `rng`, `day` | 시드·난수 상태·세계 날짜 |
+| `towns` | 마을별 인구·식량·곳간·재고·국가 등 |
+| `nations` | 세계의 국가 정의 |
+| `npcs` | 생존자와 사망자를 포함한 인물 배열. 인물 id는 배열 위치와 연결되며 사망자를 삭제하지 않는다 |
+| `assets` | 현재 구현된 주민 주택 자산과 소유자 |
+| `defs` | 세계에 귀속된 콘텐츠 정의 |
+| `events` | 사건 원본 및 구조화된 `data` |
+| `chronicle` | 중요한 세계 사건 |
+| `appts` | 주민 사이의 약속 |
+| `lifeOf(id, minImp)` | 특정 인물의 사건을 조회하는 색인 API. `byChar` 색인은 저장 후 재구성된다 |
+| `land` | 밭·채집·벌목·유적 등 세계에 남는 플레이어 활동 흔적 |
+| `session` | 화면·조작 상태 |
+
+### 2.3 Character (NPC와 플레이어)
+
+인물은 `World.spawn`을 통해 생성되며 플레이어도 같은 구조를 사용한다.
+
+현재 확인되는 주요 필드는 다음과 같다.
+
+| 필드 | 역할 |
+|---|---|
+| `race`, `heritage` | 현재 종족과 부모에게서 이어진 혈통 비율 |
+| `look` | 피부·머리·눈 등 외형 데이터. 자녀 외형은 부모 특성을 일부 유전 |
+| `birthplace`, `culture` | 출생 당시 장소·국가와 성장한 문화권 |
+| `grown`, `age_days`, `lifespan` | 성인 여부와 나이·수명 |
+| `job`, `side`, `skills` | 현재 직업·부업·기술 및 숙련 |
+| `rel`, `parents`, `children`, `spouse`, `lover` | 관계와 가족 |
+| `mem`, `known`, `goal`, `flags` | 기억·소문·목표·상태 |
+| `life`, `today`, `fatigue`, `mood` | 시간별 일상 행동과 당일 상태 |
+| `exp` | 직업 밖의 경험 축적 |
+| `inv` | 주민의 소지품 |
+| `house` | 현재 거주하는 주택 자산 id |
+| `ext` | 플레이어로 살았던 인물의 가방·도감·미션 등 개인 확장 데이터 |
+| `alive`, `death_day`, `death_cause` | 생존 여부와 기존 사망 정보 |
+
+`Game.ext(w)`는 호환 창구이며 데이터의 실제 저장 위치는 `Asteria.extStore` 규칙에 따른다.
+
+- `w.land`: 세계에 남는 밭·채집·벌목·유적 등.
+- `w.session`: 화면과 조작 상태.
+- 현재 조종하는 인물의 `n.ext`: 가방·단축바·도감·미션·수배·집 꾸밈·기록 등 인물에게 귀속되는 정보.
+
+모든 NPC에게 플레이어용 `ext`가 자동으로 생기는 구조는 아니다. 주민의 일반 소지품은 별도 `n.inv`를 사용한다.
+
+## 3. 시스템별 현재 구현 상태
+
+표기: **구현**은 코드에서 작동 경로를 확인한 기능, **일부**는 기반은 있으나 요구한 범위 전체가 구현되지 않은 기능, **미구현**은 아직 실제 시스템이 없는 기능이다.
+
+| 영역 | 상태 | 현재 구현과 한계 |
 |---|---|---|
-| 종족 정의·추가 | ✅ | `CONTENT.races` + `extend`. 숨은 종족(`hidden`, 용족은 `dragon_contact` 사건으로 등장) |
-| 세계별 종족 | ✅ `w.defs.races`(혼혈·땅·마력으로 생기고 사라짐) · 이전: ◐ | 정의는 전역, 세계마다 다른 건 `w.racesSeen`(나타난 종족 id)뿐 |
-| 혼혈 | ◐ | `births()`: `mix` 정의가 있는 조합만 50%로 혼혈 종족. 유전은 성격 평균뿐 |
-| 외형 | △ | 인물 필드 없음. `render.js lookOf()`가 `hash(n.id)`로 매번 계산 → 유전 불가 |
-| 성장 속도·마법 친화 | ✗ | `ADULT = 16` 모든 종족 공통 |
-| Species/Heritage/Culture/Nationality/Identity | ✗ | `n.race` 하나. 국적은 `town.nation`(**이름 문자열**)으로 간접 |
-| 직업 | ✅ | `CONTENT.jobs` 한 줄에 경제·화면·일터·기술·대화·지식·출현 조건 |
-| 복수 직업 | ◐ | 주 직업 `n.job` + 부업 `n.side` (깊이 익힌 옛 일, 플레이어는 일터에서 선택) |
-| 지식 | ✅ (5a) | `n.skills{id:{lv,xp,from}}`. 직업을 가지면 `setJob`이 teaches를 익힘(`from:"job"`), 전직해도 남는다 |
-| 숙련 | ✅ (5a) | 같은 `n.skills`의 `xp`·`lv`. 일(`rWork`)·혼자 익히기(`practice`) 모두 `addXp`. 수입에 `mastery(n)` |
-| NPC 전업 | ✅ | `uJob/betterJob/rJob`, `jobDemand`, `expectedIncome`, `job_cooldown` |
-| 직업 출현 | ✅ | `emergeJobs(w)`: `job.emerge{demand, fit, know, text}`, `w.jobsOpen`, 플레이어 개척 `pioneer:` |
-| 직업 정의의 세계 저장 | ✅ (5f) `w.defs` + `applyDefs`. 세계에서 생긴 직업·업무는 함수 없는 데이터. 이전: | `emerge.demand` 등이 함수라 세계 안에서 만든 직업을 저장할 수 없음 |
-| 업무·시뮬레이터 | ◐ (5b) | 플레이어 일은 `CONTENT.works` + `Game.SIMS` 등록표. NPC는 아직 `rWork()` 수치. 이전: | NPC는 `rWork()` 수치 하나. 플레이어 업무는 `buildingMenu` 분기와 `skill.use`에 코드로 박혀 있음 |
-| 공통 인물 데이터 | ✅ (3단계: ext 분리) ◐ | 인물 필드는 공통. 소지품·숙련·도감·기력은 `w.ext`(플레이어 전용), 꿈은 NPC 전용 |
-| 관계 | ✅ | `n.rel` 단일 값, 가족 필드, 연인→결혼, 복수(`goal`), 추종(`follows`) |
-| 관계도 | ✅ | `Story.relGraph` + `ui.js winRel`. 새로 만들 필요 없음 |
-| 관계 종류(친구·경쟁·스승) | ✗/△ | `friendship`·`learn` 사건만 |
-| 관계 변화의 원인 | ◐ | 저장하지 않음. 플레이어용 `reasons()`가 `journal`에서 추정 |
-| 기억·소문 | ✅ | `remember()`, `n.mem`, `n.known`, 감쇠, `rSocial`의 소문 전파 |
-| 식량 경제·노동시장 | ✅ | `town.food`, `foodPrice`, `upkeep`(밥값→생산자), `seasonal`, 상인, 상단 |
-| 물건 경제 | ◐ | 물건은 플레이어만. 가게 가격 고정, 재고 없음, 판매 시 금화가 새로 생김 |
-| 집 | ✅ (2단계) | `w.assets` + `n.house`. 주인·승계 있음. 플레이어 집은 아직 여관 방(`ext.home`) |
-| 가구 | ◐ | `ext.furn[bd.id]`, `bd.id` = 맵 생성 순서(불안정) |
-| 창작물 | ✗ | 디자인·제작자·버전 없음 |
-| 세계 식별자 | ✗ → S0 | `worldId` 없음(저장 칸 id는 UI에만) |
-| 사건·원인 사슬 | ✅ | `record`, `cause`, `chain()`, `feuds()` |
-| 연대기·신문 | ✅ | `chronicle`(imp ≥ 7), `Story.onDawn`, `PUBLIC`, `followNews`, `localNews` |
-| 사건의 구조화 값 | ✗ → S0 | 이전/새 직업 같은 값이 `text`에만 있음 |
-| 인물별 사건 색인 | ✗ → S0 | `bioCard()`가 매번 `W.events` 전체를 훑음 |
+| 종족 정의·콘텐츠 팩 | 구현 | `CONTENT.races`, `Asteria.extend` |
+| 세계별 종족 | 구현 | 혼혈·환경·마력 등에 의해 생긴 종족 정의를 `w.defs.races`에 보관 |
+| 혈통·외형 유전 | 구현 | `n.heritage`, `n.look`, `blendHeritage`, `inheritLook` |
+| 종족별 성장·마법 소질 | 구현 | 종족 정의의 `adultAge`, `magic`; 인물의 `grown` |
+| 문화·국가 | 구현 | `n.culture`, `w.nations`, `town.nation`은 국가 id |
+| 정체성(identity) | 미구현 | 인물이 스스로 인식하는 소속을 별도로 관리하는 체계는 없음 |
+| 직업·전직·부업 | 구현 | `n.job`, `n.side`, 직업 수요와 숙련 기반 전직 |
+| 지식·숙련 | 구현 | `n.skills{id:{lv,xp,from}}`; 전직 후에도 기술 유지 |
+| 직업의 탄생·전문화·소멸·부활 | 구현 | `genesis`, `makeJobDef`, `jobLife`, 세계별 `w.defs` |
+| 업무 정의 | 구현 | `CONTENT.works`, 단계별 조작 부품과 재료·결과 정의 |
+| 플레이어 업무 조작 | 구현 | `sims.js`의 `Sims.register` 조작 부품 |
+| NPC 업무 처리 | 구현 | 같은 업무 단계에 대한 자동 점수·정산 경로 |
+| 플레이어 직업 창작 | 구현 | `jobDraft`, `checkJobDraft`, `createJob`; 세계에 직업·업무 정의 저장 |
+| 플레이어가 새 시뮬레이터 조작 부품 제작 | 미구현 | 새로운 조작 부품 자체는 개발자가 `sims.js`에 추가해야 함 |
+| NPC 시간별 일상 | 구현 | `lifeUntil`, `liveHour`, `planHour`; 일·식사·휴식·사교·장보기 등 |
+| NPC 약속 | 구현 | `w.appts`, `maybePromise`, `apptNow`; 플레이어 약속은 미션과 연결 |
+| 관계·가족·기억·소문 | 구현 | `n.rel`, 가족 필드, `remember`, `n.mem`, `n.known` |
+| 관계 유형(친구·경쟁자·스승·제자 등) | 일부 | 관계도와 호감도·가족·연인·복수·추종은 있으나 관계 유형을 독립 축으로 관리하는 `relKind`는 없음 |
+| 관계 변화 원인의 장기 구조화 | 일부 | 사건·기억은 있으나 모든 관계 변화 원인을 일관된 전용 구조로 관리하지 않음 |
+| 식량·노동시장·곳간 | 구현 | `town.food`, `town.store`, 계절·노동·식량 지원 |
+| 물건 경제 | 구현 | `town.stock`, `n.inv`, `stockSupply`, `stockPrice`, `shopFor`, `useOwn`; 마을 간 운송은 실제 이동이 아닌 추상화된 재고 분배 |
+| 주민 주택 자산 | 구현 | `w.assets`, `n.house`, 배정·가구 합류·사망 시 승계 |
+| 플레이어 주택·사업체 자산 | 일부 | 플레이어의 여관 방·꾸밈은 개인 확장 데이터와 세계 건물 데이터에 걸쳐 있음. 일반 사업체 소유권·승계 체계는 미완성 |
+| 창작물·디자인 원본 | 미구현 | 세계 귀속 디자인 원본·제작자·버전·제작물 연결 체계 없음 |
+| 사건·원인 사슬 | 구현 | `record`, `cause`, `chain`, `feuds` |
+| 구조화 사건 데이터 | 구현 | `ev.data`에 직업 변경·탄생·발견·국가·종족 등 주요 사실 저장 |
+| 인물별 생애 사건 조회 | 구현 | `w.lifeOf(id, minImp)`; 색인은 불러올 때 재구성 |
+| 신문·연대기 | 구현 | `chronicle`, `Story.onDawn`, 공개 사건·소문 |
+| 사망 처리·애도·장례 | 일부 | `World.die`, 배우자 사별·애도 통지·주택 승계·장례 에피소드 |
+| 영혼·심판·속죄·환생 | 미구현 | `n.soul`, `n.ledger`, `n.after` 등 사후 시스템 데이터는 아직 없음 |
+| 플레이어 인물 기록 통합 화면 | 일부 | 기존 관계도·연대기·인물 카드가 있으나 논의한 전체 인물 기록 전용 화면은 미완성 |
 
-## 4. 발견한 문제
+## 4. 업무·직업 시스템의 연결
 
-| 종류 | 내용 |
-|---|---|
-| 중복 공식 | 주민 집 번호 `1 + (n.id % 5)` (game.js 5곳, story.js, content.js) |
-| 중복 출처 | 지식 = `n.know` + 현재 직업 `teaches` |
-| 이름으로 저장 | `town.nation`이 국가 이름 문자열 |
-| 중복 위치 | 거주지 `n.town`, `n.home`, `p.home`, `stat.towns` |
-| 불안정 id | `bd.id`(맵 생성 순서)로 가구 저장 |
-| 직렬화 불가 | 직업 `emerge`, 꿈, 세계 사건, 기술 `use`가 함수 |
-| 텍스트에만 있는 사실 | 사건 핵심 값이 `text`에만 |
-| 경제 분리 | 플레이어 물건 경제 ↔ NPC 식량·금화 경제 |
-| 외형이 데이터 아님 | `lookOf(hash(id))` |
-| 플레이어 전용 덩어리 | `w.ext` |
-| 역방향 의존 | 엔진·콘텐츠가 `root.Game`을 부름 |
+직업은 사회적 역할, 기술은 인물이 보유한 능력, 업무는 실제로 수행하는 일, 시뮬레이터는 플레이어가 업무를 조작하는 방식이다.
 
-## 5. 목표 영역 (합칠 것과 나눌 것)
+현재 흐름은 다음과 같다.
 
-| 영역 | 판단 |
-|---|---|
-| World | 유지 + `worldId`, `version`, `defs`(세계에서 생긴 **함수 없는** 정의) |
-| Character | 유지(`npcs[]`). `ext`의 인물 몫을 인물로 옮김 |
-| Species | 유지 + 규칙 필드(`adultAge`, `magic`, `traitsGenetic`) (**구현됨**) |
-| Heritage / Culture / Identity | 독립 영역이 아니라 **인물 필드**(`heritage{sp:비율}`, `culture`, `identity`). heritage·culture·look·birthplace는 구현됨, identity는 다음 |
-| Nation | **독립(구현됨)**: `w.nations{id}`, `town.nation` = id |
-| Job | 유지 + 세계 정의(`w.defs.jobs`) |
-| Skill | 지식(`know`)과 숙련(`stats`)을 `n.skills{id:{lv,xp}}`로 합침 (**구현됨**, 저장 v8) |
-| Work + Simulator | 하나로: `CONTENT.works{steps, npc 계산식, sim:id}`, 시뮬레이터는 UI 코드 등록표, 둘은 id로만 연결. `jobReady(j)`가 참일 때만 플레이어에게 노출 |
-| Relationship | `n.rel` 유지 + `n.relKind{id}`(친구·경쟁·스승·제자·지도자). 두 번째 축은 쓰는 규칙이 생길 때 |
-| Event/Memory/History | 하나로 유지 + `ev.data`, 인물별 색인 |
-| Economy | 유지 + 마을 재고(`town.stock`)와 가격 |
-| Asset | **주민 집은 구현됨**: `w.assets{id:{kind, owner, town, hid, style, mods}}`, 거주지 `n.house`(`n.home`은 고향 마을 id로 그대로). 플레이어 집·가게는 다음 단계 |
-| Creation | **새로**: `w.designs{id:{kind, creatorId, originWorldId, version, data}}`. 물건은 `"outfit:d_7"`처럼 디자인을 가리킴 |
+```
+경험·지식·사회적 수요
+        ↓
+knowledgeBirth / experienceBirth
+        ↓
+genesis / makeJobDef
+        ↓
+세계별 직업·업무 정의(w.defs)
+        ↓
+NPC 자동 업무 처리 / 플레이어 Sims 조작
+        ↓
+생산물·서비스·숙련·소득·사건
+        ↓
+마을 재고·경제·관계·신문·연대기
+```
 
-## 6. 단계별 로드맵
+플레이어는 기존 조작 부품을 골라 업무 단계를 구성하고, 시험한 뒤 직업을 등록할 수 있다. 그러나 완전히 새로운 입력 방식·조작 부품을 플레이어가 만드는 도구는 없다. 이 부분을 이미 구현된 직업 창작과 혼동하지 않는다.
 
-| 단계 | 내용 | 주요 파일 | 위험 |
-|---|---|---|---|
-| **S0** | 저장 버전 체계(v3 + 이전 함수), `worldId`, `record(…, {data})`, 인물별 사건 색인 | engine.js, ui.js(bioCard), test.js | 낮음 |
-| 1 | 국가 독립 (`w.nations`, `town.nation` = id) | engine.js, ui.js, story.js | 중간 |
-| 2 | 집·자산 (`w.assets`, `n.home`, `hid` 공식 제거, 가구·집 꾸밈 이전) | game.js, story.js, content.js, render.js | **높음** |
-| 3 | 공통 인물 구조 (`ext` 분리: 인물 몫 / 세계 몫 / 플레이어 몫) | game.js, story.js, ui.js | **높음** |
-| 4 | 종족·혈통 (`heritage`, `look` 저장·유전, 종족 규칙 필드) | engine.js, content.js, render.js | 중간 |
-| 5 | 직업·기술·업무 (`knows()` 정리, `n.skills`, `CONTENT.works`, 시뮬레이터 등록표) | engine.js, content.js, game.js, ui.js | 중간~높음 |
-| 6 | 관계 종류·창작·경제 (`relKind`, `w.designs`, 재고·가격) | engine.js, story.js, game.js | 중간 |
-| 7 | 연대기·UI (인물 생애 탭, 연대기 필터, 관계도의 관계 종류) | ui.js, story.js | 낮음 |
+## 5. 경제·자산·창작물의 경계
 
-사후 세계 단계(S1~S10)와의 순서는 [`AFTERLIFE.md`](AFTERLIFE.md) 7장.
+- 마을 재고(`town.stock`)는 생산·구매·소비·가격에 연결된다.
+- 주민 소지품(`n.inv`)은 NPC의 장보기와 사용에 연결된다.
+- 주택은 `w.assets`에 있고 소유자와 거주자(`n.house`)가 연결된다.
+- 마을 사이 물품 이동은 현재 재고량을 기준으로 추상화되어 있으며, 상인이 실제 경로를 이동해 운송하는 기능은 남아 있다.
+- 플레이어의 집·사업체를 일반 자산과 같은 규칙으로 소유·상속하는 체계는 완성되지 않았다.
+- 창작물은 아직 별도 데이터 모델이 없다. 향후 설계 시 세계별 `w.designs` 같은 저장소를 검토할 수 있으나, 이는 현재 구현이 아니라 제안이다.
+- 디자인 원본을 다른 세계로 가져오는 것과 그 세계에 실제 아이템·유행·역사로 존재하는 것은 별개로 다뤄야 한다.
 
-## 7. 설계 세부
+## 6. 저장과 마이그레이션
 
-- 저장 이전: `MIGRATIONS[v](d)`를 `deserialize`에서 버전이 맞을 때까지 차례로 적용한다.
-- 사건 구조화 값: `record(kind, text, { …, data })`. 우선 대상 `career{from,to}`, `learn/discovery{skill}`, `job_born{job}`, `nation_founded/independence{nation,from}`, `race_born/contact{species}`, `marriage`, `birth`.
-  사소한 행동은 사건으로 남기지 않는다(`G.log`/`todayLog`만). 선별 기준은 기존 `imp`(생애 3~5, 세계 7 이상 → 연대기).
-- 국가: `w.nations = { id: {name, since, founder, from} }`, `nationName(w, id)`.
-- 혈통: `n.heritage`(부모 평균), `n.culture`(성인이 될 때 자란 곳), `n.identity`(사건으로만), `n.look`(태어날 때 결정, 부모 값에서 유전). identity를 뺀 나머지는 4단계에서 구현(저장 v7).
-- 업무: `works: [{ id, skill, steps:[…], npc:{income, uses}, sim:"forge" }]`, `job.works:[…]`, `jobReady(j)`.
-- 창작물: `w.designs`에만 존재 → 자동으로 세계 귀속. 다른 세계로는 명시적 가져오기로만, 이때 `originWorldId`를 남긴다.
+- 현재 저장 형식 버전은 **v10**이다(`Asteria.SAVE_VERSION`).
+- 저장 형식을 바꾸면 버전을 올리고 `MIGRATIONS`에 이전 버전별 변환을 추가한다.
+- `deserialize`는 이전 함수를 순서대로 적용한다.
+- 저장 키는 `asteria.slots.v1`, `asteria.slot.v1.<id>`, `asteria.settings.v1`이며 저장 칸은 최대 8개다.
+- `w.byChar`처럼 저장 시 재생성 가능한 색인은 영속 데이터와 구분한다.
+- v10에는 기본 콘텐츠에서 제외된 도토리골·하플링·양봉가 등 과거 콘텐츠를 기존 세계의 `w.defs`로 보존하는 이전이 포함된다.
+
+저장 구조를 변경하는 기능은 반드시 구버전 저장을 만드는 회귀 테스트를 추가한다. 현재 `game/test.js`의 `records`, `greenhill`, `skills`, `lineage` 등은 이전 버전 데이터가 새 구조로 옮겨지는 경로를 확인하는 테스트 사례다.
+
+## 7. 현재 구조의 제약과 다음 설계 원칙
+
+1. **전역 콘텐츠 레지스트리**: `CONTENT`와 재색인된 `RACES/JOBS`는 전역이다. 동시 다중 세계 시뮬레이션이 필요해지면 세계별 레지스트리를 검토한다.
+2. **모듈 간 결합**: `engine → Game`, `content → Game`, `game ↔ story` 호출이 있다. 새 시스템은 기존 공개 API와 훅을 먼저 재사용하고 역방향 의존을 늘리지 않는다.
+3. **이벤트와 영구 행적**: 오래된 저중요도 사건은 정리될 수 있다. 사후 심판처럼 장기 집계가 필요한 기능은 원본 이벤트 전체를 무한 보존하는 대신 검증 가능한 요약 장부를 설계한다.
+4. **플레이어와 NPC의 공통 규칙**: UI 입력은 플레이어 전용이어도 결과 판정과 세계 반영은 NPC와 공유한다.
+5. **세계 귀속**: 새 직업·종족·업무·창작물은 생성된 세계에 귀속한다. 다른 세계에는 명시적인 가져오기 절차 없이는 전파하지 않는다.
+6. **기존 데이터 우선**: 관계도·연대기·재고·직업·혈통 등 이미 있는 시스템을 새 화면이나 기능에서 복제하지 말고 기존 데이터의 소비자로 연결한다.
+
+## 8. 다음 확장 영역
+
+현재 코드에 없는 기능을 추가할 때는 다음 의존 관계를 따른다.
+
+| 확장 | 먼저 확인할 기존 기반 | 새로 필요한 부분 |
+|---|---|---|
+| 인물 기록 통합 | `npcs`, `lifeOf`, 관계도, 연대기, `n.ext`, `w.assets` | 전용 화면과 기존 데이터 연결 |
+| 관계 유형 | `n.rel`, 가족·연인·복수·추종, 사건·기억 | 관계 유형과 변화 이력의 공통 규칙 |
+| 창작물 | `w.defs`, 아이템·직업 외형·세계 귀속 | 디자인 원본·제작자·버전·실제 아이템 연결 |
+| 플레이어 자산 | `w.assets`, `n.house`, `n.ext`, 건물 데이터 | 플레이어 주택·사업체 소유와 승계 |
+| 사후 세계 | `World.die`, `events`, `cause`, `lifeOf`, 가족·관계·주택 | 구조화된 죽음, 행적 장부, 영혼, 심판·속죄·환생 |
+| 실제 물류 | `town.stock`, `n.inv`, 상인 직업·이동 | 운송 경로·운반량·도착·분실 규칙 |
+| 신규 시뮬레이터 제작 | `Sims.register`, 기존 조작 부품 | 개발자가 확장하는 안전한 조작 부품 API 또는 별도 제작 도구 |
+
+새 시스템을 설계할 때는 반드시 세 가지를 명시한다.
+
+- 어떤 데이터를 생성하거나 변경하는가?
+- 이미 존재하는 다른 시스템은 그 데이터를 어떻게 소비하는가?
+- 의미 있는 변화가 사건·신문·연대기·인물 생애에 어떻게 반영되는가?
