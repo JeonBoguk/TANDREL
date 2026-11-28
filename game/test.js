@@ -342,7 +342,9 @@
       W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2;
       const cook = W.spawn(t.town(), { race: "human", job: "cook", ageYears: 35 }); A.learn(cook, "field_surgery"); cook.traits.ambition = 1; vet.traits.ambition = 0;
       const tw = W.towns[cook.town], f0 = tw.food; tw.food = 0; // 곳간이 빠듯하면 먹을 것을 만드는 사람은 새 직업을 열지 않는다
+      for (const k of A.CONTENT.knowledge) if (k.id !== "field_surgery" && k.demand) k._d = k.demand, k.demand = null;
       A.genesis(W, true); W.war.active = was; tw.food = f0;
+      for (const k of A.CONTENT.knowledge) if (k._d) k.demand = k._d, delete k._d;
       t.check(cook.job === "cook", "곳간이 빠듯할 때 요리사는 자기 일을 지킨다");
       const J = A.JOBS.w_field_surgery, wk = A.worksOf("w_field_surgery")[0];
       t.check(J && J.name === "야전 의원" && vet.job === J.id && wk.client === "sick" && wk.effects.heal, `전쟁 중 → ${J && J.name}: ‘${wk && wk.name}’ ${wk && wk.steps.map((s) => s.name).join("→")}`);
@@ -419,6 +421,24 @@
       for (const n of W.npcs) if (n.race === R.id) n.alive = false;
       W.day = W.day - (W.day % 30) + 47; A.raceLife(W);
       t.check(W.events.some((e) => e && e.kind === "race_gone" && e.data.species === R.id), W.events.filter((e) => e && e.kind === "race_gone").pop().text);
+    } },
+    { id: "farming", name: "굶주림을 겪은 마을은 농법을 깨치고, 농법은 수확을 늘리고 퍼진다", run(t) {
+      const W = t.w, T = W.towns[t.town()], r0 = W.rng.next;
+      for (const x of Object.values(W.towns)) x.agri = { ids: [], breed: 0 };
+      const f = W.spawn(T.id, { race: "human", job: "farmer", ageYears: 50 }); A.addXp(f, "farming", 900); f.traits.ambition = 1;
+      W.record("food_worry", "시험: 겨울 걱정", { town: T.id, imp: 1 }); W.record("granary_open", "시험: 곳간", { town: T.id, imp: 1 });
+      const m0 = A.farmMult(T); W.day = W.day - (W.day % 30) + 23; W.rng.next = () => 0.01; A.agriLife(W); W.rng.next = r0;
+      t.check(T.agri.ids.includes("rotation") && A.farmMult(T) > m0, W.events.filter((e) => e && e.kind === "farm_new").pop().text + ` (수확 ×${A.farmMult(T).toFixed(2)})`);
+      const f0 = T.food; A._.rWork(f, W); const gain = T.food - f0;
+      T.agri.ids = []; const f1 = T.food; A._.rWork(f, W); const base = T.food - f1; T.agri.ids = ["rotation"];
+      t.check(W.harvestMult() === 0 || gain > base, `농법이 있으면 더 거둔다 (${gain.toFixed(2)} > ${base.toFixed(2)})`);
+      // 가까운 마을로 퍼진다
+      const near = Object.values(W.towns).find((u) => u !== T && !u.fallen && Math.hypot(u.x - T.x, u.y - T.y) <= 60);
+      if (near) { W.rng.next = () => 0.01; W.day += 30; A.agriLife(W); W.rng.next = r0; t.check(near.agri.ids.includes("rotation"), W.events.filter((e) => e && e.kind === "farm_spread").pop().text); }
+      // 정해진 농법을 다 익히면 품종 개량이 끝없이 이어진다
+      T.agri.ids = A.CONTENT.innovations.map((x) => x.id); const b0 = T.agri.breed || 0; W.rng.next = () => 0.01; W.day += 30; A.agriLife(W); W.rng.next = r0;
+      t.check(T.agri.breed > b0, W.events.filter((e) => e && e.kind === "farm_new").pop().text);
+      const w2 = A.World.deserialize(JSON.parse(W.serialize())); t.check(w2.towns[T.id].agri.ids.length === T.agri.ids.length, "농법이 저장된다");
     } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);

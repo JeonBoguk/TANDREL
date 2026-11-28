@@ -379,6 +379,14 @@
      * lost(비술)는 아무도 모른다: 유적·흙더미의 두루마리, 적의 땅, 또는 위기 속의 깨달음으로만 세상에 나온다. 아는 사람은 친구에게 퍼뜨린다. */
     /* 경험의 대상: 물건(item: 그 물건을 재료로 새 물건을 빚을 수 있다)·자연·현상·원소. demand는 그 대상에서 생긴 직업의 수요.
      * 이 밖에 이 세계의 종족(race:<id>)과 땅(env:<id>)도 대상이 된다. 새 종족이 생기면 대상도 늘어난다 */
+    // 농법: 굶주림을 겪은 마을의 솜씨 좋은 농부가 차례로 깨친다 (engine agriLife). 다 익히면 품종 개량이 끝없이 이어진다
+    innovations: [
+      { id: "rotation", name: "돌려짓기", yield: 0.15, lv: 2, stress: 1, text: "{me:이/가} 같은 밭에 해마다 다른 곡식을 심는 ‘{k}’{k~을/를} 생각해 냈다. {town}의 땅심이 살아났다" },
+      { id: "manure", name: "거름 주기", yield: 0.15, lv: 2, stress: 2, after: ["rotation"], text: "{me:이/가} 짐승 똥과 풀을 삭혀 밭에 뿌리는 ‘{k}’{k~을/를} 시작했다. {town}의 곡식이 굵어졌다" },
+      { id: "irrigation", name: "물대기", yield: 0.2, lv: 3, stress: 2, after: ["manure"], text: "{me:이/가} 물길을 파 밭까지 끌어오는 ‘{k}’{k~을/를} 해냈다. {town}의 밭이 가뭄을 덜 탄다" },
+      { id: "iron_plow", name: "쇠 쟁기", yield: 0.25, lv: 3, stress: 2, with: "blacksmith", after: ["irrigation"], text: "{me:이/가} 대장장이와 함께 땅을 깊이 가는 ‘{k}’{k~을/를} 만들었다. {town}의 밭이 넓어졌다" },
+      { id: "terrace", name: "계단밭", yield: 0.15, lv: 4, stress: 2, after: ["iron_plow"], text: "{me:이/가} 비탈을 깎아 ‘{k}’{k~을/를} 일궜다. {town}에 밭이 늘었다" },
+    ],
     subjects: [
       { id: "grain", name: "곡식", doms: ["nature","heat","art","knowledge"], item: "wheat", color: "#d8b860", names: { heat: ["곡식 굽기", "구이 장인"], art: ["곡식 공예", "짚공예가"] } }, { id: "iron", name: "쇠", doms: ["heat","craft","art"], item: "stone", color: "#8a8f9a", names: { art: ["쇠 장식", "쇠 장식공"] } }, { id: "wood", name: "나무", doms: ["craft","art","heat","nature"], item: "wood", color: "#8a6238", names: { art: ["나무 조각", "목각사"], heat: ["숯 굽기", "숯쟁이"] } },
       { id: "herb", name: "약초", doms: ["nature","care","knowledge","magic","craft"], item: "herb", color: "#6a9a4a", names: { care: ["약초 찜질", "약초 의원"], knowledge: ["약초 풀이", "본초학자"], magic: ["약초 주술", "풀 주술사"] } }, { id: "meat", name: "고기", doms: ["heat","art","care"], item: "meat", color: "#b85a4a", names: { heat: ["고기 훈연", "훈연사"], art: ["고기 손질", "푸줏간 장인"] } }, { id: "bread", name: "빵", doms: ["heat","art"], item: "bread", color: "#d8a860", names: { art: ["빵 빚기", "과자 장인"] } },

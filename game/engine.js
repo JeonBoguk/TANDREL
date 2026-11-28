@@ -50,6 +50,7 @@
     housesPerTown: 5,
     /* 외형 기본값 (종족 look에 없을 때). 외형은 태어날 때 정해 n.look에 저장하고, 아이는 부모를 닮는다 */
     subjects: [],     // 경험의 대상 (content.js)
+    innovations: [],  // 농법 (content.js)
     lookDefaults: { skin: ["#f1c9a5"], hair: ["#3b2a1e", "#7a4a26", "#d9b25a", "#a33a2a", "#2a2a2a", "#cfcfcf", "#5a3d7a"],
       styles: ["short", "long", "pony", "bun", "spiky", "bob"], eyes: ["#2a1e16", "#2b4a7a", "#3d6a3a", "#6a3a1a"] }, // 마을마다 주민 집 수 (game.js BUILD_DEF의 hid 1~5와 맞춘다)
     /* 마을: pos는 지도 타일 좌표(마을 중심), roads는 길로 이어진 마을. 지도는 마을 위치에 맞춰 넓어진다. */
@@ -89,7 +90,7 @@
   /** 콘텐츠 팩을 더한다. 같은 id가 있으면 덮어쓰고(필드 병합), 없으면 새로 붙인다.
    *  pack: { races, jobs, dreams, worldEvents, items, eventKinds, demonLords } */
   function extend(pack) {
-    for (const key of ["races", "jobs", "dreams", "worldEvents", "towns", "recipes", "works", "npcs", "knowledge", "loot", "renovations", "subjects"]) {
+    for (const key of ["races", "jobs", "dreams", "worldEvents", "towns", "recipes", "works", "npcs", "knowledge", "loot", "renovations", "subjects", "innovations"]) {
       for (const x of pack[key] || []) {
         const i = CONTENT[key].findIndex((y) => y.id === x.id);
         if (i >= 0) CONTENT[key][i] = { ...CONTENT[key][i], ...x }; else CONTENT[key].push(x);
@@ -672,7 +673,7 @@
       const npcs = this.npcs.map((n) => ({ ...n,
         mem: n.mem.map((m) => [m.e, m.s, m.f ? 1 : 0, m.v]),
         known: [...n.known].filter((id) => memIds.has(id)), flags: [...n.flags] }));
-      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
+      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, agri: t.agri || null, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
       return JSON.stringify({
         format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
@@ -770,7 +771,7 @@
       }
     }
     if (job.war_bonus && w.war.active) earn *= 1 + job.war_bonus;
-    if (job.food) town.food += job.food * (job.seasonal ? w.harvestMult() : 1);
+    if (job.food) town.food += job.food * (job.seasonal ? w.harvestMult() * farmMult(town) : 1); // 농사는 그 마을의 농법만큼 더 거둔다
     if (job.trader) {
       const open = Object.values(w.towns).filter((t) => !t.fallen);
       const richest = maxBy(open, (t) => t.food / Math.max(1, w.residents(t.id).length));
@@ -1105,6 +1106,7 @@
     genesis(w);
     jobLife(w);
     raceLife(w);
+    agriLife(w);
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
     w.qi = 0;
@@ -1500,6 +1502,40 @@
     return ev;
   }
   /** 수요가 쌓이면 누군가 처음으로 새 일을 시작한다. 그 뒤로 그 직업은 이 세계의 직업이 된다 */
+  // ================================================================ 농업의 발전
+  /* 사람이 늘면 굶주림이 온다. 굶주림을 겪은 마을에서 솜씨 좋은 농부가 새 농법을 깨치고, 농법은 그 마을의 수확을 늘린다.
+   * 농법(CONTENT.innovations)은 순서대로: { id, name, yield(수확 +), lv(농부 솜씨), stress(최근 1년 굶주림 신호 수), with(함께 있어야 할 직업), after, text }
+   * 정해진 농법을 다 익힌 마을은 품종 개량을 이어 간다(끝이 없다, 한 번에 조금씩). 농법은 가까운 마을로 퍼진다. 마을의 것: t.agri {ids, breed} */
+  const farmMult = (t) => { if (!t || !t.agri) return 1; const I = CONTENT.innovations || []; return 1 + t.agri.ids.reduce((s, id) => s + ((I.find((x) => x.id === id) || {}).yield || 0), 0) + (t.agri.breed || 0) * 0.05; };
+  function agriLife(w) {
+    if (w.day % 30 !== 23) return;
+    const I = CONTENT.innovations || [], towns = Object.values(w.towns).filter((t) => !t.fallen);
+    for (const t of towns) {
+      t.agri = t.agri || { ids: [], breed: 0 };
+      const stress = w.events.filter((e) => e && e.town === t.id && w.day - e.day <= DPY && ["food_worry", "granary_open", "food_aid", "drought"].includes(e.kind)).length
+        + w.npcs.filter((n) => !n.alive && n.town === t.id && n.death_day !== null && w.day - n.death_day <= DPY && /굶주림/.test(n.death_cause || "")).length * 2;
+      const farmers = w.residents(t.id, true).filter((n) => JOBS[n.job] && JOBS[n.job].seasonal && n.controller !== "player");
+      if (!farmers.length) continue;
+      const best = maxBy(farmers, (n) => skillLv(n, "farming") + n.traits.ambition), lv = skillLv(best, "farming");
+      const next = I.find((x) => !t.agri.ids.includes(x.id) && (x.after || []).every((a) => t.agri.ids.includes(a)));
+      if (next) {
+        if (lv < (next.lv || 2) || stress < (next.stress || 1) || (next.with && !w.residents(t.id, true).some((n) => n.job === next.with)) || w.rng.next() > 0.25) continue;
+        t.agri.ids.push(next.id);
+        w.record("farm_new", fill(next.text || "{me:이/가} ‘{k}’{k~을/를} 생각해 냈다. {town}의 밭이 더 많이 거둘 것이다", { me: best.name, k: next.name, town: t.name }), { actor: best.id, town: t.id, imp: 5, wr: 0.4, data: { innov: next.id, mult: Math.round(farmMult(t) * 100) / 100 } });
+      } else if (lv >= 3 && stress >= 1 && w.rng.next() < 0.12) {
+        t.agri.breed = (t.agri.breed || 0) + 1;
+        w.record("farm_new", `${jo(best.name, "이/가")} 굶주린 해를 겪으며 씨앗을 골라 심어, 더 잘 여무는 ${t.name}의 곡식을 얻었다 (${t.agri.breed}대 개량)`, { actor: best.id, town: t.id, imp: 4, wr: 0.3, data: { breed: t.agri.breed, mult: Math.round(farmMult(t) * 100) / 100 } });
+      }
+    }
+    // 퍼지기: 가까운 마을(거리 60 안)의 농법을 배워 온다
+    for (const t of towns) for (const u of towns) {
+      if (t === u || !u.agri || !t.agri || Math.hypot(t.x - u.x, t.y - u.y) > 60) continue;
+      const learnable = u.agri.ids.find((id) => !t.agri.ids.includes(id) && ((I.find((x) => x.id === id) || {}).after || []).every((a) => t.agri.ids.includes(a)));
+      if (learnable && w.rng.next() < 0.08) { t.agri.ids.push(learnable); const N = I.find((x) => x.id === learnable); w.record("farm_spread", `${u.name}의 ‘${N.name}’${jo(N.name, "이/가").slice(N.name.length)} ${t.name}에도 전해졌다`, { town: t.id, imp: 3, wr: 0.2, data: { innov: learnable, from: u.id } }); }
+      if ((u.agri.breed || 0) > (t.agri.breed || 0) + 1 && w.rng.next() < 0.05) t.agri.breed++;
+    }
+  }
+
   // ================================================================ 경험 → 새 지식 (끝없이 생겨나는 앎)
   /* 사람은 하는 일마다 '분야:대상' 경험을 쌓는다 (n.exp). 경험이 깊어지면 그 분야 × 대상의 지식이 이 세계에 처음 생긴다.
    * 대상(SUBJECTS, content)은 물건·자연·현상·원소이고, 이 세계의 종족·환경도 대상이 된다(race:<id>, env:<이름>).
@@ -2096,6 +2132,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);
