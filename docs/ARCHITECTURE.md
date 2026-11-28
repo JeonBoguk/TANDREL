@@ -47,6 +47,8 @@ Asteria.extend({
   - 부품은 분야(`TOOL_DOMAINS`)를, 지식은 `domain`을 가진다. 지식에 `demand`(`{race}`·`{events, within, n}`·`{sick}`·`{war}`)를 달면, 수요가 생기고 아는 사람이 있을 때 세계 안에서 직업이 생긴다(engine `genesis`, `makeJobDef`). 만든 정의는 `w.defs{jobs, works}`에 저장되고 `applyDefs(w)`가 그 세계를 열 때 콘텐츠에 올린다(다른 세계엔 없다).
   - 플레이어가 만드는 직업: game.js `jobDraft` → `checkJobDraft`(이름·기술·균형 규칙) → `draftWork`(시험용) → `createJob`(w.defs에 저장, `creator`). 화면은 ui.js `winJobMake`. 단계의 난이도 `p.level`(0~2)은 조작 화면의 여유와 자동 점수(`p.hard`)에 반영된다.
   - 지식의 `born`(삶에서 태어나는 조건: `{job, lv}`·`{flag}`·`{life, n}`·`{fame}`·`{title}`·`{mixed}`, `p`는 세계 하나에 하루 한 번의 기회)과 `jobName`·`workName`·`makes`·`client`·`effects`로 생길 직업을 데이터로 정한다(engine `knowledgeBirth`). 종족의 `knows`는 태어날 때부터 아는 지식.
+  - 끝없이 생기는 앎(engine `experienceBirth`): 인물의 경험 `n.exp{"분야:대상": 값}`이 80을 넘으면, 그 사람의 일 밖 경험(또는 두 경험의 만남)에서 지식이 처음 생긴다(`makeKnowledge`, 대상의 `doms`·`names`). 직업의 `exp: [[분야, 대상]]`이 일에서 쌓이는 경험. 대상은 `CONTENT.subjects` + `race:<id>` + `env:<id>`.
+  - 종족의 탄생과 사라짐(engine `raceLife`): 혼혈이 굳어짐·땅에 적응(`ENVS`, 마을 위치로 `envOf`)·마력의 폭풍·사라짐(`race_gone`). 새 종족은 `w.defs.races`, 자기 말은 지식 `lang_<id>`.
   - 직업의 생애(engine `jobLife`, 한 달에 한 번): 전문화(업무의 `specName`), 소멸(`job_gone`)·부활(`job_revived`). 부업은 인물의 `n.side`.
   - 새 직업은 팩 하나로 더할 수 있다: `game/pack-jeweler.js`가 예. 아이템의 `foundAt: "rock"`, `chance`로 바위에서 나오게 할 수 있다. 직업 그림은 `look.hat`·`look.prop`.
 - 직업의 일은 `works`에 적는다. `sim`은 처리 이름으로, game.js의 `SIMS` 등록표(`shift`: 반나절 일하기, `make`: 재료 → 물건)에 있어야 한다. 새 처리는 `Game.registerSim(id, (w, work, {town, pl}) => 결과 문장)`. 처리가 등록된 일이 없는 직업은 플레이어에게 열리지 않는다(`Game.jobReady`). 목록은 `Asteria.worksOf(직업)`.

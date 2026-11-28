@@ -11,7 +11,7 @@
   A.extend({
     jobs: [
       { id: "jeweler", name: "세공사", income: [2.0, 5.5], entry_cost: 40, weight: 0.25, start_text: "작은 세공방을 열었다", shift: false,
-        color: "#6ec6d8", icon: "💎", workplace: "market", teaches: ["gemcraft"], look: { hat: "bandana", apron: "#5a6a7a", prop: "hammer" } },
+        color: "#6ec6d8", icon: "💎", workplace: "market", teaches: ["gemcraft"], exp: [["craft", "gem"], ["art", "gem"]], look: { hat: "bandana", apron: "#5a6a7a", prop: "hammer" } },
     ],
     knowledge: [
       { id: "gemcraft", domain: ["craft", "art"], name: "세공", desc: "원석의 결을 읽어 쪼개고, 깎고, 갈아 보석을 만든다" },

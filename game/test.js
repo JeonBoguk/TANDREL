@@ -296,11 +296,11 @@
       t.check(!A.JOBS.w_dragon_tongue, "처음엔 그런 직업이 없다");
       for (const n of W.alive()) if (n.race === "dragonkin") n.health = 0; W.npcs.forEach((n) => { if (n.race === "dragonkin") n.alive = false; }); // 이 시험에선 용족이 처음 온다
       const sage0 = W.spawn(town, { race: "human", job: "merchant", ageYears: 40 }); sage0.traits.ambition = 0.99; A.learn(sage0, "dragon_tongue");
-      W.day = W.day - (W.day % 5) + 2; A.genesis(W);
+      W.day = W.day - (W.day % 5) + 2; A.genesis(W, true);
       t.check(!A.JOBS.w_dragon_tongue, "용족이 없으면 수요가 없다");
       const dks = [0, 1].map(() => W.spawn(town, { race: "dragonkin", job: "adventurer", ageYears: 120 })); if (!W.racesSeen.includes("dragonkin")) W.racesSeen.push("dragonkin");
       t.check(dks.every((d) => A.knows(d, "dragon_tongue")), "용족은 태어날 때부터 용의 언어를 안다");
-      A.genesis(W);
+      A.genesis(W, true);
       const sage = W.npcs.find((n) => n.pioneer === "w_dragon_tongue") || sage0;
       const J = A.JOBS.w_dragon_tongue, wk = A.worksOf("w_dragon_tongue")[0];
       t.check(J && J.name === "용언 통역가" && sage.job === J.id, `새 직업: ${J && J.name}, 첫 사람 ${sage.name}`);
@@ -325,7 +325,7 @@
       t.check(A.JOBS.w_dragon_tongue && w2.npcs[sage.id].job === "w_dragon_tongue", "불러와도 남아 있다");
       // 다른 지식의 수요: 전쟁이 나면 룬을 아는 사람이 일을 얻는다
       const rk = W.spawn(town, { race: "dwarf", job: "blacksmith", ageYears: 60 }); A.learn(rk, "rune"); W.war = W.war || {}; const wasWar = W.war.active; W.war.active = true;
-      A.genesis(W); t.check(A.JOBS.w_rune && A.JOBS.w_rune.name === "룬 술사" && G.jobReady(A.JOBS.w_rune), `전쟁 중 룬: ${A.JOBS.w_rune && A.JOBS.w_rune.name}`); W.war.active = wasWar;
+      A.genesis(W, true); t.check(A.JOBS.w_rune && A.JOBS.w_rune.name === "룬 술사" && G.jobReady(A.JOBS.w_rune), `전쟁 중 룬: ${A.JOBS.w_rune && A.JOBS.w_rune.name}`); W.war.active = wasWar;
       A.newWorld(99, "다른 세계");
       t.check(!A.JOBS.w_dragon_tongue, "새 세계에는 없다");
       A.applyDefs(W);
@@ -342,7 +342,7 @@
       W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2;
       const cook = W.spawn(t.town(), { race: "human", job: "cook", ageYears: 35 }); A.learn(cook, "field_surgery"); cook.traits.ambition = 1; vet.traits.ambition = 0;
       const tw = W.towns[cook.town], f0 = tw.food; tw.food = 0; // 곳간이 빠듯하면 먹을 것을 만드는 사람은 새 직업을 열지 않는다
-      A.genesis(W); W.war.active = was; tw.food = f0;
+      A.genesis(W, true); W.war.active = was; tw.food = f0;
       t.check(cook.job === "cook", "곳간이 빠듯할 때 요리사는 자기 일을 지킨다");
       const J = A.JOBS.w_field_surgery, wk = A.worksOf("w_field_surgery")[0];
       t.check(J && J.name === "야전 의원" && vet.job === J.id && wk.client === "sick" && wk.effects.heal, `전쟁 중 → ${J && J.name}: ‘${wk && wk.name}’ ${wk && wk.steps.map((s) => s.name).join("→")}`);
@@ -361,7 +361,7 @@
       t.check(spec && A.worksOf(spec.id)[0].steps.every((s) => s.p.hard < 0), "전문 직업은 단계가 수월하다");
       // 소멸과 부활: 아무도 없고 수요도 없이 2년이 지나면 사라진다
       const vet = W.spawn(town, { race: "human", job: "merchant", ageYears: 40 }); A.learn(vet, "field_surgery");
-      W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2; A.genesis(W);
+      W.war = W.war || {}; const was = W.war.active; W.war.active = true; W.day = W.day - (W.day % 5) + 2; A.genesis(W, true);
       const FS = A.JOBS.w_field_surgery;
       if (FS) {
         for (const n of W.npcs) if (n.job === FS.id) { n.job = "merchant"; n.pioneer = null; }
@@ -384,6 +384,41 @@
       t.check(p.side === "baker" && G.buildingMenu(W, m).some((v) => v.id === "wk:bake" && v.ok), "부업의 업무(빵 굽기)가 메뉴에 나온다");
       // 빠졌던 업무: 농부의 밭 가꾸기, 경비병 순찰, 용병 호위 (피하고 받아치기)
       for (const id of ["tend_field", "patrol", "escort"]) { const wk = A.CONTENT.works.find((x) => x.id === id); t.check(wk && G.workReady({ ...wk, sim: "steps" }), `${wk.name}: ${wk.steps.map((s) => s.name).join(" → ")}`); }
+    } },
+    { id: "endless", name: "경험에서 지식과 직업이, 혼혈·땅·마력에서 종족이 끝없이 생긴다", run(t) {
+      const W = t.w, town = t.town(), r0 = W.rng.next;
+      // 자기 일이 원래 쌓는 경험은 숙련일 뿐: 농부의 '곡식 기르기'는 새 지식이 되지 않는다
+      const f = W.spawn(town, { race: "human", job: "farmer", ageYears: 40 }); for (const n of W.alive()) if (n !== f) delete n.exp; f.exp = { "nature:grain": 500 };
+      W.rng.next = () => 0.001; A.experienceBirth(W); W.rng.next = r0;
+      t.check(!A.knows(f, "x_nature_grain"), "농부가 곡식을 기르는 건 새 지식이 아니다");
+      // 일 밖의 경험(전장에서 짐승을 몰던 경험)은 새 지식이 된다
+      f.exp = { "body:beast": 500 }; W.rng.next = () => 0.001; A.experienceBirth(W); W.rng.next = r0;
+      const K = A.KNOW("x_body_beast");
+      t.check(A.knows(f, "x_body_beast") && K.name === "짐승 몰기" && K.jobName === "사냥꾼", W.events.filter((e) => e && e.kind === "discovery").pop().text);
+      // 그 지식은 수요가 맞으면 직업이 된다 (함수 없는 정의가 w.defs에 저장)
+      f.traits.ambition = 1; const tw = W.towns[f.town]; tw.food = 9999; tw.worry = false; W.lastGenesis = -999;
+      for (const k of A.CONTENT.knowledge) if (k.id !== "x_body_beast" && k.demand) k._d = k.demand, k.demand = null;
+      A.genesis(W, true); for (const k of A.CONTENT.knowledge) if (k._d) k.demand = k._d, delete k._d;
+      t.check(A.JOBS.w_x_body_beast && f.job === "w_x_body_beast", `새 직업: ${A.JOBS.w_x_body_beast && A.JOBS.w_x_body_beast.name} (${A.worksOf("w_x_body_beast").map((x) => x.name + ": " + x.steps.map((s) => s.name).join("→")).join("")})`);
+      // 혼혈이 굳어 새 종족이 된다
+      const mixed = [0, 1, 2, 3].map(() => { const n = W.spawn(town, { race: "human", job: "merchant", ageYears: 20 }); n.heritage = { human: 0.5, dwarf: 0.5 }; n.birthplace.day = 0; return n; });
+      for (const r of A.CONTENT.races) if (r.mix && r.mix.includes("human") && r.mix.includes("dwarf") && r.gen) r.mix = null;
+      W.day = W.day - (W.day % 30) + 17; W.rng.next = () => 0.5; A.raceLife(W); W.rng.next = r0;
+      const R = A.RACES[mixed[0].race];
+      t.check(R && R.gen && R.mix && mixed.every((n) => n.race === R.id) && A.knows(mixed[0], "lang_" + R.id), W.events.filter((e) => e && e.kind === "race_born").pop().text + ` [${R && R.name} gen ${R && R.gen} mix ${R && R.mix} races ${mixed.map((n) => n.race)} lang ${R && A.knows(mixed[0], "lang_" + R.id)}]`);
+      // 마력의 폭풍
+      const before = A.CONTENT.races.length;
+      for (let tries = 0; tries < 12 && A.CONTENT.races.length === before; tries++) { let k = 0; W.rng.next = () => (k++ === 0 ? 0.0001 : ((k * 0.37 + tries * 0.13) % 1)); W.day += 1; A.raceLife(W); }
+      W.rng.next = r0;
+      t.check(A.CONTENT.races.length > before, W.events.filter((e) => e && e.kind === "race_born").pop().text);
+      // 저장해도 남고, 다른 세계엔 없다
+      const w2 = A.World.deserialize(JSON.parse(W.serialize()));
+      t.check(A.RACES[R.id] && w2.npcs[mixed[0].id].race === R.id && A.KNOW("x_body_beast").jobName === "사냥꾼", "불러와도 새 종족·지식·직업이 남는다");
+      A.newWorld(55, "다른 세계"); t.check(!A.RACES[R.id] && !A.JOBS.w_x_body_beast, "다른 세계엔 없다"); A.applyDefs(W);
+      // 사라짐: 마지막 한 사람이 죽으면
+      for (const n of W.npcs) if (n.race === R.id) n.alive = false;
+      W.day = W.day - (W.day % 30) + 47; A.raceLife(W);
+      t.check(W.events.some((e) => e && e.kind === "race_gone" && e.data.species === R.id), W.events.filter((e) => e && e.kind === "race_gone").pop().text);
     } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);

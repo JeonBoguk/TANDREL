@@ -518,6 +518,8 @@
     potion: { name: "치유 물약", heal: 5, price: 15, sell: 8 },
   };
   Object.assign(ITEMS, A.CONTENT.items); // 콘텐츠 팩의 아이템
+  /** 세계에서 생긴 물건(gen)을 아이템 표에 맞춘다: 이전 세계의 것은 빼고 지금 세계의 것을 넣는다 (engine applyDefs가 부른다) */
+  function syncGenItems() { for (const k of Object.keys(ITEMS)) if (ITEMS[k].gen) delete ITEMS[k]; for (const [k, v] of Object.entries(A.CONTENT.items)) if (v.gen) ITEMS[k] = v; }
   const CROPS = {
     turnip: { name: "순무", days: 4, seasons: ["봄", "가을"], item: "turnip", y: [1, 2] },
     potato: { name: "감자", days: 6, seasons: ["봄", "여름"], item: "potato", y: [1, 3] },
@@ -1794,7 +1796,7 @@
   }
 
   const G = {
-    JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,

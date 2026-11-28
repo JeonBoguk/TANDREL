@@ -38,7 +38,7 @@ game.js MAP (저장 안 함): allTownDefs(w) + homeMods(w)로 매번 다시 만�
 | 시스템 | 상태 | 핵심 근거와 한계 |
 |---|---|---|
 | 종족 정의·추가 | ✅ | `CONTENT.races` + `extend`. 숨은 종족(`hidden`, 용족은 `dragon_contact` 사건으로 등장) |
-| 세계별 종족 | ◐ | 정의는 전역, 세계마다 다른 건 `w.racesSeen`(나타난 종족 id)뿐 |
+| 세계별 종족 | ✅ `w.defs.races`(혼혈·땅·마력으로 생기고 사라짐) · 이전: ◐ | 정의는 전역, 세계마다 다른 건 `w.racesSeen`(나타난 종족 id)뿐 |
 | 혼혈 | ◐ | `births()`: `mix` 정의가 있는 조합만 50%로 혼혈 종족. 유전은 성격 평균뿐 |
 | 외형 | △ | 인물 필드 없음. `render.js lookOf()`가 `hash(n.id)`로 매번 계산 → 유전 불가 |
 | 성장 속도·마법 친화 | ✗ | `ADULT = 16` 모든 종족 공통 |
