@@ -479,6 +479,38 @@
       const g0 = n.gold; A._.rWork(n, W, 1); const full = n.gold - g0; const g1 = n.gold; A._.rWork(n, W, 0.3); const part = n.gold - g1; W.rng.next = rr;
       t.check(full >= 0 && part <= full + 0.01, `일한 만큼 번다 (하루치 ${full.toFixed(1)} · 조금 ${part.toFixed(1)})`);
     } },
+    { id: "appts", name: "약속: 친구끼리 날을 잡아 만나고, 비 오면 미루고, 플레이어와의 약속은 미션이 된다", run(t) {
+      const W = t.w, town = t.town(), p = t.p();
+      const [a, b] = W.residents(town, true).filter((n) => n.controller !== "player" && !n.at_war).slice(0, 2);
+      a.rel[b.id] = 60; b.rel[a.id] = 60; a.traits.kindness = 1; b.traits.kindness = 1; a.traits.greed = 0; b.traits.greed = 0;
+      W.appts = []; W.weather = { kind: "맑음", day: W.day };
+      while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+      const ap = A.makeAppt(W, a, b, { act: "fish", day: W.day, hour: 10 }); // 시계가 0이면 그날 아침 6시
+      t.check(ap && ap.place === "river", `약속: ${A.apptWhen(W, ap)} ${A.apptText(ap)}`);
+      W.weather = { kind: "맑음", day: W.day };
+      G.tick(W, 4 * 60 + 30); // 10:30
+      t.check(ap.state === "kept" && a.life.act === "fish" && b.life.act === "fish", `약속한 시간에 둘 다 낚시 중 (${a.name}: ${A.LIFE_LABEL[a.life.act]}, ${b.name}: ${A.LIFE_LABEL[b.life.act]})`);
+      // 비 오는 날의 바깥 약속은 미룬다
+      while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+      W.appts = W.appts.filter((x) => ![x.a, x.b].some((id) => id === a.id || id === b.id));
+      const ap2 = A.makeAppt(W, a, b, { act: "play", day: W.day, hour: 11 }); W.weather = { kind: "비", day: W.day };
+      G.tick(W, 5 * 60 + 30);
+      t.check(ap2.state === "moved" && W.appts.some((x) => x.state === "planned" && x.a === a.id && x.act === "play" && x.day > W.day), "비가 와서 소풍을 미뤘다");
+      // 플레이어와의 약속: 미션이 되고, 그 시간에 곁에 가면 지킨 것
+      W.weather = { kind: "맑음", day: W.day };
+      while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+      t.e().missions = []; W.appts = W.appts.filter((x) => ![x.a, x.b].includes(a.id));
+      const s = S.talk(W, a.id, "appt"); const accept = s.options.find((o) => /좋아요/.test(o.label)); accept.go();
+      const m = t.e().missions.find((x) => !x.done && x.type === "appt");
+      t.check(m && /약속/.test(S.missionTitle(W, m)), m ? S.missionTitle(W, m) : "미션 없음");
+      const pa = W.appts.find((x) => x.id === m.appt);
+      while (W.day < pa.day) G.tick(W, Math.min(60, 1440 - W.clock) || 60);
+      W.weather = { kind: "맑음", day: W.day }; W.festivalToday = {}; W.holiday = null; // 잔치 날이면 바깥 약속은 미뤄지므로, 이 시험에선 평일로
+      G.tick(W, Math.max(0, (pa.hour - 6) * 60 + 20 - W.clock));
+      G.updateWalkers(W, 0.1); const k = G.walkers.get(a.id); if (k) { W.ppos.x = k.x + 1; W.ppos.y = k.y; }
+      S.afterTick(W);
+      t.check(pa.state === "kept" && m.done && !m.failed, `${a.name}와의 약속을 지켰다`);
+    } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
       A.setJob(p, "farmer"); p.gold = 60;

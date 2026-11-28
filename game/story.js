@@ -125,7 +125,42 @@
     if (["career", "treasure", "drought"].includes(kind)) return "살림·장사";
     return "사람들";
   }
-  function afterTick(w) { checkOracle(w); }
+  function afterTick(w) { checkOracle(w); checkAppts(w); }
+  // ---- 약속 (플레이어와 주민)
+  const pendingAppt = (w, n) => (w.appts || []).some((a) => a.state === "planned" && ((a.a === n.id && a.b === w.player.id) || (a.b === n.id && a.a === w.player.id)));
+  function apptMission(w, n, ap) { return addMission(w, { type: "appt", to: n.id, appt: ap.id, reward: 0, fame: 0 }); }
+  function askAppt(w, s) {
+    const n = w.npcs[s.nid], p = w.player;
+    tick5(s);
+    const act = w.rng.choice(["fish", "play", "meal"]), what = { fish: "낚시", play: "소풍", meal: "저녁" }[act];
+    s.say("me", `언제 같이 ${what} 가요.`);
+    if (opinion(n, p.id) < 10 || w.rng.next() > 0.4 + opinion(n, p.id) / 100) { s.say("npc", pick(w, ["음… 요즘은 좀 바빠서요.", "다음에요, 다음에."])); toMenu(w, s); return; }
+    const ap = A.makeAppt(w, n, p, { act });
+    if (!ap) { s.say("npc", "요즘 약속이 많아서요. 다음에 해요."); toMenu(w, s); return; }
+    apptMission(w, n, ap);
+    s.say("npc", `좋아요! ${A.apptWhen(w, ap)}에 ${A.apptText(ap)}, 잊지 마요.`);
+    toMenu(w, s);
+  }
+  /** 플레이어와의 약속: 그 시간(2시간 안)에 그 사람 곁에 가면 지킨 것, 시간이 지나면 바람맞힌 것 */
+  function checkAppts(w) {
+    const p = w.player; if (!p || !p.alive || !w.ppos) return;
+    const h = G.hour(w), e = EX(w);
+    for (const ap of (w.appts || []).filter((a) => a.state === "planned" && (a.a === p.id || a.b === p.id))) {
+      const n = w.npcs[ap.a === p.id ? ap.b : ap.a], m = e.missions.find((x) => !x.done && x.type === "appt" && x.appt === ap.id);
+      const late = w.day > ap.day || (w.day === ap.day && h >= ap.hour + 2);
+      const k = G.walkers.get(n.id), near = k && w.day === ap.day && h >= ap.hour && Math.hypot(k.x - w.ppos.x, k.y - w.ppos.y) < 5;
+      if (near) {
+        ap.state = "kept"; adjust(n, p.id, 8); p.fame += 0;
+        w.record("chat", `${jo(p.name, "과/와")} ${jo(n.name, "이/가")} 약속대로 ${A.apptText(ap)}${jo(A.apptText(ap), "을/를").slice(A.apptText(ap).length)} 했다`, { actor: p.id, target: n.id, town: p.town, imp: 2, sent: 3, wr: 0 });
+        if (m) { m.done = true; G.log(w, `${jo(n.name, "과/와")}의 약속을 지켰다. 즐거운 시간이었다.`, "good"); }
+        G.say(n.id, pick(w, ["왔네요! 기다렸어요.", "딱 맞춰 왔네요!"]), 3);
+      } else if (late || !n.alive) {
+        ap.state = "broken";
+        if (n.alive) { adjust(n, p.id, -10); w.record("stood_up", `${jo(n.name, "이/가")} ${jo(p.name, "과/와")}의 약속(${A.apptText(ap)})에 나갔지만 ${jo(p.name, "은/는")} 끝내 오지 않았다`, { actor: p.id, target: n.id, town: n.town, imp: 2, sent: -3, wr: 0.1 }); }
+        if (m) { m.done = true; m.failed = true; G.log(w, `${jo(n.name, "과/와")}의 약속을 지키지 못했다…`, "bad"); }
+      }
+    }
+  }
 
   // ================================================================ 에피소드
   const C = (id, label, hint) => ({ id, label, hint });
@@ -194,6 +229,7 @@
     else if (n.lover === p.id && opinion(n, p.id) >= 65 && w.rng.next() < 0.3) opener = "propose";
     else if (n.goal && n.goal.target === p.id && n.traits.bravery > 0.5) opener = "confront";
     else if (opinion(n, p.id) >= 40 && G.hour(w) < 17.5 && w.rng.next() < 0.25 && !EX(w).missions.some((m) => !m.done && m.type === "visit")) opener = "invite";
+    else if (opinion(n, p.id) >= 30 && w.rng.next() < 0.15 && !pendingAppt(w, n)) opener = "appt";
     k.seek = () => { if (Story.onOpenTalk) Story.onOpenTalk(n.id, opener); };
     k.say = opener === "confront" ? "이봐!" : "저기요!"; k.sayT = 2.5;
   }
@@ -346,11 +382,12 @@
       case "beat": return `${N(m.target)} 혼내 주기 (${N(m.from)}의 부탁)`;
       case "match": return `${N(m.b)}에게 ${N(m.a)}의 마음 전하기`;
       case "bounty": return `현상금: ${N(m.target)} 붙잡기`;
+      case "appt": { const ap = (w.appts || []).find((a) => a.id === m.appt); return ap ? `${N(m.to)}${jo(N(m.to), "과/와").slice(N(m.to).length)} 약속: ${A.apptWhen(w, ap)} ${A.apptText(ap)}` : `${jo(N(m.to), "과/와")}의 약속`; }
     }
     return "미션";
   }
   function missionWhere(w, m) {
-    const id = m.type === "build" ? m.from : m.type === "visit" ? m.to : m.type === "message" || m.type === "parcel" ? m.to : m.type === "match" ? m.b : m.type === "beat" || m.type === "bounty" ? m.target : m.type === "fetch" && m.from !== null && m.from !== undefined ? m.from : null;
+    const id = m.type === "build" ? m.from : m.type === "visit" || m.type === "appt" ? m.to : m.type === "message" || m.type === "parcel" ? m.to : m.type === "match" ? m.b : m.type === "beat" || m.type === "bounty" ? m.target : m.type === "fetch" && m.from !== null && m.from !== undefined ? m.from : null;
     if (id === null || id === undefined) return m.type === "hunt" ? "들판과 숲" : m.board ? `${w.towns[m.board].name} 길드` : "";
     const n = w.npcs[id];
     return n && n.alive ? (n.at_war ? "전선" : w.towns[n.town].name) : "";
@@ -473,6 +510,15 @@
     if (opener === "confess") { say("npc", `저… ${w.player.name}. 할 말이 있어요. 사실… 당신이 좋아요.`); s.options = [O("마음을 받아준다", "연인이 된다", () => romance(w, s, "accept")), O("정중히 거절한다", "", () => romance(w, s, "gentle")), O("차갑게 거절한다", "상대가 크게 상처받는다", () => romance(w, s, "cold"))]; return s; }
     if (opener === "propose") { say("npc", `${w.player.name}. 이거… 받아 줄래? 나와 결혼해 줘.`); s.options = [O("청혼을 받아들인다", "결혼한다", () => { say("me", "응, 좋아!"); say("sys", marry(w, w.player, n)); toMenu(w, s); }), O("아직은 때가 아니라고 말한다", "", () => { adjust(n, w.player.id, -10); say("me", "조금만 더 기다려 줄래?"); say("npc", "…알았어. 기다릴게."); toMenu(w, s); })]; return s; }
     if (opener === "confront") { confrontByNPC(w, s, n); return s; }
+    if (opener === "appt") { // 약속을 청한다
+      const draft = { act: w.rng.choice(["fish", "play", "meal"]), day: w.day + w.rng.randint(1, 2) };
+      draft.hour = draft.act === "meal" ? 18 : w.rng.randint(10, 15);
+      const when = draft.day === w.day + 1 ? "내일" : "모레", what = { fish: "냇가에서 낚시할래요", play: "들판으로 소풍 갈래요", meal: "주점에서 저녁 먹을래요" }[draft.act];
+      say("npc", `${w.player.name}! ${when} ${draft.hour}시에 같이 ${what}?`);
+      s.options = [O("좋아요, 갈게요", "약속이 미션이 된다", () => { say("me", "좋아요, 꼭 갈게요."); const ap = A.makeAppt(w, n, w.player, draft); if (ap) apptMission(w, n, ap); say("npc", "약속했어요!"); toMenu(w, s); }),
+        O("그날은 어려워요", "", () => { say("me", "미안해요, 그날은 좀…"); adjust(n, w.player.id, -1); say("npc", "아쉽네요. 다음에 해요."); toMenu(w, s); })];
+      return s;
+    }
     if (opener === "invite") { say("npc", pick(w, [`${w.player.name}! 오늘 저녁에 우리 집에 올래요? 6시쯤부터 있을게요.`, `저기… 오늘 저녁에 시간 돼요? 우리 집에서 밥 한번 같이 먹어요.`])); s.options = inviteChoices(w, n, s); return s; }
     const vc = visitCtx(w, n);
     if (vc) { // 초대받은 집 안: 집에서만 나오는 대화
@@ -509,6 +555,7 @@
     if (date && G.hour(w) >= 18.5 && G.hour(w) < 22.5) opts.push(O("(데이트) 함께 저녁을 먹는다", "약속한 데이트", () => dateNight(w, s, date), "heart"));
     opts.push(O("요즘 어때요?", "그 사람의 사정을 듣는다", () => howAreYou(w, s)));
     opts.push(O("무슨 소식 없어요?", "소문을 듣는다", () => rumor(w, s)));
+    if (isAdult(n) && n.controller !== "player" && !pendingAppt(w, n)) opts.push(O("같이 놀러 갈래요?", "약속을 잡는다", () => askAppt(w, s)));
     if (isAdult(n) && !related(p, n) && !e.missions.some((m) => !m.done && m.type === "visit" && m.to === n.id)) opts.push(O("집에 놀러 가도 돼요?", "친한 사이라면 초대해 준다", () => askVisit(w, s), "heart"));
     if (p.job === "builder" && isAdult(n) && n.id !== p.id && !e.missions.some((m) => !m.done && m.type === "build" && m.from === n.id)) opts.push(O("집에 고칠 데 없어요?", "목수로서 일감을 얻는다", () => askBuild(w, s), "quest"));
     if (n.job === "builder" && isAdult(n) && p.home) opts.push(O("집을 고치고 싶어요", e.reno ? (e.reno.builder === n.id ? `공사 중 · ${Math.max(0, e.reno.until - w.day)}일 남음` : "다른 목수가 공사 중") : "넓히기·지붕·벽·바닥", () => renoMenu(w, s), "quest"));

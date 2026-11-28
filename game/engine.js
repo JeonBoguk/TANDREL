@@ -710,7 +710,7 @@
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
         papers: this.papers, lastPaper: this.lastPaper, todayLog: this.todayLog, land: this.land || {}, session: this.session || {}, name: this.name, seed: this.seed, rng: this.rng.s, day: this.day,
         towns, nations: this.nations, npcs, events, chronicle: this.chronicle, war: { ...this.war, refused: [...(this.war.refused || [])] },
-        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, weather: this.weather || null, holiday: this.holiday || null, festivalToday: this.festivalToday || {}, lifeDone: this.lifeDone || 0, jobSeen: this.jobSeen || {}, lastGenesis: this.lastGenesis ?? null, raceGone: this.raceGone || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
+        droughtUntil: this.droughtUntil, usedNames: [...this.usedNames], initialPop: this.initialPop, worldLog: this.worldLog || {}, founded: this.founded || [], jobsOpen: this.jobsOpen || [], defs: this.defs, appts: this.appts || [], apptSeq: this.apptSeq || 0, weather: this.weather || null, holiday: this.holiday || null, festivalToday: this.festivalToday || {}, lifeDone: this.lifeDone || 0, jobSeen: this.jobSeen || {}, lastGenesis: this.lastGenesis ?? null, raceGone: this.raceGone || [], racesSeen: this.racesSeen || null, assets: this.assets, innMods: this.innMods || {},
         playerId: this.playerId, autoDays: this.autoDays,
       });
     }
@@ -719,7 +719,7 @@
       if (d.format !== "asteria-world") throw new Error("탄드렐 세계 저장 파일이 아닙니다");
       d = migrate(d);
       const w = new World(d.seed);
-      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w); w.jobSeen = d.jobSeen || {}; w.weather = d.weather || null; w.holiday = d.holiday || null; w.festivalToday = d.festivalToday || {}; w.lifeDone = d.lifeDone || 0; w.lastGenesis = d.lastGenesis ?? null; w.raceGone = d.raceGone || [];
+      w.defs = d.defs || { jobs: [], works: [] }; applyDefs(w); w.jobSeen = d.jobSeen || {}; w.weather = d.weather || null; w.appts = d.appts || []; w.apptSeq = d.apptSeq || 0; w.holiday = d.holiday || null; w.festivalToday = d.festivalToday || {}; w.lifeDone = d.lifeDone || 0; w.lastGenesis = d.lastGenesis ?? null; w.raceGone = d.raceGone || [];
       w.worldId = d.worldId;
       w.name = d.name || "탄드렐";
       for (const def of d.founded || []) addTown(w, def); // 저장된 마을 상태를 덮어쓰기 전에 세운 나라의 마을을 만든다
@@ -1141,6 +1141,7 @@
     agriLife(w);
     newWeather(w);
     calendarDay(w);
+    w.appts = (w.appts || []).filter((p) => p.day >= w.day - 3); // 지난 약속은 사흘 뒤 지운다
     w.lifeDone = 0;
     const people = w.rng.shuffle(w.alive());
     w.queue = people.map((n) => [n.id, w.rng.randint(60, 1020)]).sort((a, b) => a[1] - b[1]);
@@ -1598,8 +1599,9 @@
     if (lunch || dinner) S.meal = 3;
     const workHours = h >= 7 && h < 18;
     if (workHours) S.work = Math.max(0, (intent === "work" ? 1.7 : intent ? 0.7 : 1.0) * (0.75 + tr.ambition * 0.35 + tr.greed * 0.25) * (1 - n.fatigue) * (rainy && outdoorJob ? 0.55 : 1) * (t.worked >= 8 ? 0.15 : 1) * (sick ? 0.3 : 1) * (holiday ? 0.15 : restDay ? 0.5 : 1));
-    S.rest = n.fatigue * 1.4 + (rainy ? 0.5 : 0) + (sick ? 1.2 : 0) + (intent === "rest" ? 1 : 0) + 0.05;
+    S.rest = n.fatigue * 1.4 + (rainy && !holiday ? 0.5 : 0) + (sick ? 1.2 : 0) + (intent === "rest" ? 1 : 0) + 0.05;
     if (h >= 9 && h < 20) S.play = (fine(w) ? 0.9 : rainy ? 0.15 : 0.45) * (0.4 + (1 - n.mood) * 1.1 + tr.bravery * 0.3) * (holiday && h >= 13 ? 4 : holiday ? 2 : restDay ? 1.5 : 1) * (intent === "social" ? 1.4 : 1);
+    if (holiday && h >= 13) S.play = Math.max(S.play || 0, 3); // 잔치는 날씨와 상관없이 열린다
     S.social = (0.15 + tr.kindness * 0.3 + (1 - n.mood) * 0.35) * (intent === "social" || intent === "help" ? 2 : 1) * (h >= 17 ? 1.6 : workHours ? 0.5 : 1);
     if (h >= 9 && h < 18 && n.gold > 25) S.shop = 0.25 + tr.greed * 0.25;
     if (J.healer || tr.kindness > 0.75) S.pray = 0.2 + (rainy ? 0.15 : 0);
@@ -1632,7 +1634,15 @@
     const hungryBreak = mealTime && isAdult(n) && n.life && !["meal", "sleep"].includes(n.life.act) && w.rng.next() < 0.8;
     // 잔치 날 오후: 하던 일을 놓고 광장으로
     const festBreak = isAdult(n) && w.festivalToday && w.festivalToday[n.town] && h >= 13 && h < 22 && n.life && !n.life.feast && !["sleep", "meal"].includes(n.life.act) && w.rng.next() < 0.75;
-    if (!n.life || m0 >= n.life.until || n.life.day !== w.day || hungryBreak || festBreak) {
+    const ap = isAdult(n) && h >= 7 && h < 22 && (!n.life || !n.life.appt) ? apptNow(w, n, h) : null;
+    if (ap) {
+      const other = ap.a === n.id ? ap.b : ap.a;
+      n.life = { act: ap.act, until: m0 + 120, day: w.day, place: ap.place, with: other, appt: ap.id, spot: ap.id * 37 };
+      if (ap.state === "planned" && w.npcs[other].controller !== "player") {
+        ap.state = "kept"; adjust(n, other, 4); adjust(w.npcs[other], n.id, 4);
+        if (w.rng.next() < 0.35) w.record("chat", `${jo(n.name, "과/와")} ${jo(w.npcs[other].name, "이/가")} 약속대로 ${apptText(ap)}${jo(apptText(ap), "을/를").slice(apptText(ap).length)} 했다`, { actor: n.id, target: other, town: n.town, imp: 1, sent: 2, wr: 0 });
+      }
+    } else if (!n.life || m0 >= n.life.until || n.life.day !== w.day || hungryBreak || festBreak) {
       const { act, hours } = planHour(w, n, h);
       const pl = placeFor(w, n, act);
       n.life = { act, until: m0 + hours * 60, day: w.day, ...pl };
@@ -1662,13 +1672,63 @@
           const tw = w.towns[n.town]; if (tw) tw.food = Math.max(0, tw.food - 0.15);
           n.mood = Math.min(1, n.mood + 0.2); break;
         }
-        n.mood = Math.min(1, n.mood + 0.14); n.fatigue = Math.min(1, n.fatigue + 0.03); if (L.with !== undefined) adjust(n, L.with, 1); if (L.with !== undefined && w.rng.next() < 0.015) smallMoment(w, n, L); break;
-      case "social": n.mood = Math.min(1, n.mood + 0.1); if (L.with !== undefined) { adjust(n, L.with, 2); if (w.rng.next() < 0.01) smallMoment(w, n, L); } break;
+        n.mood = Math.min(1, n.mood + 0.14); n.fatigue = Math.min(1, n.fatigue + 0.03); if (L.with !== undefined) { adjust(n, L.with, 1); maybePromise(w, n, L); } if (L.with !== undefined && w.rng.next() < 0.015) smallMoment(w, n, L); break;
+      case "social": n.mood = Math.min(1, n.mood + 0.1); if (L.with !== undefined) { adjust(n, L.with, 2); if (w.rng.next() < 0.01) smallMoment(w, n, L); maybePromise(w, n, L); } break;
+      case "fish": n.mood = Math.min(1, n.mood + 0.12); { const tw = w.towns[n.town]; if (tw) tw.food += 0.25; } if (L.with !== undefined) adjust(n, L.with, 1); break;
       case "shop": { const sellers = w.residents(n.town, true).filter((m) => ["merchant", "baker"].includes(m.job) && m !== n); const v = Math.min(n.gold * 0.1, 4); n.gold -= v; if (sellers.length) w.rng.choice(sellers).gold += v * 0.9; n.mood = Math.min(1, n.mood + 0.05); break; }
       case "pray": n.mood = Math.min(1, n.mood + 0.08); { const pr = w.residents(n.town, true).find((m) => m.job === "priest" && m !== n); if (pr && n.gold > 1) { n.gold -= 0.3; pr.gold += 0.3; } } break;
       case "chores": n.mood += (0.55 - n.mood) * 0.03; break;
       default: break;
     }
+  }
+  /* 약속: 친구끼리 '며칠 뒤 몇 시에 어디서 무엇을 하자'를 정한다. 두 사람이 같은 약속을 보도록 세계에 하나의 목록(w.appts).
+   *  { id, a, b, day, hour, act: fish|play|meal, place: river|meadow|hill|tavern, town, state: planned|kept|moved|broken, by }
+   *  그날 그 시간이 되면 둘 다 그 자리로 간다. 바깥 약속은 비·눈·폭풍이면 미룬다. 드물게 한쪽이 바람맞히면 사이가 틀어진다.
+   *  플레이어와의 약속은 story.js가 미션으로 보여 주고, 만났는지(그 시간에 곁에 갔는지)를 본다. */
+  const APPT_KIND = { fish: { place: "river", word: "낚시하기로" }, play: { place: "meadow", word: "소풍 가기로" }, meal: { place: "tavern", word: "저녁을 먹기로" } };
+  function makeAppt(w, a, b, opt = {}) {
+    w.appts = w.appts || [];
+    const pending = (x) => w.appts.filter((p) => p.state === "planned" && (p.a === x.id || p.b === x.id)).length;
+    if (pending(a) >= 2 || pending(b) >= 2) return null;
+    const act = opt.act || w.rng.choice(["fish", "play", "meal"]), day = opt.day ?? w.day + w.rng.randint(1, 3), hour = opt.hour ?? (act === "meal" ? 18 : w.rng.randint(10, 15));
+    const ap = { id: (w.apptSeq = (w.apptSeq || 0) + 1), a: a.id, b: b.id, day, hour, act, place: opt.place || APPT_KIND[act].place, town: a.town, state: "planned", by: a.id };
+    w.appts.push(ap);
+    return ap;
+  }
+  const apptWhen = (w, ap) => `${ap.day === w.day ? "오늘" : ap.day === w.day + 1 ? "내일" : ap.day === w.day + 2 ? "모레" : `${ap.day - w.day}일 뒤`} ${ap.hour}시`;
+  const apptText = (ap) => ({ fish: "냇가에서 낚시", play: "들판으로 소풍", meal: "주점에서 저녁" })[ap.act];
+  /** 이 사람의 지금 시간 약속 (지킬지 여기서 정해진다) */
+  function apptNow(w, n, h) {
+    const ap = (w.appts || []).find((p) => (p.state === "planned" || p.state === "kept") && p.day === w.day && h >= p.hour && h < p.hour + 1 && (p.a === n.id || p.b === n.id));
+    if (!ap) return null;
+    if (ap.state === "kept") return ap; // 먼저 온 사람이 이미 자리에 있다: 함께한다
+    const other = w.npcs[ap.a === n.id ? ap.b : ap.a];
+    if (!other || !other.alive || other.at_war || other.town !== n.town && other.controller !== "player") { ap.state = "broken"; return null; }
+    if ((ap.place !== "tavern" && wet(w)) || (w.festivalToday && w.festivalToday[n.town])) { // 날씨가 궂거나 잔치 날이면 미룬다
+      ap.state = "moved"; const nx = { ...ap, id: ++w.apptSeq, day: w.day + w.rng.randint(1, 2), state: "planned" }; w.appts.push(nx);
+      if (w.rng.next() < 0.3) w.record("chat", `${jo(n.name, "과/와")} ${jo(other.name, "이/가")} ${w.weather.kind} 때문에 ${apptText(ap)}${jo(apptText(ap), "을/를").slice(apptText(ap).length)} 다음으로 미뤘다`, { actor: n.id, target: other.id, town: n.town, imp: 1, wr: 0 });
+      return null;
+    }
+    if (other.controller === "player") return ap; // 플레이어 쪽 결과는 story.js가 정한다
+    if (ap.flake === undefined) { // 바람맞히기: 무심하거나 욕심 많은 사람이 가끔
+      const who = [n, other].find((x) => w.rng.next() < 0.04 + (1 - x.traits.kindness) * 0.06 + x.traits.greed * 0.03);
+      ap.flake = who ? who.id : null;
+    }
+    if (ap.flake !== null) {
+      ap.state = "broken"; const f = w.npcs[ap.flake], v = f.id === n.id ? other : n;
+      adjust(v, f.id, -8);
+      w.record("stood_up", `${jo(v.name, "이/가")} ${jo(f.name, "과/와")}의 약속(${apptText(ap)})에 나갔지만 ${jo(f.name, "은/는")} 끝내 오지 않았다`, { actor: f.id, target: v.id, town: n.town, imp: 2, sent: -3, wr: 0.1 });
+      return null;
+    }
+    return ap;
+  }
+
+  /** 함께 있는 동안 가끔 다음 약속을 잡는다 */
+  function maybePromise(w, n, L) {
+    const f = w.npcs[L.with];
+    if (!f || f.controller === "player" || w.rng.next() > 0.05 || opinion(n, f.id) < 20) return;
+    const ap = makeAppt(w, n, f);
+    if (ap && w.rng.next() < 0.4) w.record("chat", `${jo(n.name, "과/와")} ${jo(f.name, "이/가")} ${apptWhen(w, ap)}에 ${apptText(ap)}${jo(apptText(ap), "을/를").slice(apptText(ap).length)} 하기로 했다`, { actor: n.id, target: f.id, town: n.town, imp: 1, wr: 0 });
   }
   /** 작은 추억: 맑은 날의 소풍, 친구와의 저녁 (신문에 오르지 않는 생애의 작은 사건) */
   function smallMoment(w, n, L) {
@@ -1679,7 +1739,7 @@
   }
   /** 시계가 지난 시간들을 산다 (clock은 06:00부터 흐른 분) */
   function lifeUntil(w, clock) {
-    const upto = Math.floor(clock / 60);
+    const upto = Math.min(24, Math.floor(clock / 60) + 1); // 그 시간이 시작될 때 할 일을 정한다
     while ((w.lifeDone || 0) < upto) {
       const b = w.lifeDone || 0, h = 6 + b, m0 = b * 60;
       for (const n of w.npcs) if (n.alive && !n.at_war && n.jail === 0 && !n.outside && n.controller !== "player") liveHour(w, n, h, m0);
@@ -1696,7 +1756,7 @@
   }
   /** 지금 무얼 하는지 (말 걸 때·사람 목록에 쓰인다) */
   const LIFE_LABEL_FEAST = "잔치 중";
-  const LIFE_LABEL = { sleep: "자는 중", work: "일하는 중", meal: "밥 먹는 중", rest: "쉬는 중", play: "놀러 나감", social: "친구와 함께", shop: "장 보는 중", pray: "기도하는 중", chores: "집안일", kid: "노는 중" };
+  const LIFE_LABEL = { fish: "낚시하는 중", sleep: "자는 중", work: "일하는 중", meal: "밥 먹는 중", rest: "쉬는 중", play: "놀러 나감", social: "친구와 함께", shop: "장 보는 중", pray: "기도하는 중", chores: "집안일", kid: "노는 중" };
 
   // ================================================================ 농업의 발전
   /* 사람이 늘면 굶주림이 온다. 굶주림을 겪은 마을에서 솜씨 좋은 농부가 새 농법을 깨치고, 농법은 그 마을의 수확을 늘린다.
@@ -2391,6 +2451,6 @@
   }
 
   const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, SPREAD, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  root.Asteria = { SAVE_VERSION, SPREAD, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

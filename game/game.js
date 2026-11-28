@@ -931,7 +931,12 @@
           }
           return spotNear(w, placeOf(t, "square"), n.id, 3);
         }
-        case "play": {
+        case "fish": case "play": {
+          if (L.place === "river") { // 냇가: 마을에서 가장 가까운 물가 근처에 앉는다
+            const R0 = 30; let best = null, bd = 1e9;
+            for (let y = cy - R0; y <= cy + R0; y += 2) for (let x = cx - R0; x <= cx + R0; x += 2) { const tt = MAP.getT(x, y); if (tt === T.WATER) { const d = dist(x, y, cx, cy) + ((L.spot || 0) % 7); if (d < bd && d > 8) { bd = d; best = [x, y]; } } }
+            if (best) for (let k = 0; k < 24; k++) { const x = best[0] + ((k * 5 + n.id) % 5) - 2, y = best[1] + ((k * 3 + n.id) % 5) - 2; if (walkable(w, x, y)) return [x, y]; }
+          }
           if (L.place === "square") return spotNear(w, placeOf(t, "square"), n.id + (L.with || 0), 3);
           if (L.place === "tavern") { const sp = workSpot(w, bdOf("tavern"), n, slotL + 77); if (sp) return sp; }
           // 들판·냇가·언덕: 마을 밖 한 곳에 같이 간 사람들이 모여 논다
