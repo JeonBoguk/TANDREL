@@ -1366,7 +1366,7 @@
   /** 종족 look에서 고른 외형. 인물 번호로 정하므로 같은 사람은 늘 같은 얼굴이다 (그림 쪽이 예전에 하던 계산과 같다) */
   function makeLook(n) {
     const rl = (RACES[n.race] && RACES[n.race].look) || {}, D = CONTENT.lookDefaults, h = (k) => lhash(n.id + 7, k, 3);
-    return { skin: pickBy(rl.skin || D.skin, h(1)), hair: pickBy(rl.hair || D.hair, h(2)), style: rl.curly ? "curly" : pickBy(D.styles, h(3)), eye: pickBy(D.eyes, h(4)) };
+    return { skin: pickBy(rl.skin || D.skin, h(1)), hair: pickBy(rl.hair || D.hair, h(2)), style: rl.curly ? "curly" : pickBy(D.styles, h(3)), eye: pickBy(rl.eyes || D.eyes, h(4)) };
   }
   /** 아이의 외형: 피부·눈은 부모 중 한 쪽, 머리색은 대개 부모 중 한 쪽(가끔 그 종족의 다른 빛깔), 머리 모양은 제각각 */
   function inheritLook(c, a, b) {
@@ -1627,6 +1627,22 @@
     for (let i = 0; i < 60 && out.size < n; i++) { const a = syl(w.rng.choice(poolA)), b = syl(w.rng.choice(poolB)); const nm = a.slice(0, Math.max(1, Math.ceil(a.length / 2))).join("") + b.slice(Math.floor(b.length / 2)).join(""); if (nm.length >= 2 && nm.length <= 4) out.add(nm); }
     return [...out];
   }
+  /* 새 종족의 생김새: 그림 조각(귀·뿔·꼬리·무늬·눈빛)을 땅·원소에 어울리게 고르고, 가끔 뜻밖의 변이를 섞는다 */
+  const LOOK_HINT = {
+    frost: { tail: "fluffy", ears: "animal" }, wood: { ears: "long", marks: "spots" }, shore: { ears: "fin", marks: "scales", tail: "scale" }, sun: { marks: "stripes", ears: "small" },
+    불: { horns: "curl", marks: "stripes", hornColor: "#d87a3a" }, 물: { ears: "fin", marks: "scales" }, 바람: { ears: "long", tail: "thin" }, 땅: { horns: "short", marks: "spots", hornColor: "#9a8060" },
+    빛: { horns: "crown", hornColor: "#f0e090" }, 어둠: { horns: "long", hornColor: "#4a3a5a", marks: "stripes" },
+  };
+  const LOOK_POOL = { ears: ["long", "animal", "fin", "small"], horns: ["long", "short", "curl", "crown"], tail: ["thin", "fluffy", "scale"], marks: ["stripes", "spots", "scales"] };
+  function shapeLook(w, look, hint, tint) {
+    const L = { ...look };
+    for (const [k, v] of Object.entries(LOOK_HINT[hint] || {})) if (w.rng.next() < 0.65) L[k] = v;
+    if (w.rng.next() < 0.45) { const k = w.rng.choice(Object.keys(LOOK_POOL)); L[k] = w.rng.choice(LOOK_POOL[k]); } // 뜻밖의 변이
+    if (L.horns && L.horns.startsWith && L.horns.startsWith("#")) { L.hornColor = L.hornColor || L.horns; L.horns = "long"; }
+    if (L.marks && !L.markColor) L.markColor = mixHex((L.skin || ["#c8a080"])[0], tint || "#3a2a20", 0.55);
+    if (tint && w.rng.next() < 0.6) L.eyes = [tint, mixHex(tint, "#000000", 0.4), mixHex(tint, "#ffffff", 0.2)]; // 눈빛
+    return L;
+  }
   function newRace(w, def, people, text, data) {
     w.defs.races = w.defs.races || [];
     const id = "r" + (w.defs.races.length + 1) + "_" + w.day;
@@ -1648,10 +1664,11 @@
       if (towns.length) {
         const t = w.rng.choice(towns), base = RACES[w.rng.choice(w.residents(t.id, true)).race], [el, adj, col] = w.rng.choice(ELEMENTS);
         const people = w.rng.shuffle(w.residents(t.id, true).filter((n) => n.race === base.id && n.controller !== "player")).slice(0, w.rng.randint(2, 4));
-        if (people.length >= 2 && !CONTENT.races.some((r) => r.base === base.id && r.element === el)) {
+        // 이미 마력으로 생긴 종족은 다시 바뀌지 않는다 ('바위 바위 인간' 같은 이름이 생기지 않게)
+        if (people.length >= 2 && !base.element && !CONTENT.races.some((r) => r.base === base.id && r.element === el)) {
           const bl = base.look || {};
           newRace(w, { name: `${adj} ${base.name}`, base: base.id, element: el, lifespan: base.lifespan.map((x) => Math.round(x * 1.2)), adultAge: base.adultAge || 16, magic: Math.min(1, (base.magic || 0.3) + 0.5),
-            traits: { ...(base.traits || {}), ambition: ((base.traits || {}).ambition || 0) + 0.05 }, look: { ...bl, skin: (bl.skin || ["#e0c0a0"]).map((c) => mixHex(c, col, 0.3)), hair: [col, mixHex(col, "#ffffff", 0.3), mixHex(col, "#000000", 0.3)], horns: el === "불" || el === "어둠" ? mixHex(col, "#ffffff", 0.5) : bl.horns },
+            traits: { ...(base.traits || {}), ambition: ((base.traits || {}).ambition || 0) + 0.05 }, look: shapeLook(w, { ...bl, skin: (bl.skin || ["#e0c0a0"]).map((c) => mixHex(c, col, 0.3)), hair: [col, mixHex(col, "#ffffff", 0.3), mixHex(col, "#000000", 0.3)] }, el, col),
             names: blendNames(w, base.names, base.names), domainSubject: el },
             people, `${t.name}에 ${el}의 마력이 휘몰아쳤다. 그 빛을 맞은 사람들의 몸이 바뀌었고, 사람들은 그들을 ‘{r}’{r~이라/라} 불렀다`, { how: "magic", element: el, from: base.id });
         }
@@ -1671,8 +1688,8 @@
       const A_ = RACES[a], B_ = RACES[b], la = A_.look || {}, lb = B_.look || {};
       newRace(w, { name: blendNames(w, A_.names, B_.names, 1)[0] + "족", mix: [a, b], lifespan: [0, 1].map((k) => Math.round((A_.lifespan[k] + B_.lifespan[k]) / 2)), adultAge: Math.round(((A_.adultAge || 16) + (B_.adultAge || 16)) / 2),
         magic: ((A_.magic || 0.3) + (B_.magic || 0.3)) / 2 + 0.05, traits: Object.fromEntries(["kindness", "bravery", "ambition", "greed"].map((k) => [k, (((A_.traits || {})[k] || 0) + ((B_.traits || {})[k] || 0)) / 2])),
-        look: { skin: [...(la.skin || []).slice(0, 1), ...(lb.skin || []).slice(0, 1), mixHex((la.skin || ["#e0c0a0"])[0], (lb.skin || ["#e0c0a0"])[0])], hair: [...(la.hair || ["#5a3a20"]).slice(0, 2), ...(lb.hair || ["#5a3a20"]).slice(0, 2)],
-          ears: la.ears || lb.ears, horns: la.horns || lb.horns, tail: la.tail || lb.tail, beard: la.beard && lb.beard, short: la.short && lb.short },
+        look: shapeLook(w, { skin: [...(la.skin || []).slice(0, 1), ...(lb.skin || []).slice(0, 1), mixHex((la.skin || ["#e0c0a0"])[0], (lb.skin || ["#e0c0a0"])[0])], hair: [...(la.hair || ["#5a3a20"]).slice(0, 2), ...(lb.hair || ["#5a3a20"]).slice(0, 2)],
+          ears: w.rng.choice([la.ears, lb.ears].filter(Boolean).concat([null])), horns: la.horns || lb.horns, hornColor: la.hornColor || lb.hornColor, tail: la.tail || lb.tail, marks: la.marks || lb.marks, markColor: la.markColor || lb.markColor, beard: la.beard && lb.beard, short: la.short && lb.short, eyes: la.eyes || lb.eyes }, null, null),
         names: blendNames(w, A_.names, B_.names), knows: [...new Set([...(A_.knows || []), ...(B_.knows || [])])] },
         mixed, `${jo(A_.name, "과/와")} ${B_.name}의 피가 대를 이어 섞인 사람들이 하나의 겨레가 되었다. 사람들은 그들을 ‘{r}’{r~이라/라} 불렀다`, { how: "mix", parents: [a, b] });
     }
@@ -1686,7 +1703,7 @@
         const E = ENVS[env], rl = R.look || {};
         newRace(w, { name: `${E.name} ${R.name}`, base: rid, env, lifespan: R.lifespan.map((x) => Math.round(x * E.life)), adultAge: R.adultAge || 16, magic: R.magic || 0.3,
           traits: Object.fromEntries(Object.keys({ ...(R.traits || {}), ...E.traits }).map((k) => [k, ((R.traits || {})[k] || 0) + (E.traits[k] || 0)])),
-          look: { ...rl, skin: (rl.skin || ["#e0c0a0"]).map((c) => mixHex(c, E.tint, 0.25)), hair: (rl.hair || ["#5a3a20"]).map((c) => mixHex(c, E.tint, 0.2)) }, names: blendNames(w, R.names, R.names), knows: R.knows || [] },
+          look: shapeLook(w, { ...rl, skin: (rl.skin || ["#e0c0a0"]).map((c) => mixHex(c, E.tint, 0.25)), hair: (rl.hair || ["#5a3a20"]).map((c) => mixHex(c, E.tint, 0.2)) }, env, E.color), names: blendNames(w, R.names, R.names), knows: R.knows || [] },
           ps, `${t.name}에서 대를 이어 온 ${R.name}들이 ${E.land}에 맞게 달라졌다. 사람들은 그들을 ‘{r}’{r~이라/라} 불렀다`, { how: "env", env, from: rid });
       }
     }

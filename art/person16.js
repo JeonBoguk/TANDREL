@@ -113,7 +113,9 @@ export const RAMPS = {
   cloth: { blue: ["#2e4058", "#46627e", "#6486a0"], red: ["#5a2a2a", "#8a4038", "#a85a4a"], green: ["#2e4632", "#4a6a48", "#6a8a5e"], cream: ["#8a7a62", "#c4b292", "#ddd0b2"], purple: ["#3e2e4e", "#5e4874", "#7e6694"], brown: ["#4a3426", "#6e5038", "#8e6c4c"], gray: ["#3a3c44", "#5a5e66", "#7c8088"] },
 };
 
-/** look: { skin, hair, hairStyle, shirt, pants, boots, eye, apron, hat, ears, horns, tail, beard } — 각 색은 3톤 램프 */
+/** look: { skin, hair, hairStyle, shirt, pants, boots, eye, apron, hat, ears, horns, tail, beard } — 각 색은 3톤 램프
+ *  종족 조각: ears "long"|"animal"|"fin"|"small" · horns 모양 "long"|"short"|"curl"|"crown" (hornColor) · tail "thin"|"fluffy"|"scale"
+ *  marks "stripes"|"spots"|"scales" (markColor) — 새 종족은 이 조각들을 골라 조합한다 */
 export function personFrame(L, dir, frame) {
   const OX = 2, OY = 8, B = new Buf(20, 40), view = dir === "left" || dir === "right" ? "side" : dir;
   const pal = {
@@ -125,14 +127,19 @@ export function personFrame(L, dir, frame) {
     o: "#e6dcc0", O: "#a8987a", W: lighten(L.shirt[2], 0.55), N: darken(L.shirt[0], 0.3), n: "#e8dcb8", y: "#d8b45a", F: lighten(L.boots ? L.boots[1] : "#5a3e30", 0.3),
     v: L.vest ? L.vest[1] : null, V: L.vest ? L.vest[2] : null, u: L.vest ? L.vest[0] : null,
     a: L.apron ? L.apron[1] : null, A: L.apron ? L.apron[2] : null, z: L.apron ? L.apron[0] : null,
+    x: L.markColor || darken(L.skin[0], 0.25), X: lighten(L.markColor || L.skin[1], 0.25),
   };
+  if (L.hornColor) { pal.o = L.hornColor; pal.O = darken(L.hornColor, 0.3); }
   const put = (x, y, ch) => { if (ch && ch !== "." && pal[ch]) B.set(x + OX, y + OY, pal[ch]); };
   const paint = (rows, ox, oy, P) => rows.forEach((r, y) => [...r].forEach((ch, x) => { if (P[ch]) B.set(x + ox + OX, y + oy + OY + bob, P[ch]); }));
   const step = frame === 1 ? 1 : frame === 3 ? -1 : 0;
   const bob = step ? -1 : 0;
   const tmpl = (rows, ox = 0, oy = 0) => rows.forEach((r, y) => [...r].forEach((ch, x) => put(x + ox, y + oy + bob, ch)));
   // ---- 꼬리 (몸 뒤)
-  if (L.tail && view !== "up") tmpl(["..hh", ".hhj", "hhj.", "hj.."], view === "side" ? 2 : 11, 20);
+  if (L.tail && view !== "up") {
+    const T = L.tail === "fluffy" ? [".HHh", "hHhh", "hhhj", ".hj.", "hj.."] : L.tail === "scale" ? ["..sk", ".skk", "sKk.", "sk..", "k..."] : ["..hh", ".hhj", "hhj.", "hj.."];
+    tmpl(T.map((r) => r.replace(/K/g, "x")), view === "side" ? 2 : 11, L.tail === "fluffy" || L.tail === "scale" ? 19 : 20);
+  }
   if (L.prop && PROPS[L.prop] && view === "up" && PROPS[L.prop].back) { const Pp = PROPS[L.prop]; paint(Pp.rows, 11 - Pp.ax, 21 - Pp.ay, Pp.pal); }
   const top = L.top || "shirt", over = L.over || null, bottom = top === "robe" ? "robe" : L.bottom || "pants";
   const U = (x, y, ch) => put(x, y + bob, ch); // 윗몸은 걸을 때 1px 오르내린다
@@ -201,10 +208,24 @@ export function personFrame(L, dir, frame) {
   for (const [x, y, ch] of FACE[view]) put(x, y, ch);
   if (L.beard && view !== "up") tmpl(view === "side" ? ["........hhhhhh..", ".......hhhhhhh..", "........hhhhh...", ".........hhh...."] : ["..hh........hh..", "..hhhhhmmhhhhj..", "...hhhhhhhhhj...", "....hhhhhhhj....", ".....jhhhhj....."], view === "side" ? 0 : 0, 11);
   tmpl(HAIR[L.hairStyle || "short"][view], 0, 0);
+  // ---- 무늬 (얼굴과 손등): 줄무늬·점박이·비늘
+  if (L.marks && view !== "up") {
+    const M = view === "side"
+      ? { stripes: [[9, 6, "x"], [10, 6, "x"], [12, 7, "x"], [13, 7, "x"], [11, 14, "x"]], spots: [[9, 6, "x"], [12, 8, "x"], [7, 12, "x"], [11, 13, "x"]], scales: [[8, 12, "x"], [9, 13, "X"], [10, 12, "x"], [7, 13, "X"], [6, 12, "x"]] }
+      : { stripes: [[2, 10, "x"], [3, 10, "x"], [12, 10, "x"], [13, 10, "x"], [7, 6, "x"], [8, 6, "x"], [2, 12, "x"], [13, 12, "x"]], spots: [[3, 7, "x"], [12, 6, "x"], [2, 12, "x"], [13, 13, "x"], [6, 6, "x"]], scales: [[2, 11, "x"], [3, 12, "X"], [2, 13, "x"], [13, 11, "x"], [12, 12, "X"], [13, 13, "x"]] };
+    for (const [x, y, ch] of M[L.marks] || []) put(x, y + bob, ch);
+  }
+  if (L.ears === "fin" && view !== "up") { if (view === "down") tmpl(["S..............k", "sx............xk", "sS............kx", ".x............x."], 0, 8); else tmpl(["....S...........", "....xS..........", "....sx..........", ".....x.........."], 0, 8); }
+  if (L.ears === "small" && view !== "up") { if (view === "down") tmpl([".S............k.", ".sS..........kk."], 0, 8); else tmpl([".....S..........", ".....sk.........."], 0, 8); }
   if (L.ears === "long" && view !== "up") { if (view === "down") tmpl(["S..............k", "sS............kk", ".ss..........kk."], 0, 8); else tmpl(["....S...........", "....sS..........", ".....sk........."], 0, 8); }
   if (L.ears === "animal") { tmpl(view === "side" ? ["...hh...........", "..hHhj..........", "..hhhj.........."] : ["..hh.......hh...", ".hHhj.....hHhj..", ".hhhj.....hhhj.."].map((r) => r.slice(0, 16)), 0, 0); }
-  if (L.horns && view !== "up") tmpl(view === "side" ? ["..........", "..oo......", "..Ooo.....", "...Oo....."].map((r) => r.padEnd(16, ".")) : ["................", ".oo..........oo.", ".Ooo........ooO.", "..Oo........oO.."], 0, 0);
-  if (L.horns && view === "up") tmpl(["................", ".oo..........oo.", ".Ooo........ooO."], 0, 0);
+  const HORN = {
+    long: { down: ["................", ".oo..........oo.", ".Ooo........ooO.", "..Oo........oO.."], side: ["..........", "..oo......", "..Ooo.....", "...Oo....."], up: ["................", ".oo..........oo.", ".Ooo........ooO."] },
+    short: { down: ["................", "................", "..oo........oo..", "..Oo........oO.."], side: ["..........", "..........", "...oo.....", "...Oo....."], up: ["................", "................", "..oo........oo.."] },
+    curl: { down: ["oo............oo", "O.o..........o.O", ".Oo..........oO.", "..Oo........oO.."], side: ["..........", ".ooo......", "O..o......", ".OOo......"], up: ["oo............oo", "O.o..........o.O", ".Oo..........oO."] },
+    crown: { down: ["...o...oo...o...", "...O..oOOo..O...", "...OooOooOooO...", "................"], side: ["..........", "....o.o...", "....OoOo..", ".........."], up: ["...o...oo...o...", "...O..oOOo..O...", "...OooOooOooO..."] },
+  };
+  if (L.horns) { const hs = HORN[L.horns] || HORN.long; tmpl((hs[view] || hs.down).map((r) => r.padEnd(16, ".")), 0, 0); }
   // ---- 모자 (머리 위에 얹는 독립 조각: 방향별 틀 + 자기 색)
   if (L.hat && HATS[L.hat]) {
     const H = HATS[L.hat], P = { ...H.pal, ...(L.hatPal ? { 1: L.hatPal[0], 2: L.hatPal[1], 3: L.hatPal[2] } : {}) };

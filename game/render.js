@@ -43,7 +43,8 @@
       key: `${n.race}|${n.job}|${n.id}|${kid ? 1 : 0}|${old ? 1 : 0}|${n.role || ""}|${isPlayer ? 1 : 0}`,
       skin: lk ? lk.skin : skins[Math.floor(hsh(1) * skins.length)], hair: old ? "#d8d8d2" : lk ? lk.hair : hairs[Math.floor(hsh(2) * hairs.length)],
       style: lk ? lk.style : rl.curly ? "curly" : HAIR_STYLES[Math.floor(hsh(3) * HAIR_STYLES.length)], eye: lk ? lk.eye : ["#2a1e16", "#2b4a7a", "#3d6a3a", "#6a3a1a"][Math.floor(hsh(4) * 4)],
-      ears: rl.ears || null, horns: rl.horns || null, beard: rl.beard && !kid, tail: rl.tail, short: rl.short || kid, kid,
+      ears: rl.ears || null, horns: rl.horns || null, hornShape: rl.hornShape || null, hornColor: rl.hornColor || null, beard: rl.beard && !kid, tail: rl.tail, short: rl.short || kid, kid,
+      marks: rl.marks || null, markColor: rl.markColor || null,
       cloth, cloth2: shade(cloth, -0.28), pants: shade(job.color ? "#4a4058" : "#3a3a46", hsh(5) * 0.3 - 0.15),
       hat: kid ? null : n.role === "hero" ? "circlet" : jl.hat || null, apron: kid ? null : jl.apron || null, trim: jl.trim || shade(cloth, 0.35),
       blush: hsh(6) < 0.5, player: isPlayer,
@@ -281,7 +282,8 @@
       bottom: !robe && !L.kid && hash(n.id, 6, 9) < 0.3 ? "skirt" : "pants",
       hat, hatPal: hat && ["cap", "bandana", "wizard", "hood", "beanie"].includes(hat) ? ramp3(L.cloth) : null,
       prop: L.kid ? null : jl.prop || PROP16[n.job] || (job.fighter ? "sword" : null),
-      ears: L.ears, horns: !!L.horns, tail: !!L.tail, beard: !!L.beard,
+      ears: L.ears, horns: L.horns ? (typeof L.horns === "string" && !L.horns.startsWith("#") ? L.horns : L.hornShape || "long") : null, hornColor: L.hornColor || (typeof L.horns === "string" && L.horns.startsWith("#") ? L.horns : null),
+      tail: L.tail ? (typeof L.tail === "string" ? L.tail : "thin") : null, beard: !!L.beard, marks: L.marks || null, markColor: L.markColor || null,
     };
   }
   const INK16 = ART ? ART.INK : "#26180f";
