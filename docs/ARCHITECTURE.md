@@ -19,7 +19,8 @@ ui.js      ─ (화면 전체) HUD·창·대화·제목 화면·저장 칸·터�
 ## 세계와 시간
 
 - `Asteria.newWorld(seed, name)` / `freshWorld` 로 세계를 만들고, `Asteria.advance(w, 분)`으로 흐른다.
-- 하루는 06:00에 바뀐다(`beginDay` / `finishDay`). 계절은 `w.season`(날짜에서 계산).
+- 하루는 06:00에 바뀐다(`beginDay` / `finishDay`). 계절은 `w.season`(날짜에서 계산). 날씨는 `w.weather`(`newWeather`).
+- 주민의 하루: 큰 결정(`ACTIONS`)은 하루 한 번, 할 일은 한 시간마다(`lifeUntil` → `liveHour` → `planHour`·`placeFor`). 지금 할 일은 `n.life{act, until, place, with, host}`, 그날의 기록은 `n.today{intent, worked, ate}`, 피로 `n.fatigue`·기분 `n.mood`. 일은 하루 끝 `settleWork`에서 일한 시간만큼 정산. 화면(game.js `scheduleSpot`)은 `n.life`를 따른다.
 - 주민 행동은 `ACTIONS`(행동 후보)의 효용 점수 + 꿈(`dreams[].bias`) + 성격 가중치로 고른다.
 - 일어난 일은 `w.record(kind, text, {actor, target, town, imp, ...})`로 사건이 되고,
   본 사람·들은 사람의 기억(`n.mem`)으로 퍼진다. 중요한 사건은 신문과 연대기에 오른다.

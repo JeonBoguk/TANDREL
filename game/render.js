@@ -506,7 +506,17 @@
         b.globalCompositeOperation = "source-over";
       }
       if (w.day < w.droughtUntil) { b.fillStyle = "rgba(240,170,60,0.08)"; b.fillRect(0, 0, W, H); }
-      if (w.season === "겨울") {
+      // 날씨: 흐림은 옅은 잿빛, 비·폭풍은 빗줄기, 눈은 눈송이 (실내에선 그리지 않는다)
+      const wk = (w.weather || {}).kind, indoors = state.showPlayer && G.insideBuilding(w);
+      if (!indoors && wk === "흐림") { b.fillStyle = "rgba(90,100,115,0.12)"; b.fillRect(0, 0, W, H); }
+      if (!indoors && (wk === "비" || wk === "폭풍")) {
+        const storm = wk === "폭풍";
+        b.fillStyle = storm ? "rgba(40,50,70,0.28)" : "rgba(70,85,105,0.18)"; b.fillRect(0, 0, W, H);
+        b.fillStyle = storm ? "rgba(200,215,235,0.55)" : "rgba(190,205,225,0.45)";
+        const n = storm ? this.flakes.length : Math.floor(this.flakes.length * 0.6), len = storm ? 6 : 4;
+        for (let i = 0; i < n; i++) { const f = this.flakes[i]; const fx = ((f.x * W + this.t * (storm ? 60 : 25)) % W + W) % W, fy = ((f.y * H + this.t * 160 * f.s) % H + H) % H; b.fillRect(Math.round(fx), Math.round(fy), 1, len); }
+      }
+      if (!indoors && wk === "눈") {
         b.fillStyle = "rgba(255,255,255,0.9)";
         for (const f of this.flakes) { const fx = ((f.x * W + Math.sin(this.t * f.s + f.y * 9) * 10) % W + W) % W, fy = ((f.y * H + this.t * 20 * f.s) % H + H) % H; b.fillRect(Math.round(fx), Math.round(fy), 1, 1); }
       }

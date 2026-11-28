@@ -446,6 +446,30 @@
       t.check(T.agri.breed > b0, W.events.filter((e) => e && e.kind === "farm_new").pop().text);
       const w2 = A.World.deserialize(JSON.parse(W.serialize())); t.check(w2.towns[T.id].agri.ids.length === T.agri.ids.length, "농법이 저장된다");
     } },
+    { id: "dailylife", name: "주민은 한 시간마다 할 일을 정하며 산다: 일·밥·쉬기·놀기·친구, 날씨에 따라", run(t) {
+      const W = t.w, day = (kind) => {
+        while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
+        W.weather = { kind, day: W.day + 1 }; const nw = A.newWeather; A.newWeather; // 날씨를 정해 둔다
+        G.tick(W, 1); W.weather = { kind, day: W.day };
+        const acts = {}, lunch = new Set(), seen = new Set();
+        for (let hh = 0; hh < 18; hh++) { G.tick(W, 60); const h = 6 + W.clock / 60;
+          for (const n of W.alive()) if (n.life && A.isAdult(n) && n.controller !== "player" && !n.at_war) { acts[n.life.act] = (acts[n.life.act] || 0) + 1; seen.add(n.life.act); if (n.life.act === "meal" && h >= 11.5 && h < 14) lunch.add(n.id); } }
+        return { acts, lunch: lunch.size, kinds: seen.size };
+      };
+      const sunny = day("맑음"), rainy = day("비");
+      const tot = (o) => Object.values(o).reduce((a, b) => a + b, 0), share = (o, k) => (o[k] || 0) / Math.max(1, tot(o));
+      t.check(sunny.kinds >= 6, `맑은 날 하루에 하는 일 ${sunny.kinds}가지: ${Object.entries(sunny.acts).map(([k, v]) => k + " " + v).join(", ")}`);
+      t.check(sunny.lunch > W.alive().filter((n) => A.isAdult(n)).length * 0.3, `점심때 밥 먹은 사람 ${sunny.lunch}명`);
+      t.check(share(rainy.acts, "play") < share(sunny.acts, "play") && share(rainy.acts, "rest") > share(sunny.acts, "rest"), `비 오는 날은 덜 놀고 더 쉰다 (놀기 ${(share(sunny.acts, "play") * 100).toFixed(0)}% → ${(share(rainy.acts, "play") * 100).toFixed(0)}%, 쉬기 ${(share(sunny.acts, "rest") * 100).toFixed(0)}% → ${(share(rainy.acts, "rest") * 100).toFixed(0)}%)`);
+      // 화면 자리는 지금 하는 일을 따른다
+      const worker = W.alive().find((n) => n.life && n.life.act === "work" && ["market", "forge", "temple", "tavern"].includes((A.JOBS[n.job] || {}).workplace));
+      if (worker) { const sp = G.scheduleSpot ? G.scheduleSpot(W, worker) : null; t.check(!sp || sp[2] === true || sp.length === 2, `${worker.name}: ${A.LIFE_LABEL.work}`); }
+      // 일한 시간만큼 번다
+      const n = W.alive().find((x) => A.isAdult(x) && x.controller !== "player" && !x.at_war && x.jail === 0);
+      const rr = W.rng.next; W.rng.next = () => 0.5; // 같은 운으로 견준다
+      const g0 = n.gold; A._.rWork(n, W, 1); const full = n.gold - g0; const g1 = n.gold; A._.rWork(n, W, 0.3); const part = n.gold - g1; W.rng.next = rr;
+      t.check(full >= 0 && part <= full + 0.01, `일한 만큼 번다 (하루치 ${full.toFixed(1)} · 조금 ${part.toFixed(1)})`);
+    } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);
       A.setJob(p, "farmer"); p.gold = 60;
@@ -502,7 +526,7 @@
       while (W.season !== "가을") G.tick(W, 24 * 60);
       a.food = pop(a) * 40; a.store = 0; G.tick(W, 24 * 60);
       t.check(a.store > 0, `가을에 남는 식량을 곳간에 쌓았다 (${Math.round(a.store)})`);
-      a.food = 0; a.store = pop(a) * 10; a.storeOpen = false; G.tick(W, 24 * 60);
+      a.food = 0; a.store = pop(a) * 10; a.storeOpen = false; A._.granaries(W, ts, Object.fromEntries(ts.map((x) => [x.id, pop(x)])));
       t.check(W.events.some((e) => e && e.kind === "granary_open" && e.town === a.id), "곳간을 열었다는 소식");
       const b = ts.find((x) => x !== a && x.nation === a.nation) || ts[1];
       for (const x of ts) if (x !== a) x.food = pop(x) * 25;

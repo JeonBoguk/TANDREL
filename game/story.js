@@ -440,7 +440,27 @@
     if (n.hunger >= 3) s += " …배가 너무 고프네요.";
     else if (n.health < 5) s += " 몸이 좀 안 좋아서요.";
     if (G.isNight(w)) s = "이 시간에 무슨 일이에요…? " + s;
+    const now = nowLine(w, n);
+    if (now && !G.isNight(w)) s = now + " " + s;
     return s;
+  }
+  /** 지금 하고 있는 일 한마디 (삶의 층 n.life) */
+  function nowLine(w, n) {
+    const L = n.life && n.life.day === w.day ? n.life : null;
+    if (!L || w.rng.next() > 0.75) return "";
+    const f = L.with !== undefined && w.npcs[L.with] ? w.npcs[L.with] : null, wk = (w.weather || {}).kind;
+    const withF = f ? `${jo(f.name, "이랑/랑")} ` : "";
+    switch (L.act) {
+      case "work": return pick(w, ["일하던 참이라 길게는 못 얘기해요.", "손이 좀 바빠서요, 금방 얘기해요.", `오늘은 ${(A.JOBS[n.job] || {}).name || "일"} 일이 많네요.`]);
+      case "meal": return pick(w, ["밥 먹던 참이었어요.", L.place === "tavern" ? "여기 스튜가 오늘 괜찮아요." : "집밥이 제일이죠."]);
+      case "play": return wk === "맑음" ? pick(w, [`날씨가 좋아서 ${withF}놀러 나왔어요.`, `이런 날엔 일 손에 안 잡히죠. ${withF}바람 쐬러 나왔어요.`]) : `${withF}잠깐 나와 있었어요.`;
+      case "social": return f ? pick(w, [`${withF}얘기하던 중이에요.`, `${jo(f.name, "이/가")} 불러서 나왔어요.`]) : "그냥 사람 구경 나왔어요.";
+      case "rest": return wk === "비" || wk === "폭풍" ? "비가 와서 오늘은 쉬어요." : wk === "눈" ? "눈이 와서 집에 있었어요." : n.fatigue > 0.6 ? "좀 지쳐서 쉬는 중이에요." : "잠깐 쉬고 있었어요.";
+      case "shop": return "장 보러 나왔어요.";
+      case "pray": return "기도하러 왔어요.";
+      case "chores": return "집안일 좀 하던 중이었어요.";
+      default: return "";
+    }
   }
   const JOBTALK = new Proxy({}, { get: (_, id) => (A.JOBS[id] && A.JOBS[id].talk) || "요즘은 그냥 그래요. 하루하루 열심히 사는 거죠." });
   /** 대화 세션을 연다. opener: talk | approach | confess | propose | confront */

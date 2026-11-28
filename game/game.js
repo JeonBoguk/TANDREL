@@ -776,8 +776,7 @@
       if (p.outside || p.town !== t) { p.outside = false; p.town = t; log(w, `${w.towns[t].name}에 들어섰다.`); if (root.Story) root.Story.onEnterTown(w, t); }
     } else {
       p.outside = true;
-      e.trail = (e.trail || 0) + sp;
-      if (e.trail >= 1) { const k = Math.floor(e.trail); e.trail -= k; G.pendingMins = (G.pendingMins || 0) + k * 4; }
+      // 마을 밖에서도 시간은 평소처럼 흐른다 (예전엔 한 칸에 4분씩 더 흘렀다)
     }
     return true;
   }
@@ -806,6 +805,7 @@
   function homeBuilding(w) { const p = w.player; return p && p.home ? MAP.buildings.find((b) => b.town === p.home && b.kind === "inn") : null; }
   function farmDawn(w) {
     const e = ext(w), season = w.season;
+    if (w.weather && ["비", "폭풍"].includes(w.weather.kind)) for (const f of Object.values(e.farm)) f.watered = w.day - 1; // 비 오는 날 아침엔 밭이 젖어 있다 (물 준 것과 같다)
     for (const [k, f] of Object.entries(e.farm)) {
       if (f.crop) {
         const c = CROPS[f.crop.type];
@@ -913,6 +913,37 @@
         if (i >= 0 && i < free.length) return free[i];
       }
     }
+    // 삶의 층(engine)이 정한 지금 할 일을 따라간다
+    const L = n.life && n.life.day === w.day ? n.life : null;
+    if (L) {
+      const bdOf = (kind) => MAP.buildings.find((q) => q.town === t && q.kind === kind);
+      const slotL = Math.floor(h);
+      switch (L.act) {
+        case "sleep": case "rest": case "chores": return houseOf();
+        case "meal": { if (L.place === "tavern") { const sp = workSpot(w, bdOf("tavern"), n, slotL + 77); if (sp) return sp; } return houseOf(); }
+        case "shop": { const sp = workSpot(w, bdOf("market"), n, slotL + 31); if (sp) return sp; break; }
+        case "pray": { const sp = workSpot(w, bdOf("temple"), n, slotL + 41); if (sp) return sp; break; }
+        case "social": {
+          if (L.place === "tavern") { const sp = workSpot(w, bdOf("tavern"), n, slotL + 77); if (sp) return sp; }
+          if (L.place === "house" && L.host !== undefined && w.npcs[L.host]) {
+            const hn = houseOfNpc(w.npcs[L.host]), hb = hn && MAP.buildings.find((b) => b.town === hn.town && b.kind === "house" && b.hid === hn.hid);
+            const sp = hb && workSpot(w, hb, n, slotL + 91); if (sp) return sp;
+          }
+          return spotNear(w, placeOf(t, "square"), n.id, 3);
+        }
+        case "play": {
+          if (L.place === "square") return spotNear(w, placeOf(t, "square"), n.id + (L.with || 0), 3);
+          if (L.place === "tavern") { const sp = workSpot(w, bdOf("tavern"), n, slotL + 77); if (sp) return sp; }
+          // 들판·냇가·언덕: 마을 밖 한 곳에 같이 간 사람들이 모여 논다
+          const seed = (L.spot || 0) + (L.with !== undefined ? Math.min(n.id, L.with) * 7 : n.id), ang = (seed % 360) * Math.PI / 180, R = 22 + (seed % 9);
+          const ox = Math.round(cx + Math.cos(ang) * R), oy = Math.round(cy + Math.sin(ang) * R * 0.7);
+          for (let k = 0; k < 20; k++) { const x = ox + ((k * 7 + n.id) % 5) - 2, y = oy + ((k * 3 + n.id) % 4) - 1; if (walkable(w, x, y)) return [x, y]; }
+          return spotNear(w, placeOf(t, "square"), n.id, 3);
+        }
+        case "kid": return L.place === "home" ? houseOf() : [cx - 2 + (n.id % 5), cy - 2 + (n.id % 4)];
+        default: break; // work: 아래의 일터 자리
+      }
+    }
     if (h >= 22.5 || h < 6.5) return houseOf();
     if (!isAdult(n)) return h < 18 ? [cx - 2 + (n.id % 5), cy - 2 + (n.id % 4)] : houseOf();
     if (h >= 18) return hs < 0.25 + (1 - n.traits.greed) * 0.4 ? spotNear(w, placeOf(t, "tavern"), n.id, 3) : houseOf();
@@ -922,11 +953,6 @@
     if (rn && rn.builder === n.id && h >= 8 && h < 17) { const hb = MAP.buildings.find((b) => b.town === rn.town && b.kind === "inn"); if (hb && n.town === rn.town) return [hb.x + hb.w, hb.y + hb.h + 1]; }
     const kind = n.job === "guard" && n.id % 2 ? "square" : (JOBS[n.job] && JOBS[n.job].workplace) || "square";
     const slot = Math.floor(h); // 한 시간마다 자리를 바꾼다
-    // 손님: 일하는 시간에도 한 시간쯤 시장·주점·신전에 들른다
-    if (h >= 9 && h < 17 && h2(n.id, slot * 7 + w.day, 13) < 0.12) {
-      const shops = MAP.buildings.filter((b) => b.town === t && ["market", "tavern", "temple", "forge"].includes(b.kind));
-      if (shops.length) { const b = shops[Math.floor(h2(n.id, slot, 17) * shops.length)]; const sp = workSpot(w, b, n, slot + 50); if (sp) return sp; }
-    }
     if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slot) % 9, cy + FIELD_BOX.y0 + ((n.id + slot) % 5)];
     // 일터 건물이 있으면 대개 안에서 일한다 (가끔 문 앞에 나와 있다)
     if (ENTER.has(kind) && h2(n.id, slot + w.day * 24, 19) > 0.22) {
@@ -1792,7 +1818,16 @@
   function activity(w, n) {
     const k = walkers.get(n.id);
     if (!k) return n.at_war ? "전선" : "어딘가";
-    if (k.inside) return isNight(w) ? "집에서 자는 중" : n.jail > 0 ? "감옥" : "건물 안";
+    if (n.jail > 0) return "감옥";
+    const L = n.life && n.life.day === w.day ? n.life : null;
+    if (L) {
+      const where = { tavern: "주점에서 ", market: "시장에서 ", temple: "신전에서 ", meadow: "들판에서 ", river: "냇가에서 ", hill: "언덕에서 ", square: "광장에서 ", house: "집에서 " }[L.place] || "";
+      const withN = L.with !== undefined && w.npcs[L.with] ? ` (${jo(w.npcs[L.with].name, "과/와")})` : "";
+      if (k.path && k.path.length && L.act !== "sleep") return { work: "일하러 가는 중", meal: "밥 먹으러 가는 중", play: "놀러 가는 중", social: "만나러 가는 중", shop: "장 보러 가는 중", pray: "기도하러 가는 중" }[L.act] || "걷는 중";
+      if (L.act === "work") return `${(JOBS[n.job] || {}).name || ""} 일하는 중`;
+      return (L.act === "meal" || L.act === "social" || L.act === "play" ? where : "") + A.LIFE_LABEL[L.act] + withN;
+    }
+    if (k.inside) return isNight(w) ? "집에서 자는 중" : "건물 안";
     if (k.chase) return "나를 쫓는 중!";
     if (k.fight) return "나와 싸우는 중!";
     const near = MAP.places.filter((p) => p.town === n.town).map((p) => [p, dist(p.x, p.y, k.x, k.y)]).sort((a, b) => a[1] - b[1])[0];
