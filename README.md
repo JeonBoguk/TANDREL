@@ -61,7 +61,7 @@ node tools/runtests.js
 화면 점검(Playwright, Chromium 필요):
 
 ```bash
-(cd game && python3 -m http.server 8766 &) ; node game/tools/shots.js desk ; node game/tools/shots.js mobile
+(cd game && python3 -m http.server 8766 &) ; node tools/shots.js desk ; node tools/shots.js mobile
 ```
 
 ## 이어서 작업하는 사람(또는 AI)에게
