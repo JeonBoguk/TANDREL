@@ -718,7 +718,7 @@
       const m = S.addMission(W, { type: "fetch", item: "herb", n: 2, from: giver.id, reward: 5 });
       t.e().inv.herb = 0; const g1 = S.missionGoal(W, m);
       t.e().inv.herb = 2; const g2 = S.missionGoal(W, m);
-      t.check(g1 && /구하기/.test(g1.label) && g2 && g2.label.includes(giver.name), `길 안내: 모으는 중 → ${g1 && g1.label} · 다 모으면 → ${g2 && g2.label}`);
+      t.check(g1 && /캐기|구하기|사기/.test(g1.label) && g2 && g2.label.includes(giver.name), `길 안내: 모으는 중 → ${g1 && g1.label} · 다 모으면 → ${g2 && g2.label}`);
       t.e().nav = m.id; m.done = true; t.e().inv.herb = 0;
       // 첫 만남: 자기소개 (두 번째부터는 하지 않는다)
       const z = t.npcs((x) => A.isAdult(x) && !(t.e().met || {})[x.id] && A.opinion(x, p.id) > -20)[0];
@@ -762,6 +762,30 @@
       p.hunger = 0; G.tick(W, 360);
       const h1 = p.hunger; G.give(W, "bread", 1); G.eat(W, "bread");
       t.check(h1 >= 0.4 && p.hunger < h1, `여섯 시간 뒤 배고픔 ${h1.toFixed(2)} → 빵을 먹고 ${p.hunger.toFixed(2)}`);
+    } },
+    { id: "knock", name: "노크: 늦은 밤·앓는 중이면 거절, 친하면 들어오라고, 아니면 나와서 이야기 · 남의 마을 공동 밭", run(t) {
+      const W = t.w, p = t.p(), T = t.town();
+      const bd = G.MAP.buildings.find((b) => b.town === T && b.kind === "house" && G.residentsOf(W, b).some((n) => A.isAdult(n)));
+      const n = G.residentsOf(W, bd).find((x) => A.isAdult(x)); n.ill = null;
+      for (const x of G.residentsOf(W, bd)) G.walkers.delete(x.id);
+      G.walkers.set(n.id, { x: bd.door[0] + 0.5, y: bd.door[1] + 0.5, inside: true, town: T, path: [] });
+      const at = (h) => { W.clock = (h - 6) * 60; };
+      n.rel[p.id] = 10; at(23);
+      const r1 = G.knock(W, bd);
+      t.check(!r1.talk && /내일/.test(r1.text), `밤 11시: ${r1.text}`);
+      at(15); A.fallIll(W, n, "fever");
+      const r2 = G.knock(W, bd);
+      t.check(!r2.talk && /누워/.test(r2.text), `열병: ${r2.text}`);
+      n.ill = null; G.walkers.set(n.id, { x: bd.door[0] + 0.5, y: bd.door[1] + 0.5, inside: true, town: T, path: [] });
+      const r3 = G.knock(W, bd);
+      t.check(r3.talk === n.id, `오후, 안면만 있는 사이: ${r3.text}`);
+      n.rel[p.id] = 60; G.walkers.set(n.id, { x: bd.door[0] + 0.5, y: bd.door[1] + 0.5, inside: true, town: T, path: [] });
+      const r4 = G.knock(W, bd);
+      t.check(/들어와요/.test(r4.text) && t.e().missions.some((m) => !m.done && m.type === "visit" && m.to === n.id && m.knocked), `친한 사이: ${r4.text}`);
+      // 남의 마을 공동 밭은 갈 수 없다
+      const other = Object.keys(G.TOWN_POS).find((x) => x !== p.town);
+      const [ox, oy] = G.TOWN_POS[other], fx = ox, fy = oy + 12, [hx, hy] = G.TOWN_POS[p.town];
+      t.check(G.MAP.getT(fx, fy) === G.T.FIELD && !G.canTill(W, fx, fy) && G.canTill(W, hx + 1, hy + 12), "내 마을 공동 밭은 갈고, 남의 마을 공동 밭은 갈 수 없다");
     } },
     { id: "rites", name: "혼례와 장례: 풍습대로 치르고, 먼 마을의 가족이 찾아온다", run(t) {
       const W = t.w, T = t.town();

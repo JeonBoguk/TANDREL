@@ -188,8 +188,8 @@ document.addEventListener("keydown", (e) => {
   if (wk) { e.preventDefault(); win === wk ? closeWin() : openWin(wk); return; }
   if (!playing() || win) return;
   if (/^[0-9]$/.test(k)) { const i = k === "0" ? 9 : +k - 1; const ex = G.ext(W); if (i < ex.hot.length) { ex.sel = i; renderHotbar(true); renderHud(); } return; }
-  if (k === " ") { e.preventDefault(); const [tx, ty] = G.facingTile(W); useTool(tx, ty); return; }
-  if (k === "e" || k === "enter") { e.preventDefault(); interactFront(); }
+  if (k === " " || k === "e" || k === "enter") { e.preventDefault(); interactFront(); return; } // 행동 키 하나: 앞에 있는 것에 맞게
+  if (k === "f") { e.preventDefault(); attackFront(); }
 });
 document.addEventListener("keyup", (e) => { const m = KEYMAP[e.key.toLowerCase()]; if (m) keys.delete(m); });
 window.addEventListener("blur", () => keys.clear());
@@ -208,19 +208,38 @@ function moveOptFocus(k) {
   opts.forEach((o, i) => o.classList.toggle("kf", i === optFocus));
   opts[optFocus].scrollIntoView({ block: "nearest" });
 }
-function interactFront() {
-  const [tx, ty] = G.facingTile(W);
+/* 행동 키 하나(Space, E도 같다): 앞에 무엇이 있느냐에 따라 알맞은 일을 한다.
+ *  사람 → 말 걸기 (나와 싸우거나 나를 쫓는 사람에게 무기를 들고 있으면 공격) · 짐승 → 손에 든 것 쓰기(무기면 공격, 맨손이면 잡기)
+ *  건물·작업대 → 들어가기·메뉴 · 그 밖 → 손에 든 도구 쓰기 (맨손이면 줍기·수확, 음식이면 먹기). 일부러 공격하려면 F */
+const TOOL_WORD = { hand: "줍기", hoe: "갈기", can: "물 주기", axe: "베기", stone_axe: "베기", skill: "기술 쓰기" };
+function actionAt() {
+  const [tx, ty] = G.facingTile(W), e = G.ext(W), item = e.hot[e.sel] || "hand", it = G.ITEMS[item] || {};
   const inHouse = G.insideBuilding(W) && G.insideBuilding(W).kind === "house"; // 초대받은 집 안: 바로 앞 사람과만 말하고, 아니면 집 안에서 할 일을 연다
   const n = G.npcAtTile(W, tx, ty) || (inHouse ? null : nearestNPC(1.6));
-  if (n) { openTalk(n.id); return; }
+  if (n) { const k = G.walkers.get(n.id); if (it.weapon && k && (k.fight || k.chase)) return { label: "공격", run: () => useTool(tx, ty) }; return { label: "말 걸기", run: () => openTalk(n.id) }; }
+  const an = G.animals.find((a) => Math.hypot(a.x - (tx + 0.5), a.y - (ty + 0.5)) < 1.1);
+  if (an && an.type === "chicken") return { label: "쓰다듬기", run: () => toast(pick1(["닭이 꼬꼬댁 하고 고개를 갸웃했다.", "닭이 손바닥을 콕 쪼았다.", "마을 사람이 기르는 닭이다. 순하다."])) }; // 마을 닭은 주인이 있다
+  if (an) return { label: it.weapon || it.act === "throw" ? "공격" : "잡기", run: () => useTool(tx, ty) };
   const inB = G.insideBuilding(W), myHome = inB && G.MAP.buildings.find((b) => b.town === W.player.home && b.kind === "inn");
-  const myFurn = myHome && inB.id === myHome.id && ((G.ext(W).furn || {})[inB.id] || []).some((f) => inB.x + f.rx === tx && inB.y + f.ry === ty);
+  const myFurn = myHome && inB.id === myHome.id && ((e.furn || {})[inB.id] || []).some((f) => inB.x + f.rx === tx && inB.y + f.ry === ty);
   const pl = myFurn ? null : nearPlace();
-  if (pl) { openMenu(pl); return; }
-  const ex = G.ext(W), keep = ex.sel;
-  ex.sel = Math.max(0, ex.hot.indexOf("hand"));
-  useTool(tx, ty); ex.sel = keep;
+  if (pl) return { label: inB ? "할 일 보기" : pl.kind === "fields" ? "밭 보기" : `${pl.name || "들어가기"}`, run: () => openMenu(pl) };
+  return { label: TOOL_WORD[item] || (it.weapon ? "휘두르기" : it.seed ? "심기" : it.food || it.energy ? "먹기" : "쓰기"), run: () => useTool(tx, ty) };
 }
+function interactFront() { actionAt().run(); }
+/** F: 일부러 공격 (무기를 들고 있을 때만) */
+let chickWarn = 0;
+function attackFront() {
+  const e = G.ext(W), it = G.ITEMS[e.hot[e.sel]] || {};
+  if (!it.weapon) { toast("공격하려면 먼저 무기를 손에 들어야 한다."); return; }
+  const [tx, ty] = G.facingTile(W);
+  const ch = G.animals.find((a) => a.type === "chicken" && Math.hypot(a.x - (tx + 0.5), a.y - (ty + 0.5)) < 1.1);
+  if (ch && performance.now() - chickWarn > 4000) { chickWarn = performance.now(); toast("마을 사람이 기르는 닭이다. 잡으면 도둑질이 되어 수배된다. 그래도 잡으려면 F를 한 번 더.", "warn"); return; }
+  const n = G.npcAtTile(W, tx, ty);
+  if (n && performance.now() - chickWarn > 4000) { const k = G.walkers.get(n.id); if (!(k && (k.fight || k.chase))) { chickWarn = performance.now(); toast(`${n.name}에게 덤비면 폭행이 되어 수배된다. 그래도 하려면 F를 한 번 더.`, "warn"); return; } }
+  useTool(tx, ty);
+}
+const pick1 = (arr) => arr[Math.floor(Math.random() * arr.length)];
 function nearestNPC(r) { let best = null, bd = r; for (const { n, k } of G.visibleNPCs(W)) { const d = Math.hypot(k.x - W.ppos.x, k.y - W.ppos.y); if (d < bd) { bd = d; best = n; } } return best; }
 function nearPlace() {
   const t = G.townAt(W.ppos.x, W.ppos.y);
@@ -483,6 +502,7 @@ function renderMenu() {
       if (r.report) { bmenu.pick = "report"; renderMenu(); return; }
       if (r.jobmake) { const J = A.JOBS[p.job]; jmDraft = G.jobDraft(W, J && J.creator === p.id ? p.job : null); closeMenu(); openWin("jobmake"); return; }
       if (r.sim) { bmenu.pick = "sim"; bmenu.sim = r.sim; bmenu.result = null; renderMenu(); return; }
+      if (r.talk !== undefined) { const id = r.talk; closeMenu(); toast(r.text); openTalk(id); return; } // 노크: 문을 열고 나온 사람과 이야기
       bmenu.result = r.text; renderMenu(); renderHotbar(true); renderHud();
     } }, h("b", null, i < 9 ? h("span", { class: "k" }, String(i + 1)) : null, v.label), h("span", null, v.ok ? `${v.hint || ""}${v.min ? ` · ${v.min >= 60 ? Math.floor(v.min / 60) + "시간" + (v.min % 60 ? ` ${v.min % 60}분` : "") : v.min + "분"}` : ""}` : v.why || "지금은 할 수 없다")));
     opts.push(h("button", { class: "opt", type: "button", onclick: closeMenu }, h("b", null, "나가기")));
@@ -911,7 +931,7 @@ function winChron() {
 function winHelp() {
   const k = (a, b) => [h("span", null, a.split(" ").map((x) => h("kbd", null, x))), h("span", null, b)];
   return [h("div", { class: "grid2" },
-    h("div", null, h("h3", null, "조작"), h("div", { class: "keys" }, k("W A S D", "걷기 (방향키도 된다)"), k("Shift", "달리기 (기력을 쓴다)"), k("Space", "손에 든 도구를 앞에 쓰기"), k("E", "말 걸기 · 건물 들어가기 · 줍기"), k("1 … 0", "단축바 고르기"),
+    h("div", null, h("h3", null, "조작"), h("div", { class: "keys" }, k("W A S D", "걷기 (방향키도 된다)"), k("Shift", "달리기 (기력을 쓴다)"), k("Space", "행동: 앞에 있는 것에 맞게 (사람이면 말 걸기, 건물이면 들어가기, 그 밖엔 손에 든 도구 쓰기 · 맨손이면 줍기). E도 같다"), k("F", "공격 (무기를 들고 있을 때)"), k("1 … 0", "단축바 고르기"),
       k("좌클릭", "도구 쓰기 · 걸어가기 · 말 걸기"), k("우클릭", "그냥 걸어가기"), k("휠", "확대 · 축소"), k("C I K R Q", "나: 정보·가방·만들기·관계·미션"), k("N J", "소식: 신문·이야기"), k("P T", "세계: 인물·마을"), k("M B H", "지도 · 도감 · 도움말"), k("Esc", "창 닫기"))),
     h("div", null, h("h3", null, "기본"), h("table", { class: "facts" }, h("tbody", null, [
       ["도감", "B. 얻어 본 것과 얻은 방법이 쌓인다"],
@@ -1007,7 +1027,7 @@ function winBorn() {
     G.newLife(W, opts);
     view.cam = { x: W.ppos.x, y: W.ppos.y }; speed = settings.speed; obsRun = false; hotSig = ""; $("#bl").dataset.pid = ""; bornMode = null;
     S.welcomePaper(W); S.beginStory(W); // 직업마다 첫 걸음 이야기 (길 안내가 켜진다)
-    autosave(); closeWin(); toast(touchMode ? "왼쪽 아래 막대로 걷고, 오른쪽 버튼으로 말 걸기·도구 쓰기" : "이동 WASD · 말 걸기 E · 도구 Space · 도움말 H");
+    autosave(); closeWin(); toast(touchMode ? "왼쪽 아래 막대로 걷고, 오른쪽 버튼으로 행동" : "이동 WASD · 행동 Space(E) · 공격 F · 도움말 H");
   };
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1143,7 +1163,7 @@ window.asteriaWorld = () => W; // 디버그·모드용: 지금 세계
 window.asteriaView = () => view; // 디버그: 화면 (peek = {x,y}로 카메라만 옮겨 보기)
 
 // ------------------------------------------------------------ 터치 조작 (휴대폰·태블릿)
-/* 왼쪽 아래 막대로 걷고, 오른쪽 아래 버튼으로 말 걸기(E)와 도구 쓰기(Space). 화면을 누르면 그곳으로 걸어간다. */
+/* 왼쪽 아래 막대로 걷고, 오른쪽 아래 행동 버튼(글자가 지금 할 일)과 무기를 들었을 때의 공격 버튼. 화면을 누르면 그곳으로 걸어간다. */
 function setupTouch() {
   // 좁은 화면에서는 내 상태 판을 시계 아래에 붙인다
   const placeStats = () => { const narrow = matchMedia("(max-width: 760px)").matches; const bl = $("#bl"); if (narrow && bl.parentNode !== $(".tl")) $(".tl").insertBefore(bl, $(".quests")); else if (!narrow && bl.parentNode === $(".tl")) $("#game").insertBefore(bl, $("#handname")); };
@@ -1152,9 +1172,11 @@ function setupTouch() {
   $("#game").classList.add("touch");
   const knob = h("span", { class: "knob" });
   const stick = h("div", { class: "stick", role: "group", "aria-label": "이동" }, knob);
-  const act = h("button", { class: "padbtn", type: "button", "aria-label": "말 걸기·들어가기·줍기" }, "말 걸기");
-  const use = h("button", { class: "padbtn", type: "button", "aria-label": "손에 든 도구 쓰기" }, "도구");
+  const act = h("button", { class: "padbtn", type: "button", "aria-label": "행동" }, "말 걸기");
+  const use = h("button", { class: "padbtn", type: "button", "aria-label": "공격", hidden: true }, "공격"); // 무기를 들었을 때만 보인다
   $("#game").append(h("div", { class: "pad", id: "pad" }, stick, h("div", { class: "padacts" }, use, act)));
+  // 버튼 글자는 지금 누르면 일어날 일 (말 걸기·갈기·줍기·들어가기…)
+  setInterval(() => { if (!playing() || busy()) return; const a = actionAt(); if (act.textContent !== a.label) act.textContent = a.label; const e = G.ext(W), wpn = !!(G.ITEMS[e.hot[e.sel]] || {}).weapon; if (use.hidden === wpn) use.hidden = !wpn; }, 200);
   let id = null;
   const dirs = ["left", "right", "up", "down"];
   const set = (ev) => {
@@ -1175,7 +1197,7 @@ function setupTouch() {
   const end = (ev) => { if (ev.pointerId !== id) return; id = null; knob.style.transform = ""; for (const k of dirs) keys.delete(k); };
   stick.addEventListener("pointerup", end); stick.addEventListener("pointercancel", end);
   act.addEventListener("click", () => { if (!playing() || busy() || win) return; interactFront(); });
-  use.addEventListener("click", () => { if (!playing() || busy() || win) return; const [tx, ty] = G.facingTile(W); useTool(tx, ty); });
+  use.addEventListener("click", () => { if (!playing() || busy() || win) return; attackFront(); });
 }
 
 // ------------------------------------------------------------ 테스트 단계

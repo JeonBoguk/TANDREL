@@ -24,7 +24,7 @@
     { kind: "temple", name: "신전", x: -12, y: -10, w: 6, h: 6 },
     { kind: "guild", name: "경비대·길드", x: -12, y: 1, w: 6, h: 5 },
     { kind: "market", name: "시장", x: 5, y: 1, w: 7, h: 4 },
-    { kind: "inn", name: "여관", x: -8, y: 6, w: 4, h: 3 },
+    { kind: "inn", name: "여관", x: -10, y: 8, w: 4, h: 3 }, // 경비대 건물에 붙어 있던 것을 두 줄 띄웠다
     { kind: "house", name: "", x: 6, y: 7, w: 4, h: 3, hid: 1 },
     { kind: "house", name: "", x: 12, y: -5, w: 4, h: 3, hid: 2 },
     { kind: "house", name: "", x: -17, y: -4, w: 4, h: 3, hid: 3 },
@@ -35,7 +35,7 @@
   /* 사람이 늘면 새로 짓는 집 자리 (hid 6부터). 앞의 셋은 마을 안 빈터, 뒤(wide)는 울타리 밖으로 마을을 넓혀 짓는 자리.
    * 지형(물·절벽·밭)이나 다른 건물과 겹치는 자리는 그 마을에선 쓰지 않는다 (houseSlots) */
   const EXTRA_HOUSES = [
-    { hid: 6, x: 9, y: 12 }, { hid: 7, x: -12, y: 11 }, { hid: 8, x: 12, y: -10 }, // 6: 밭 옆 집(1번)의 문 앞을 막지 않게 한 줄 띄운다
+    { hid: 6, x: 9, y: 12 }, { hid: 7, x: -15, y: 12 }, { hid: 8, x: 12, y: -10 }, // 6: 밭 옆 집(1번)의 문 앞을 막지 않게 한 줄 띄운다
     { hid: 9, x: 19, y: -4, wide: true }, { hid: 10, x: 19, y: 4, wide: true }, { hid: 11, x: -23, y: -4, wide: true },
     { hid: 12, x: -23, y: 4, wide: true }, { hid: 13, x: -13, y: 18, wide: true }, { hid: 14, x: 9, y: 18, wide: true },
   ].map((b) => ({ kind: "house", name: "", w: 4, h: 3, ...b }));
@@ -199,8 +199,10 @@
       if (t === T.WATER || t === T.DEEP || t === T.CLIFF || t === T.FIELD || o === O.FENCE || o === O.SIGN || o === O.TENT) return false;
       if (sid >= 0 && sid !== bd.id) return false;
     }
-    for (const ob of MAP.buildings) { // 이웃 건물과 겹치지 않고, 남의 문 앞을 막지 않는다
+    for (const ob of MAP.buildings) { // 이웃 건물과 겹치지 않고, 남의 문 앞을 막지 않는다. 옆으로 한 칸, 위아래로 두 줄(지붕이 그 위로 그려진다)은 띄운다
       if (ob.id === bd.id) continue;
+      const gx = Math.max(x0 - (ob.x + ob.w), ob.x - (x0 + ww)), gy = Math.max(y0 - (ob.y + ob.h), ob.y - (y0 + hh));
+      if (ob.town === bd.town && ((gx < 1 && gy < 2) || (gy < 1 && gx < 1))) return false;
       if (x0 < ob.x + ob.w && ob.x < x0 + ww && y0 < ob.y + ob.h && ob.y < y0 + hh) return false;
       if (door[0] >= ob.x && door[0] < ob.x + ob.w && door[1] >= ob.y && door[1] < ob.y + ob.h) return false;
       if (ob.door[0] >= x0 && ob.door[0] < x0 + ww && ob.door[1] >= y0 && ob.door[1] <= y0 + hh) return false;
@@ -325,7 +327,7 @@
     const pos = TOWN_POS[town]; if (!pos) return [];
     const [cx, cy] = pos, built = new Set(MAP.buildings.filter((b) => b.town === town && b.kind === "house").map((b) => b.hid));
     return EXTRA_HOUSES.filter((b) => !built.has(b.hid) && (() => {
-      for (let y = cy + b.y - 1; y <= cy + b.y + b.h + 1; y++) for (let x = cx + b.x - 1; x <= cx + b.x + b.w; x++) {
+      for (let y = cy + b.y - 2; y <= cy + b.y + b.h + 1; y++) for (let x = cx + b.x - 1; x <= cx + b.x + b.w; x++) { // 위로 두 줄: 지붕이 윗집에 붙어 보이지 않게
         if (!MAP.inb(x, y)) return false;
         const t = MAP.getT(x, y), o = MAP.obj[MAP.I(x, y)];
         if (t === T.WATER || t === T.DEEP || t === T.CLIFF || t === T.FIELD || t === T.BRIDGE || MAP.solid[MAP.I(x, y)] >= 0 || o === O.FENCE || o === O.SIGN || o === O.TENT) return false;
@@ -906,7 +908,7 @@
     const p = w.player, t = MAP.getT(x, y);
     if (objAt(w, x, y) && objAt(w, x, y) !== O.FLOWER) return false;
     if (MAP.solid[MAP.I(x, y)] >= 0) return false;
-    if (t === T.FIELD) return true;
+    if (t === T.FIELD) return townAt(x, y) === p.town; // 공동 밭은 그 마을 사람만
     if (t === T.GRASS && p.home) {
       const h = homeBuilding(w);
       if (h && Math.hypot(x - h.door[0], y - h.door[1]) <= 6 && y > h.y + h.h - 1) return true;
@@ -996,6 +998,7 @@
     if (a.type === "chicken") {
       const e = ext(w); e.chickenGone = e.chickenGone || {}; e.chickenGone[a.town] = (e.chickenGone[a.town] || 0) + 1;
       crime(w, "livestock", null, 1, `${jo(w.player.name, "이/가")} ${w.towns[a.town].name}의 닭을 잡아 버렸다`);
+      log(w, "남의 닭을 잡았다. 마을 사람들이 도둑질로 여긴다.", "warn");
     }
     return `${jo(def.name, "을/를")} 잡았다! (${got.join(", ")})`;
   }
@@ -1344,7 +1347,7 @@
       }
       case "till": {
         if (f) return "이미 갈아 둔 땅이다.";
-        if (!canTill(w, tx, ty)) return "여기는 갈 수 없는 땅이다. 마을 공동 밭이나 내 집 주변 풀밭을 갈 수 있다.";
+        if (!canTill(w, tx, ty)) return MAP.getT(tx, ty) === T.FIELD ? `${w.towns[townAt(tx, ty)] ? w.towns[townAt(tx, ty)].name + " 사람들의" : "남의"} 공동 밭이다. 내 마을 공동 밭이나 내 집 주변 풀밭을 갈 수 있다.` : "여기는 갈 수 없는 땅이다. 마을 공동 밭이나 내 집 주변 풀밭을 갈 수 있다.";
         e.farm[key] = { watered: -1, crop: null, owner: p.id };
         return out("땅을 갈았다.", 10, 3);
       }
@@ -1770,6 +1773,33 @@
   const STOCKED = (id) => !id.startsWith("seed") && !["can", "dagger", "sword", "potion"].includes(id);
   const buyPrice = (w, t, id) => (STOCKED(id) ? A.stockPrice(w, t, id) : ITEMS[id].price);
   /** 건물의 메뉴. {id, label, hint, ok, why, min, e, arg} */
+  /** 지금 이 집 안에 있는 식구 (집 안 자리에 있는 사람) */
+  function whoIsHome(w, bd) {
+    return residentsOf(w, bd).filter((n) => { const k = walkers.get(n.id); return k && k.inside && Math.hypot(k.x - (bd.door[0] + 0.5), k.y - (bd.door[1] + 0.5)) < 3 && !n.trip && !n.away; });
+  }
+  /* 노크: 집에 있는 사람이 나와 본다. 너무 늦은 밤·앓는 중·나를 싫어하면 거절, 친하면 들어오라고 하고, 아니면 문을 열고 나와서 이야기한다.
+   *  미션 상대가 집에 있으면 그 사람이 먼저 나온다. 돌려줌: { text, talk?: 나온 사람 id } */
+  function knock(w, bd) {
+    const p = w.player, e = ext(w), home = whoIsHome(w, bd);
+    if (!home.length) return { text: "똑똑… 아무도 없는 것 같다." };
+    const want = new Set((e.missions || []).filter((m) => !m.done).flatMap((m) => [m.to, m.b, m.target, m.from]));
+    const n = home.find((x) => want.has(x.id)) || [...home].sort((a, b) => A.opinion(b, p.id) - A.opinion(a, p.id))[0];
+    const op = A.opinion(n, p.id), fam = A.family(p).has(n.id) || p.spouse === n.id || p.lover === n.id, h = hour(w), late = h >= 22 || h < 6;
+    const I = A.illOf(n), errand = want.has(n.id);
+    spend(w, 2, 0);
+    if (op < -20) { adjust(n, p.id, -1); return { text: `문 너머로 ${n.name}의 목소리가 들렸다. "…볼일 없어요. 가세요."` }; }
+    if (late && !fam && op < 60) { adjust(n, p.id, -2); return { text: `한참 뒤에야 ${n.name}의 잠긴 목소리가 들렸다. "이 시간에 누구예요…? 내일 와요."` }; }
+    if (I && I !== A.ILLS.cold && !fam && !errand) return { text: `${jo(n.name, "이/가")} 문을 빼꼼 열었다. "${I.hurt ? "다쳐서 누워 있어요" : `${jo(I.name, "이/가")} 들어서 누워 있어요`}… 다음에 와 줄래요?"` };
+    if ((fam || op >= 40) && !late) { // 들어오라고 한다: 한 시간 동안 이 집에 들어갈 수 있다
+      const start = Math.floor(h * 2) / 2;
+      e.missions.push({ id: ++e.msSeq, type: "visit", to: n.id, town: bd.town, hid: bd.hid, day: w.day, start, until: Math.min(start + 1.5, 22), reward: 0, got: 0, done: false, knocked: true });
+      return { text: `${jo(n.name, "이/가")} 문을 활짝 열었다. "${p.name}! 마침 잘 왔어요. 들어와요."` };
+    }
+    // 문을 열고 나와서 이야기한다
+    const k = walkers.get(n.id);
+    if (k) { k.inside = false; k.x = bd.door[0] + 0.5; k.y = bd.door[1] + 1.2; k.path = []; k.hold = absMin(w) + 20; }
+    return { text: late ? `${jo(n.name, "이/가")} 눈을 비비며 문을 열고 나왔다.` : `${jo(n.name, "이/가")} 문을 열고 나왔다.`, talk: n.id };
+  }
   function buildingMenu(w, pl) {
     const p = w.player, e = ext(w), v = [];
     const add = (o) => { if (o.ok === undefined) o.ok = true; if (o.e > 0 && p.energy < o.e) { o.ok = false; o.why = "기력이 없다"; } v.push(o); };
@@ -1782,6 +1812,7 @@
     }
     const myWorks = [...A.worksOf(p.job), ...(p.side && p.side !== p.job ? A.worksOf(p.side).filter((x) => x.steps) : [])];
     for (const wk of myWorks.filter((x) => x.place === pl.kind)) {
+      if (pl.kind === "fields" && pl.town !== p.town) { add({ id: "locked", label: `${wk.name}`, ok: false, why: `${w.towns[pl.town].name} 사람들의 공동 밭이다` }); continue; } // 남의 마을 밭에서는 일하지 않는다
       const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n)).map(([id, n]) => `${ITEMS[id].name} ${n - (e.inv[id] || 0)}`);
       const client = wk.client ? A.workClient(w, p, wk) : null;
       add({ id: "wk:" + wk.id, label: wk.steps ? `${wk.name} · ${wk.steps.length}단계` : wk.name, min: wk.mins, e: wk.energy, hint: [wk.hint, client ? `손님 ${client.name}` : "", wk.needs ? `재료 ${Object.entries(wk.needs).map(([id, n]) => `${ITEMS[id].name} ${n}`).join(", ")}` : ""].filter(Boolean).join(" · "),
@@ -1814,6 +1845,8 @@
       } else if (inv && !inside) add({ id: "locked", label: `${w.npcs[inv.to].name}의 집 (초대받음)`, ok: false, why: "문으로 걸어 들어가면 된다" });
       const bi = breakinAt(w, bd);
       if (bi && inside) { add({ id: "steal:rummage", label: "서랍 뒤지기 (20분)", min: 0, e: 0, hint: sleepersIn(w, bd).length ? "자는 사람이 깰 수도 있다" : "아무도 없다", ok: !bi.looted, why: "이미 다 뒤졌다" }); add({ id: "steal:leave", label: "조용히 빠져나가기", min: 0, e: 0, hint: "" }); }
+      const home = whoIsHome(w, bd);
+      if (!inv && !bi && !inside && home.length) add({ id: "knock", label: "노크하기", min: 0, e: 0, hint: `집에 ${home.length === 1 ? home[0].name : `${home[0].name} 등 ${home.length}명`}이 있는 것 같다` });
       if (!inv && !bi && !inside) add({ id: "steal:breakin", label: "몰래 들어가기 (10분)", min: 0, e: 3, hint: isNight(w) ? "밤이라 거리엔 사람이 적다. 들키면 수배된다" : "대낮이다. 지나가는 사람이 볼 수 있다" });
       if (!ms.length && !inv && !bi) add({ id: "locked", label: "남의 집이다", ok: false, why: p.job === "builder" ? "집주인에게 ‘고칠 데 없어요?’라고 물어 일을 받아 보자" : "문이 잠겨 있다" });
     }
@@ -1919,6 +1952,7 @@
     const town = w.towns[pl.town];
     let text = "";
     if (id === "jobmake") return { jobmake: true };
+    if (id === "knock") return knock(w, MAP.buildings[pl.b]);
     if (id.startsWith("side:")) { p.side = id.slice(5); return finish(w, `이제 ${JOBS[p.side].name} 일을 부업으로 한다.`, 0, 0); }
     if (id.startsWith("wk:") && def.work.steps) return { sim: def.work }; // 조작 화면을 연다 (ui → Sims.run → finishWork)
     if (id.startsWith("wk:")) {
@@ -2092,7 +2126,7 @@
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, standOK, bodyFits, footRects, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
-    setup, newLife, resetLife, extOf, blockedReason, tick, jailDay, bail, bailOf, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
+    setup, newLife, resetLife, extOf, blockedReason, tick, jailDay, bail, bailOf, knock, whoIsHome, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
     updateAnimals, updateWalkers, visibleNPCs, say, npcAtTile, forageReady, farmDawn, canTill, homeBuilding,
     buildingMenu, doBuilding, reportCrime, knownCrimes, crime, peopleHere, activity, weaponDmg, log, attackNPC,
     pendingMins: 0, onLog: null, onHurt: null, onSwing: null, onTalk: null,
