@@ -166,6 +166,11 @@
    * (규칙이 바뀌어도 이미 어른인 사람이 아이로 돌아가지 않게) */
   const adultAge = (race) => (RACES[race] && RACES[race].adultAge) || ADULT;
   const isAdult = (n) => (n.grown !== undefined ? n.grown : age(n) >= adultAge(n.race));
+  /* 한평생 가운데 어디쯤인가 (0 = 갓난아이, 1 = 타고난 수명). 0.75를 넘으면 늙은이로 본다 */
+  const lifeFrac = (n) => n.age_days / DPY / Math.max(1, n.lifespan);
+  const isElder = (n) => isAdult(n) && lifeFrac(n) >= 0.75;
+  /** 늙으면 몸이 예전 같지 않다: 회복할 수 있는 체력의 끝 */
+  const healthCap = (n) => (isAdult(n) ? clamp(10 - Math.max(0, lifeFrac(n) - 0.7) * 16, 4, 10) : 10);
   function family(n) {
     const f = new Set([...n.parents, ...n.children]);
     if (n.spouse !== null) f.add(n.spouse);
@@ -268,7 +273,7 @@
   function applyEffects(w, n, wk, q, client) {
     const fx = wk.effects || {}, out = [], g = gradeOf(q);
     if (fx.gold) { const v = Math.round((fx.gold[0] + (fx.gold[1] - fx.gold[0]) * q) * 10) / 10, payer = client && client.gold >= v ? client : null; if (payer) payer.gold -= v; n.gold += v; out.push(`금화 ${v}닢`); }
-    if (fx.heal && client) { const h0 = client.health; client.health = Math.min(10, client.health + fx.heal * (0.4 + q)); out.push(`${client.name}의 체력 +${Math.round((client.health - h0) * 10) / 10}`); }
+    if (fx.heal && client) { const h0 = client.health; client.health = Math.min(healthCap(client), client.health + fx.heal * (0.4 + q)); treat(w, client, 2 + Math.round(q * 2)); out.push(`${client.name}의 체력 +${Math.round((client.health - h0) * 10) / 10}`); }
     if (fx.rel && client) { adjust(client, n.id, Math.round(fx.rel * (0.3 + q))); out.push(`${client.name}의 마음이 열렸다`); }
     if (fx.bond && client) {
       const k = Math.round(fx.bond * q);
@@ -645,11 +650,14 @@
       n.alive = false; n.death_day = this.day; n.death_cause = how;
       const fam = family(n);
       const mourners = this.alive().filter((m) => opinion(m, n.id) >= 50 || fam.has(m.id)).map((m) => m.id);
-      if (n.spouse !== null && this.npcs[n.spouse].alive) { const s = this.npcs[n.spouse]; s.spouse = null; s.flags.add("widowed"); }
+      if (n.controller !== "player") mourn(this, n); // 가족의 슬픔 (배우자 기록이 지워지기 전에)
+      const late = n.spouse;
+      if (n.spouse !== null && this.npcs[n.spouse].alive) { const s = this.npcs[n.spouse]; s.spouse = null; s.flags.add("widowed"); s.lateSpouse = n.id; }
       if (n.fame >= 10) imp = Math.max(imp, 7);
       const ev = this.record(kind, `${jo(n.name, "이/가")} ${how} 세상을 떠났다`,
         { actor: killer, target: n.id, town: n.town, imp, sent: killer !== null ? -20 : 0, cause, wr: 0.5, notify: mourners });
       passHouses(this, n, ev); // 그 사람이 주인이던 집은 같은 집 식구에게 넘어간다 (배우자 → 자녀 → 다른 식구)
+      if (n.controller !== "player") { const s0 = n.spouse; n.spouse = late; estate(this, n, ev); n.spouse = s0; } // 금화·소지품은 배우자 → 자녀
       if (demon) for (const mid of mourners) { const m = this.npcs[mid]; m.flags.add("demon_grudge"); m.traits.bravery = Math.min(1, m.traits.bravery + 0.1); }
       if (killer !== null) {
         const k = this.npcs[killer];
@@ -838,9 +846,9 @@
     const healers = w.residents(n.town, true).filter((h) => h.id !== n.id && JOBS[h.job].healer);
     if (healers.length && n.gold >= 3) {
       const h = maxBy(healers, (h) => opinion(n, h.id));
-      n.gold -= 3; h.gold += 3; n.health = Math.min(10, n.health + 4);
+      n.gold -= 3; h.gold += 3; n.health = Math.min(healthCap(n), n.health + 4); treat(w, n, 3);
       adjust(n, h.id, 4); adjust(h, n.id, 2);
-    } else n.health = Math.min(10, n.health + 1.5);
+    } else n.health = Math.min(healthCap(n), n.health + 1.5);
   }
 
   function rSocial(n, w) {
@@ -1042,7 +1050,7 @@
     return opts.length ? maxBy(opts, (j) => expectedIncome(w, j, n.town, 1)) : null;
   }
   function uJob(n, w) {
-    if (n.job_cooldown > 0 || n.role) return 0;
+    if (n.job_cooldown > 0 || n.role || n.retired) return 0;
     const j = betterJob(n, w);
     if (!j) return 0;
     if (n.dream && n.dream.job === j.id) return 1.6;
@@ -1069,7 +1077,7 @@
   }
 
   function uWar(n, w) {
-    if (!w.war.active || n.at_war) return 0;
+    if (!w.war.active || n.at_war || n.retired || n.ill) return 0;
     let u = n.traits.bravery ** 2 * 0.25 * (w.war.front < 35 ? 1.6 : 1);
     if (n.flags.has("demon_grudge")) u += 0.4;
     if (n.spouse !== null) u *= 0.4;
@@ -1100,7 +1108,7 @@
     { id: "work", label: "일하기", hint: "금화를 벌고, 농부라면 식량을 생산한다",
       u: (n, w) => 1 + n.traits.greed * 0.3 + (JOBS[n.job].food && w.foodPrice(w.towns[n.town]) >= 2 ? 0.5 : 0), run: rWork },
     { id: "heal", label: "치료받기", hint: "치유사에게 금화 3닢을 내고 체력을 회복한다",
-      u: (n) => (n.health >= 7 ? 0 : (10 - n.health) * 0.3), run: rHeal },
+      u: (n) => (n.ill && n.ill.id !== "cold" ? 1.2 : 0) + (n.health >= Math.min(7, healthCap(n) - 0.5) ? 0 : (healthCap(n) - n.health) * 0.3), run: rHeal },
     { id: "social", label: "사람들과 어울리기", hint: "우정과 사랑이 깊어지고, 소문을 주고받는다",
       u: (n, w) => (w.residents(n.town, true).length < 2 ? 0 : 0.5 + (1 - n.traits.greed) * 0.2 + (n.spouse === null && age(n) < 45 ? 0.2 : 0)), run: rSocial },
     { id: "help", label: "어려운 이웃 돕기", hint: "가난하거나 굶주린 이웃에게 금화를 건넨다",
@@ -1181,6 +1189,7 @@
     stockDecay(w);
     shortDay(w);
     upkeep(w);
+    lifeCourse(w);
     w.dayOpen = false;
     w.clock = 0;
   }
@@ -1262,16 +1271,18 @@
       else if (n.outside) n.hunger += 1;
       else {
         const town = w.towns[n.town], price = w.foodPrice(town), adult = isAdult(n);
-        if (town.food >= 1 && (!adult || n.gold >= price)) {
+        if (town.food >= 1 && (!adult || n.gold >= price || supportFor(w, n, price))) {
           town.food -= 1;
           if (adult) { n.gold -= price; paid[n.town] = (paid[n.town] || 0) + price; }
           n.hunger = Math.max(0, n.hunger - 2);
         } else n.hunger += 1;
       }
       if (n.hunger >= 4) n.health -= 1;
-      else if (n.health < 10 && n.hunger < 2) n.health = Math.min(10, n.health + 0.15);
+      else if (n.health < healthCap(n) && n.hunger < 2 && !n.ill) n.health = Math.min(healthCap(n), n.health + 0.15);
       if (n.health <= 0) { w.die(n, "굶주림 끝에", { imp: n.controller === "player" ? 6 : 4 }); continue; }
-      if (age(n) >= n.lifespan && w.rng.next() < 0.02) { w.die(n, "천수를 누리고", { imp: 3 }); continue; }
+      // 천수: 수명 가까이 가면 언제든 떠날 수 있다 (수명을 넘기면 하루하루가 덤)
+      const lf = lifeFrac(n);
+      if (lf >= 0.88 && w.rng.next() < (lf >= 1 ? 0.02 : 0.0012 * Math.exp((lf - 0.88) * 24) * (n.ill ? 2 : 1))) { w.die(n, "천수를 누리고", { imp: 3 }); continue; }
       n.gold *= 0.997;
       n.job_cooldown = Math.max(0, n.job_cooldown - 1);
       decayMemory(n, w);
@@ -1315,6 +1326,103 @@
     }
   }
 
+  // ================================================================ 생애 주기: 병·다침·늙음·부양·유산·슬픔
+  /* 사람은 가끔 앓고(겨울·굶주림·아이·늙은이일수록 잦다), 일하다 다치고, 늙으면 기력이 줄고 일을 놓는다.
+   *  n.ill = { id, since, until, care }   앓는 동안 날마다 체력이 깎이고 쉬어야 한다. 의원·사제의 치료와 식구의 돌봄이 낫게 한다
+   *  n.retired = 일을 놓은 날             늙은이는 일을 줄이다가 놓고, 형편이 어려우면 같은 마을의 식구가 밥값을 댄다
+   *  n.grief = { of, until }               가족을 잃으면 한동안 기분이 가라앉고 일이 손에 안 잡힌다
+   *  죽은 사람의 금화와 소지품은 배우자, 없으면 자녀에게 간다 (estate) */
+  const ILLS = {
+    cold: { name: "고뿔", sev: 0.25, days: [3, 6], death: "고뿔이 깊어져" },
+    fever: { name: "열병", sev: 0.8, days: [4, 9], death: "열병을 앓다가" },
+    hurt: { name: "다친 곳", sev: 0.45, days: [5, 12], death: "다친 곳이 덧나", hurt: true },
+    frail: { name: "노환", sev: 0.55, days: [6, 14], death: "노환으로" },
+  };
+  const illOf = (n) => (n.ill && ILLS[n.ill.id]) || null;
+  const kinIn = (w, n) => [...family(n)].map((i) => w.npcs[i]).filter((m) => m && m.alive && m.town === n.town && !m.at_war && !m.trip && !m.away);
+  function fallIll(w, n, id, why = "") {
+    if (n.ill || !n.alive) return;
+    const I = ILLS[id];
+    n.ill = { id, since: w.day, until: w.day + w.rng.randint(I.days[0], I.days[1]), care: 0 };
+    if (id === "cold" && n.controller !== "player") return; // 고뿔은 소식거리가 아니다
+    const text = I.hurt ? `${jo(n.name, "이/가")} ${why || "일하다"} 다쳐 한동안 쉬게 되었다` : `${jo(n.name, "이/가")} ${I.name}${jo(I.name, "으로/로").slice(I.name.length)} 앓아누웠다`;
+    w.record("ill", text, { target: n.id, town: n.town, imp: 2, wr: 0.05, notify: kinIn(w, n).map((m) => m.id), data: { ill: id } });
+  }
+  /** 치료: 앓는 날이 줄어든다 (노환은 조금만) */
+  function treat(w, n, days = 3) {
+    if (!n.ill) return;
+    n.ill.until = Math.max(w.day, n.ill.until - (n.ill.id === "frail" ? 1 : days));
+    if (n.ill.until <= w.day && n.ill.id !== "frail") n.ill = null;
+  }
+  function lifeCourse(w) {
+    const winter = w.season === "겨울";
+    for (const n of w.alive()) {
+      if (n.at_war) continue;
+      const f = lifeFrac(n), kid = !isAdult(n), old = isElder(n);
+      if (n.ill) {
+        const I = illOf(n) || ILLS.cold;
+        // 같은 마을의 식구가 곁을 지킨다
+        const kin = kinIn(w, n).filter((m) => isAdult(m) && !m.ill);
+        if (kin.length && w.rng.next() < 0.7) {
+          const c = w.rng.choice(kin); n.ill.care = 1; adjust(n, c.id, 1);
+          if (!n.ill.cared && I !== ILLS.cold && c.controller !== "player") { n.ill.cared = c.id; if (w.rng.next() < 0.5) w.record("care", `${jo(c.name, "이/가")} 앓아누운 ${n.name} 곁을 지켰다`, { actor: c.id, target: n.id, town: n.town, imp: 1, sent: 2, wr: 0 }); }
+        }
+        n.health -= I.sev * (old ? 1 + (f - 0.75) * 4 : kid ? 1.1 : 0.8) * (n.ill.care ? 0.6 : 1) * (n.hunger >= 2 ? 1.5 : 1);
+        n.ill.care = 0;
+        if (n.health <= 0) { w.die(n, I.death, { imp: 3, kind: "death" }); continue; }
+        if (w.day >= n.ill.until) n.ill = null;
+      } else {
+        const p = 0.0016 * (winter ? 2.5 : 1) * (kid ? 1.4 : 1) * (old ? 1 + (f - 0.75) * 14 : 1) * (n.hunger >= 2 ? 2 : 1);
+        if (w.rng.next() < p) fallIll(w, n, old && w.rng.next() < 0.5 ? "frail" : w.rng.next() < 0.16 ? "fever" : "cold");
+      }
+      n.health = Math.min(n.health, healthCap(n));
+      if (n.grief && w.day >= n.grief.until) n.grief = null;
+      if (n.grief) n.mood = Math.min(n.mood ?? 0.6, 0.25 + 0.35 * (1 - (n.grief.until - w.day) / n.grief.len));
+      // 일을 놓는다: 늙어서 기력이 다하면 (모아 둔 것이 있거나 기댈 식구가 있으면 더 일찍)
+      if (old && !n.retired && n.controller !== "player" && !n.role && f >= 0.8) {
+        const kids = n.children.map((c) => w.npcs[c]).filter((c) => c.alive && isAdult(c) && c.town === n.town);
+        const p = 0.004 + (f - 0.8) * 0.05 + (kids.length ? 0.004 : 0) + (n.gold > 80 ? 0.003 : 0) + (n.health < 6 ? 0.01 : 0);
+        if (w.rng.next() < p) {
+          n.retired = w.day;
+          const heir = kids.find((c) => c.job === n.job), J = JOBS[n.job] || { name: "일" };
+          w.record("retire", heir ? `${jo(n.name, "이/가")} 나이가 들어 ${J.name} 일을 ${heir.name}에게 맡기고 물러났다` : `${jo(n.name, "이/가")} 나이가 들어 ${J.name} 일을 놓았다`,
+            { actor: n.id, target: heir ? heir.id : null, town: n.town, imp: 2, wr: 0.1, data: { job: n.job, heir: heir ? heir.id : null } });
+        }
+      }
+    }
+  }
+  /** 밥값을 못 내는 사람의 밥값을 같은 마을 식구가 댄다 (자녀 → 배우자 → 부모). 처음 늙은 부모를 모시게 되면 소식으로 */
+  function supportFor(w, n, price) {
+    const kin = kinIn(w, n).filter((m) => isAdult(m) && m.controller !== "player" && m.gold >= price * 4);
+    if (!kin.length) return false;
+    const p = kin.find((m) => n.children.includes(m.id)) || kin.find((m) => m.id === n.spouse) || kin[0];
+    p.gold -= price; n.gold += price;
+    if (n.retired && n.children.includes(p.id) && !n.flags.has("cared")) {
+      n.flags.add("cared"); adjust(n, p.id, 5);
+      w.record("support", `${jo(p.name, "이/가")} 일을 놓은 ${n.name}의 밥값을 대며 모시기 시작했다`, { actor: p.id, target: n.id, town: n.town, imp: 2, sent: 3, wr: 0.1 });
+    }
+    return true;
+  }
+  /** 남긴 것: 금화와 소지품은 배우자에게, 없으면 자녀들이 나눠 갖는다 */
+  function estate(w, n, ev) {
+    const sp = n.spouse !== null && w.npcs[n.spouse] && w.npcs[n.spouse].alive ? [w.npcs[n.spouse]] : [];
+    const heirs = sp.length ? sp : n.children.map((c) => w.npcs[c]).filter((c) => c && c.alive);
+    const gold = Math.floor(n.gold || 0);
+    if (!heirs.length) return;
+    for (const h of heirs) h.gold += gold / heirs.length;
+    if (n.inv) { const h = heirs[0]; h.inv = h.inv || {}; for (const [id, k] of Object.entries(n.inv)) h.inv[id] = (h.inv[id] || 0) + k; n.inv = {}; }
+    n.gold = 0;
+    if (gold >= 5) w.record("estate", `${heirs.map((h) => h.name).join("·")}${jo(heirs[heirs.length - 1].name, "이/가").slice(heirs[heirs.length - 1].name.length)} ${jo(n.name, "이/가")} 남긴 금화 ${gold}닢을 물려받았다`,
+      { actor: heirs[0].id, target: n.id, town: heirs[0].town, imp: 1, wr: 0, cause: ev ? ev.id : null, data: { gold, heirs: heirs.map((h) => h.id) } });
+  }
+  /** 가족을 잃은 사람들: 배우자·자식을 잃은 슬픔이 가장 오래간다 */
+  function mourn(w, n) {
+    const mk = (m, len) => { if (!m || !m.alive || m.controller === "player") return; if (!m.grief || m.grief.until - w.day < len) m.grief = { of: n.id, until: w.day + len, len }; m.mood = Math.min(m.mood ?? 0.6, 0.25); };
+    if (n.spouse !== null) mk(w.npcs[n.spouse], 45);
+    for (const p of n.parents) mk(w.npcs[p], 40);
+    for (const c of n.children) mk(w.npcs[c], 25);
+  }
+
   function births(w) {
     const seen = new Set();
     for (const n of w.alive()) {
@@ -1343,7 +1451,9 @@
     n.grown = true; n.culture = w.towns[n.town] ? w.towns[n.town].nation : n.culture; // 자란 곳의 문화권
     const pj = n.parents.map((p) => w.npcs[p].job);
     let how;
-    if (pj.length && w.rng.next() < 0.5) { setJob(n, w.rng.choice(pj)); how = "부모의 일을 이어받아"; }
+    const grew = Object.entries(n.helped || {}).filter(([j]) => JOBS[j] && pj.includes(j)).sort((a, b) => b[1] - a[1])[0]; // 어릴 적 가장 많이 거든 일
+    if (grew && w.rng.next() < 0.5 + Math.min(0.3, grew[1] / 400)) { setJob(n, grew[0]); how = "부모의 일을 이어받아"; for (const k of JOBS[grew[0]].teaches || []) addXp(n, k, grew[1] * 0.25); }
+    else if (pj.length && w.rng.next() < 0.5) { setJob(n, w.rng.choice(pj)); how = "부모의 일을 이어받아"; }
     else { setJob(n, w.pickJob(w.towns[n.town])); how = "스스로 길을 정해"; }
     n.gold = w.rng.uniform(5, 15);
     let text = `${jo(n.name, "이/가")} 성인이 되어 ${how} ${jo(JOBS[n.job].name, "이/가")} 되었다`, imp = 3;
@@ -1598,28 +1708,44 @@
     const t = dayOf(n, w), L = n.life || {}, J = JOBS[n.job] || {}, tr = n.traits;
     n.fatigue = n.fatigue ?? 0.2; n.mood = n.mood ?? 0.6;
     if (h < 6 || h >= 22.5) return { act: "sleep", hours: 1 };
-    if (!isAdult(n)) return { act: h < 19 ? "kid" : "rest", hours: 2 };
-    const sick = n.health < 6, rainy = wet(w), outdoorJob = J.workplace === "fields";
+    if (!isAdult(n)) {
+      if (n.ill) return { act: "rest", hours: 2 };
+      // 다 커 가는 아이는 낮에 부모의 일을 거든다 (그 일을 조금씩 익힌다)
+      const par = h >= 8 && h < 16 && n.age_days >= adultAge(n.race) * DPY * 0.55 ? helpParent(w, n) : null;
+      if (par && w.rng.next() < 0.45) return { act: "help", hours: w.rng.randint(2, 3), par };
+      return { act: h < 19 ? "kid" : "rest", hours: 2 };
+    }
+    const sick = n.health < 6 || !!n.ill, rainy = wet(w), outdoorJob = J.workplace === "fields";
     const lunch = h >= 11.5 && h < 13.5 && !t.ate.L, dinner = h >= 18 && h < 20.5 && !t.ate.D;
     const intent = t.intent, holiday = w.festivalToday && w.festivalToday[n.town], restDay = w.holiday && w.holiday.kind === "rest";
+    if (n.ill && n.ill.id !== "cold") return lunch || dinner ? { act: "meal", hours: 1 } : { act: "rest", hours: 2 }; // 앓아누운 사람은 집에서 쉰다
     const S = {};
     if (lunch || dinner) S.meal = 3;
     const workHours = h >= 7 && h < 18;
-    if (workHours) S.work = Math.max(0, (intent === "work" ? 1.7 : intent ? 0.7 : 1.0) * (0.75 + tr.ambition * 0.35 + tr.greed * 0.25) * (1 - n.fatigue) * (rainy && outdoorJob ? 0.55 : 1) * (t.worked >= 8 ? 0.15 : 1) * (sick ? 0.3 : 1) * (holiday ? 0.15 : restDay ? 0.5 : 1));
-    S.rest = n.fatigue * 1.4 + (rainy && !holiday ? 0.5 : 0) + (sick ? 1.2 : 0) + (intent === "rest" ? 1 : 0) + 0.05;
+    const lf = lifeFrac(n), aged = n.retired ? 0.12 : 1 - clamp((lf - 0.7) * 2.5, 0, 0.6); // 늙을수록 일이 준다. 일을 놓은 사람은 가끔 손을 보탤 뿐
+    if (workHours) S.work = Math.max(0, (intent === "work" ? 1.7 : intent ? 0.7 : 1.0) * (0.75 + tr.ambition * 0.35 + tr.greed * 0.25) * (1 - n.fatigue) * (rainy && outdoorJob ? 0.55 : 1) * (t.worked >= 8 ? 0.15 : 1) * (sick ? 0.3 : 1) * (n.ill && ILLS[n.ill.id].hurt ? 0 : 1) * (n.grief ? 0.75 : 1) * aged * (holiday ? 0.15 : restDay ? 0.5 : 1));
+    S.rest = n.fatigue * 1.4 + (rainy && !holiday ? 0.5 : 0) + (sick ? 1.2 : 0) + (n.ill ? 1.2 : 0) + (intent === "rest" ? 1 : 0) + (lf >= 0.8 ? 0.3 : 0) + 0.05;
     if (h >= 9 && h < 20) S.play = (fine(w) ? 0.9 : rainy ? 0.15 : 0.45) * (0.4 + (1 - n.mood) * 1.1 + tr.bravery * 0.3) * (holiday && h >= 13 ? 4 : holiday ? 2 : restDay ? 1.5 : 1) * (intent === "social" ? 1.4 : 1);
     if (holiday && h >= 13) S.play = Math.max(S.play || 0, 3); // 잔치는 날씨와 상관없이 열린다
+    if (S.play && (n.ill || n.grief)) S.play *= n.ill ? 0.15 : 0.35;
     S.social = (0.15 + tr.kindness * 0.3 + (1 - n.mood) * 0.35) * (intent === "social" || intent === "help" ? 2 : 1) * (h >= 17 ? 1.6 : workHours ? 0.5 : 1);
     if (h >= 9 && h < 18 && n.gold > 8) { const need = wantList(w, n).some((id) => (w.towns[n.town].stock || {})[id] > 0); S.shop = (need ? 0.8 : 0.1) + tr.greed * 0.2; }
-    if (J.healer || tr.kindness > 0.75) S.pray = 0.2 + (rainy ? 0.15 : 0);
+    if (J.healer || tr.kindness > 0.75 || n.grief || lf >= 0.8) S.pray = 0.2 + (rainy ? 0.15 : 0) + (n.grief ? 0.35 : 0);
+    if (n.grief) S.social *= 1.3; // 슬픔은 사람들 곁에서 달랜다
     S.chores = 0.25;
     const acts = Object.keys(S).filter((k) => S[k] > 0);
     const act = w.rng.choices(acts, acts.map((k) => S[k] ** 2));
     const hours = { work: w.rng.randint(2, 4), meal: 1, rest: w.rng.randint(1, 2), play: w.rng.randint(2, 3), social: w.rng.randint(1, 2), shop: 1, pray: 1, chores: 1 }[act];
     return { act, hours };
   }
+  /** 거들 부모: 같은 마을에서 지금 일하는 중인 부모 (일을 놓았거나 앓는 부모는 빼고) */
+  function helpParent(w, n) {
+    const ps = n.parents.map((p) => w.npcs[p]).filter((p) => p && p.alive && p.town === n.town && !p.trip && !p.away && !p.at_war && !p.retired && !p.ill && p.life && p.life.act === "work" && JOBS[p.job] && !JOBS[p.job].haul);
+    return ps.length ? ps[n.id % ps.length] : null;
+  }
   /** 할 일의 자리와 함께할 사람 정하기 */
   function placeFor(w, n, act) {
+    if (act === "meal" && n.ill && n.ill.id !== "cold") return { place: "home" };
     if (act === "meal") return { place: n.gold >= 3 && (n.traits.kindness > 0.4 || w.rng.next() < 0.5) && !wet(w) || n.gold >= 6 ? "tavern" : "home" };
     if (act === "play") {
       if (w.festivalToday && w.festivalToday[n.town]) return { place: "square", feast: true }; // 잔치 날은 광장으로
@@ -1630,6 +1756,7 @@
     if (act === "pray") return { place: "temple" };
     if (act === "work") return { place: "work" };
     if (act === "kid") return { place: w.rng.next() < 0.5 ? "square" : "home" };
+    if (act === "help") return { place: "work" };
     return { place: "home" };
   }
   /** 한 시간을 산다: 할 일이 끝났으면 다음을 고르고, 지금 하는 일의 효과를 받는다 */
@@ -1650,18 +1777,24 @@
         if (w.rng.next() < 0.35) w.record("chat", `${jo(n.name, "과/와")} ${jo(w.npcs[other].name, "이/가")} 약속대로 ${apptText(ap)}${jo(apptText(ap), "을/를").slice(apptText(ap).length)} 했다`, { actor: n.id, target: other, town: n.town, imp: 1, sent: 2, wr: 0 });
       }
     } else if (!n.life || m0 >= n.life.until || n.life.day !== w.day || hungryBreak || festBreak) {
-      const { act, hours } = planHour(w, n, h);
+      const { act, hours, par } = planHour(w, n, h);
       const pl = placeFor(w, n, act);
       n.life = { act, until: m0 + hours * 60, day: w.day, ...pl };
+      if (par) { n.life.with = par.id; n.life.job = par.job; }
       // 친구를 불렀다: 그 사람도 같은 자리로 (자거나 일하는 중이 아니면)
-      if (pl.with !== undefined) { const f = w.npcs[pl.with]; if (f && f.alive && f.controller !== "player" && w.rng.next() < 0.5) { f.life = { act: "social", until: n.life.until, day: w.day, place: pl.place, with: n.id, host: pl.host }; } }
+      if (pl.with !== undefined) { const f = w.npcs[pl.with]; if (f && f.alive && f.controller !== "player" && !(f.life && f.life.appt && f.life.day === w.day) && !f.ill && w.rng.next() < 0.5) { f.life = { act: "social", until: n.life.until, day: w.day, place: pl.place, with: n.id, host: pl.host }; } }
       // 놀러 가는 친구를 꼬드긴다 (맑은 날 무리 지어)
-      if (act === "play" && fine(w)) { const f = friendFor(w, n); if (f && w.rng.next() < 0.6) { f.life = { act: "play", until: n.life.until, day: w.day, place: n.life.place, spot: n.life.spot, with: n.id }; n.life.with = f.id; } }
+      if (act === "play" && fine(w)) { const f = friendFor(w, n); if (f && !(f.life && f.life.appt && f.life.day === w.day) && !f.ill && w.rng.next() < 0.6) { f.life = { act: "play", until: n.life.until, day: w.day, place: n.life.place, spot: n.life.spot, with: n.id }; n.life.with = f.id; } }
     }
     const L = n.life;
     switch (L.act) {
       case "sleep": n.fatigue = Math.max(0, n.fatigue - 0.12); n.mood += (0.55 - n.mood) * 0.05; break;
-      case "work": t.worked += 1; n.fatigue = Math.min(1, n.fatigue + 0.09); n.mood = Math.max(0, n.mood - 0.025); break;
+      case "work": t.worked += 1; n.fatigue = Math.min(1, n.fatigue + 0.09 * (1 + Math.max(0, lifeFrac(n) - 0.7) * 3)); n.mood = Math.max(0, n.mood - 0.025); break;
+      case "help": { // 부모 곁에서 일을 거든다: 그 직업의 기술이 조금씩 는다
+        n.helped = n.helped || {}; n.helped[L.job] = (n.helped[L.job] || 0) + 1;
+        for (const k of (JOBS[L.job] && JOBS[L.job].teaches) || []) addXp(n, k, 0.25);
+        n.fatigue = Math.min(1, n.fatigue + 0.05); if (L.with !== undefined && w.npcs[L.with]) { adjust(n, L.with, 0.5); adjust(w.npcs[L.with], n.id, 0.5); } break;
+      }
       case "meal": {
         if (h < 15) t.ate.L = true; else t.ate.D = true;
         n.mood = Math.min(1, n.mood + 0.08); n.fatigue = Math.max(0, n.fatigue - 0.05);
@@ -1979,7 +2112,8 @@
     visitDay(w, now);
     for (const n of w.alive()) {
       const kind = hauler(n);
-      if (!kind || n.trip || n.controller === "player" || !isAdult(n) || n.at_war || n.jail > 0 || n.health < 5) continue;
+      if (!kind || n.trip || n.controller === "player" || !isAdult(n) || n.at_war || n.jail > 0 || n.health < 5 || n.ill || n.retired) continue;
+      if ((w.appts || []).some((p) => p.state === "planned" && (p.a === n.id || p.b === n.id) && p.day <= w.day + 1)) continue; // 약속이 있는 날엔 먼 길을 나서지 않는다
       const home = w.towns[n.town]; if (!home || home.fallen) continue;
       const cap = 6 + 2 * skillLv(n, (JOBS[n.job].teaches || [])[0] || "");
       if (kind === "goods") {
@@ -2049,7 +2183,7 @@
     if (g.kind === "visit") {
       n.away = { at: to, until: w.day + (g.stay || 1), why: g.why, host: g.host, item: g.item, since: w.day };
       if (g.why === "shop") { const got = shopFor(w, n, T); if (got) n.away.got = got; }
-      if (g.why === "heal") { const hs = healerIn(w, to); if (hs.length) { const d = w.rng.choice(hs), fee = Math.min(n.gold, 6); n.gold -= fee; d.gold += fee; n.health = Math.min(10, n.health + 4); n.away.healer = d.id; adjust(n, d.id, 6); } }
+      if (g.why === "heal") { const hs = healerIn(w, to); if (hs.length) { const d = w.rng.choice(hs), fee = Math.min(n.gold, 6); n.gold -= fee; d.gold += fee; n.health = Math.min(healthCap(n), n.health + 4); treat(w, n, 4); n.away.healer = d.id; adjust(n, d.id, 6); } }
       if (g.host !== undefined && w.npcs[g.host]) { adjust(n, g.host, 6); adjust(w.npcs[g.host], n.id, 6); }
       return;
     }
@@ -2074,15 +2208,18 @@
       if (n.controller === "player" || !isAdult(n) || n.at_war || n.jail > 0 || n.trip) continue;
       if (n.away) { if (w.day >= n.away.until && !n.going) { n.going = { to: n.town, kind: "home" }; depart(w, n, now); } continue; }
       if (n.going || hauler(n) || n.health < 2) continue;
+      if ((w.appts || []).some((p) => p.state === "planned" && (p.a === n.id || p.b === n.id) && p.day <= w.day + 4)) continue; // 잡아 둔 약속이 있으면 길을 나서지 않는다
       const home = w.towns[n.town]; if (!home || home.fallen) continue;
       const near = (tid) => { if (tid === n.town || !w.towns[tid] || w.towns[tid].fallen) return null; const r = routeOf(w, n.town, tid); return r && r.len <= 380 ? r : null; };
       const k = (rest ? 3 : 1) * (busy ? 0.4 : 1);
       let plan = null;
       // 아픈데 우리 마을에 고쳐 줄 사람이 없으면
-      if (n.health < 6 && !healerIn(w, n.town).length && w.rng.next() < 0.25) {
+      const ailing = n.health < 6 || (n.ill && n.ill.id !== "cold");
+      if (ailing && !healerIn(w, n.town).length && w.rng.next() < 0.25) {
         const t = Object.values(w.towns).filter((x) => near(x.id) && healerIn(w, x.id).length).sort((a, b) => near(a.id).len - near(b.id).len)[0];
         if (t) plan = { to: t.id, why: "heal", stay: 2 };
       }
+      if (!plan && (n.ill || lifeFrac(n) >= 0.9)) continue; // 앓는 사람·아주 늙은 사람은 나들이를 하지 않는다
       // 우리 마을에 동난 것을 사러
       if (!plan && n.gold >= 25 && w.rng.next() < 0.06 * k) {
         const want = wantList(w, n).filter((id) => (home.short || {})[id] >= 3);
@@ -2117,11 +2254,13 @@
       if ((JOBS[n.job] || {}).seasonal && w.harvestMult() > 0.3 && w.rng.next() < 0.5 * scale) stockSupply(w, tw, "wheat", 1);
       if (n.job === "adventurer" && w.rng.next() < 0.3) stockSupply(w, tw, w.rng.choice(["meat", "hide", "old_coin"]), 1);
       if (tool > 1 && w.rng.next() < 0.01) invTake(n, "hoe"); // 연장은 닳는다
+      const J = JOBS[n.job] || {}; // 몸 쓰는 일은 가끔 다친다 (늙을수록 잦다)
+      if (["fields", "forge"].includes(J.workplace) && w.rng.next() < 0.0025 * Math.min(1, scale) * (isElder(n) ? 2 : 1)) fallIll(w, n, "hurt", J.workplace === "forge" ? "쇠를 다루다" : "밭일하다");
     }
   }
   /** 지금 무얼 하는지 (말 걸 때·사람 목록에 쓰인다) */
   const LIFE_LABEL_FEAST = "잔치 중";
-  const LIFE_LABEL = { fish: "낚시하는 중", sleep: "자는 중", work: "일하는 중", meal: "밥 먹는 중", rest: "쉬는 중", play: "놀러 나감", social: "친구와 함께", shop: "장 보는 중", pray: "기도하는 중", chores: "집안일", kid: "노는 중" };
+  const LIFE_LABEL = { fish: "낚시하는 중", sleep: "자는 중", work: "일하는 중", meal: "밥 먹는 중", rest: "쉬는 중", play: "놀러 나감", social: "친구와 함께", shop: "장 보는 중", pray: "기도하는 중", chores: "집안일", kid: "노는 중", help: "일 거드는 중" };
 
   // ================================================================ 농업의 발전
   /* 사람이 늘면 굶주림이 온다. 굶주림을 겪은 마을에서 솜씨 좋은 농부가 새 농법을 깨치고, 농법은 그 마을의 수확을 늘린다.
@@ -2817,7 +2956,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, visitDay, depart, land, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, SPREAD, locOf, journeyText, arriveDue, startTrip, routeOf, tripPoint, tradeGaps, ROAD_SPEED, cargoText, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, visitDay, depart, land, rHeal, rForage, enlist, returnHome, borderTown, DPS, lifeCourse, supportFor, estate, mourn, helpParent };
+  root.Asteria = { SAVE_VERSION, SPREAD, ILLS, illOf, lifeFrac, isElder, healthCap, fallIll, treat, locOf, journeyText, arriveDue, startTrip, routeOf, tripPoint, tradeGaps, ROAD_SPEED, cargoText, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

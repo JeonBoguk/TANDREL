@@ -768,7 +768,7 @@ function bioCard(n) {
   const acquainted = !pov || Math.abs(mine) >= 8 || Math.abs(theirs) >= 15 || life.some((e) => e.actor === p.id || e.target === p.id) || S.knowsDream(W, n);
   const dreamKnown = n.dream && (!pov || S.knowsDream(W, n));
   const k = G.walkers.get(n.id), here = playing() && k && !k.inside && n.alive && !n.at_war && n.town === G.townAt(W.ppos.x, W.ppos.y);
-  const status = !n.alive ? `${W.date(n.death_day)}에 ${n.death_cause} 세상을 떠났다` : n.at_war ? (n.role === "hero" ? "용사로서 전선에 있다" : "전선에서 싸우는 중") : n.jail > 0 ? `${W.towns[n.town].name} 감옥에 갇혀 있다` : `${W.towns[n.town].name}에 산다${here ? ` · 지금 ${G.activity(W, n)}` : ""}`;
+  const status = !n.alive ? `${W.date(n.death_day)}에 ${n.death_cause} 세상을 떠났다` : n.at_war ? (n.role === "hero" ? "용사로서 전선에 있다" : "전선에서 싸우는 중") : n.jail > 0 ? `${W.towns[n.town].name} 감옥에 갇혀 있다` : `${W.towns[n.town].name}에 산다${G.lifeState(W, n) ? ` · ${G.lifeState(W, n)}` : ""}${here ? ` · 지금 ${G.activity(W, n)}` : ""}`;
   const tag = pov ? S.relTag(p, n) : "";
   const tw = acquainted ? traitWords(n) : [];
   const dreamBox = h("div", { class: "card soft" }, h("div", { class: "ttl" }, h("span", null, "꿈"), dreamKnown ? h("span", { class: "small muted" }, `${W.ago(n.dream.since)}부터`) : null),

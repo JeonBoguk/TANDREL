@@ -526,7 +526,12 @@
       const why = { see: h ? `${jo(h.name, "을/를")} 보러` : "사람 보러", shop: `${a.got || a.item ? jo((G.ITEMS[a.got || a.item] || {}).name || "물건", "을/를") : "물건을"} 사러`, heal: "몸 좀 고치러", tour: "구경 삼아" }[a.why] || "볼일이 있어서";
       return `${home}에서 ${why} 왔어요. ${left <= 0 ? "내일 아침이면 돌아가요." : `${left}밤 더 묵고 가요.`}`;
     }
+    const I = A.illOf(n);
+    if (I) return I.hurt ? pick(w, ["일하다 좀 다쳐서요. 며칠은 쉬어야 한대요.", "다친 데가 아직 욱신거려요."]) : I === A.ILLS.frail ? pick(w, ["요즘은 몸이 예전 같지 않아요.", "기운이 없어서 누워 있었어요."]) : pick(w, [w.day - n.ill.since >= 2 ? `${I.name} 때문에 며칠째 누워 있어요.` : `${jo(I.name, "이/가")} 들었나 봐요. 오늘은 누워 있으려고요.`, `${jo(I.name, "이/가")} 들어서 몸이 무거워요. 옮을지 모르니 가까이 오지 마요.`]);
+    if (n.grief && w.npcs[n.grief.of] && w.rng.next() < 0.6) { const d = w.npcs[n.grief.of], who = d.id === n.lateSpouse ? "그이" : n.children.includes(d.id) ? "우리 애" : n.parents.includes(d.id) ? "부모님" : d.name; return pick(w, [`요즘은 ${who} 생각이 자꾸 나요.`, `${jo(who, "이/가")} 떠난 뒤로 집이 너무 조용해요.`, "괜찮아요… 시간이 지나면 나아지겠죠."]); }
     const L = n.life && n.life.day === w.day ? n.life : null;
+    if (L && L.act === "help") { const par = w.npcs[L.with]; return pick(w, [`${par ? jo(par.name, "을/를") : "엄마 아빠를"} 돕고 있어요. 저도 커서 ${(A.JOBS[L.job] || {}).name || "이 일"} 할 거예요.`, "일 배우는 중이에요. 어렵지만 재밌어요."]); }
+    if (n.retired && (!L || L.act !== "work") && w.rng.next() < 0.5) return pick(w, ["일은 이제 젊은 사람들 몫이죠. 저는 쉬엄쉬엄 지내요.", "평생 일했으니 이젠 좀 쉬어도 되겠지요.", n.children.length ? "애들이 잘 챙겨 줘서 걱정 없어요." : "모아 둔 걸로 그럭저럭 지내요."]);
     if (!L || w.rng.next() > 0.75) return "";
     const f = L.with !== undefined && w.npcs[L.with] ? w.npcs[L.with] : null, wk = (w.weather || {}).kind;
     const withF = f ? `${jo(f.name, "이랑/랑")} ` : "";

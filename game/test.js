@@ -582,6 +582,48 @@
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check((w2.trips || []).length === W.trips.length, "길 위의 일이 저장된다");
     } },
+    { id: "lifecourse", name: "생애 주기: 앓고 다치고, 늙어 일을 놓고, 아이는 부모 일을 거들고, 남긴 것은 식구에게", run(t) {
+      const W = t.w, T = t.town();
+      const par = W.spawn(T, { race: "human", job: "farmer", ageYears: 40 }), kid = W.spawn(T, { race: "human", job: "farmer", ageYears: 11 });
+      const old = W.spawn(T, { race: "human", job: "farmer", ageYears: 64 }); old.lifespan = 70;
+      kid.parents = [par.id]; par.children.push(kid.id); par.rel[kid.id] = kid.rel[par.id] = 80;
+      old.children.push(par.id); par.parents = [old.id]; par.rel[old.id] = old.rel[par.id] = 80;
+      for (const x of [par, kid, old]) { x.trip = null; x.away = null; x.going = null; }
+      // 늙으면 회복할 수 있는 체력이 준다
+      t.check(A.isElder(old) && A.healthCap(old) < 8 && A.healthCap(par) === 10, `${A.age(old)}세 ${old.name}: 체력 끝 ${A.healthCap(old).toFixed(1)} (40세는 10)`);
+      // 다치면 일하지 않고 쉰다
+      A.fallIll(W, par, "hurt", "밭일하다");
+      t.check(par.ill && W.events.some((e) => e && e.kind === "ill" && e.target === par.id), `${W.events.filter((e) => e && e.kind === "ill" && e.target === par.id).pop().text}`);
+      let worked = 0; for (let k = 0; k < 30; k++) if (A.planHour(W, par, 10).act === "work") worked++;
+      t.check(worked === 0, `다친 동안은 일하러 나가지 않는다 (30번 중 ${worked}번)`);
+      par.life = { act: "rest", until: 1e9, day: W.day };
+      t.check(/다쳐서/.test(G.activity(W, par)) && /다쳐서/.test(G.lifeState(W, par)), `사람 목록: ${G.activity(W, par)}`);
+      A.treat(W, par, 99);
+      t.check(!par.ill, "치료를 받으면 낫는다");
+      // 다 커 가는 아이는 부모 일을 거든다
+      par.life = { act: "work", until: 1e9, day: W.day };
+      let plan = null; for (let k = 0; k < 40 && !(plan && plan.act === "help"); k++) plan = A.planHour(W, kid, 10);
+      t.check(plan.act === "help" && plan.par === par, `${A.age(kid)}세 ${kid.name}: ${A.LIFE_LABEL[plan.act]}`);
+      kid.life = { act: "help", until: 1e9, day: W.day, place: "work", with: par.id, job: par.job };
+      A.liveHour(W, kid, 10, 240);
+      t.check(kid.helped && kid.helped.farmer === 1 && /거드는/.test(G.activity(W, kid)), `${G.activity(W, kid)} (거든 시간 ${kid.helped.farmer})`);
+      // 늙으면 일을 놓는다
+      const rr = W.rng.next; W.rng.next = () => 0.0001; A._.lifeCourse(W); W.rng.next = rr;
+      for (const n of W.alive()) n.ill = null;
+      t.check(old.retired === W.day && W.events.some((e) => e && e.kind === "retire" && e.actor === old.id), `${W.events.filter((e) => e && e.kind === "retire" && e.actor === old.id).pop().text}`);
+      worked = 0; for (let k = 0; k < 40; k++) if (A.planHour(W, old, 10).act === "work") worked++;
+      t.check(worked <= 8, `일을 놓은 뒤엔 거의 일하지 않는다 (40번 중 ${worked}번)`);
+      // 밥값이 없으면 자식이 댄다
+      old.gold = 0; par.gold = 100;
+      t.check(A._.supportFor(W, old, 2) && par.gold === 98 && W.events.some((e) => e && e.kind === "support" && e.target === old.id), `${W.events.filter((e) => e && e.kind === "support").pop().text}`);
+      // 죽으면 남긴 금화는 자식에게, 식구는 한동안 슬퍼한다
+      old.gold = 40; const g0 = par.gold;
+      W.die(old, "노환으로");
+      t.check(par.gold - g0 >= 39 && W.events.some((e) => e && e.kind === "estate" && e.target === old.id), `${W.events.filter((e) => e && e.kind === "estate").pop().text}`);
+      t.check(par.grief && par.grief.of === old.id && par.mood <= 0.25 && /상중/.test(G.lifeState(W, par)), `${par.name}: ${G.lifeState(W, par)}`);
+      let pray = 0; for (let k = 0; k < 40; k++) { const a = A.planHour(W, par, 10).act; if (a === "pray" || a === "social") pray++; }
+      t.check(pray >= 4, `상중엔 기도하거나 사람들 곁을 찾는 일이 잦다 (40번 중 ${pray}번)`);
+    } },
     { id: "visit", name: "다니러 가기: 친구를 보러, 물건을 사러 다른 마을에 갔다가 돌아온다", run(t) {
       const W = t.w, T = W.towns[t.town()];
       const B = Object.values(W.towns).filter((u) => u !== T && !u.fallen && A.routeOf(W, T.id, u.id)).sort((a, b) => A.routeOf(W, T.id, a.id).len - A.routeOf(W, T.id, b.id).len)[0];

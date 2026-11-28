@@ -112,7 +112,7 @@ NPC     : arrival → judgment(judge) → [atonement: 규칙표만큼 대기] �
 |---|---|---|
 | S1 | 죽음 데이터: `n.death`, 호출 11곳에 원인 종류, `lateSpouse`, `n.after`(기본 rest), `n.soul`, 저장 v4 이전 | engine.js, content.js, game.js, test.js |
 | S2 | 행적 장부: `deed()` 헬퍼, `ev.data.moral`, `ledger`, 정리 대상에서 보호 | engine.js, game.js, story.js |
-| S3 | 유산 1차: 금화, 플레이어 소지품, 유고 두루마리 | engine.js, game.js, content.js |
+| S3 | 유산 1차: 금화, 플레이어 소지품, 유고 두루마리 (주민의 금화·소지품 → 배우자·자녀는 생애 주기 작업에서 했다: engine `estate`. `n.lateSpouse`도 남긴다) | engine.js, game.js, content.js |
 | S4a | 사후 화면 골격: 도착·회고 (기존 데이터만으로) | story.js, ui.js |
 | S5 | 심판: `CONTENT.judgment` + `judge()` + 중립 연출 | engine.js, content.js, story.js |
 | S5.5 | NPC 사후 자동 처리: `afterlifeStep`을 `upkeep`에, 속죄 기간, 영혼 대기열 | engine.js |

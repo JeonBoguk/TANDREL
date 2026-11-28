@@ -315,6 +315,8 @@
     let best = null, bs = -1e9;
     for (let y = 24; y <= MH - 20; y += 6) for (let x = 22; x <= MW - 20; x += 6) {
       if (towns.some(([tx, ty]) => Math.abs(tx - x) < 37 && Math.abs(ty - y) < 31)) continue;
+      // 넓힌 집처럼 마을 틀 밖으로 나온 건물과도 겹치지 않게 (새 마을 건물은 가운데에서 ±17·±10, 넓힐 자리까지 넉넉히)
+      if (MAP.buildings.some((b) => b.x < x + 24 && b.x + b.w > x - 24 && b.y < y + 14 && b.y + b.h > y - 14)) continue;
       let bad = 0, n = 0;
       for (let yy = y - 11; yy <= y + 16; yy += 3) for (let xx = x - 17; xx <= x + 16; xx += 3) { const t = MAP.getT(xx, yy); n++; if (t === T.WATER || t === T.DEEP || t === T.CLIFF || t === T.WASTE) bad++; }
       if (bad / n > 0.18) continue;
@@ -988,6 +990,12 @@
           return spotNear(w, placeOf(t, "square"), n.id, 3);
         }
         case "kid": return L.place === "home" ? houseOf() : [cx - 2 + (n.id % 5), cy - 2 + (n.id % 4)];
+        case "help": { // 부모의 일터에서 곁을 지킨다
+          const kind = (JOBS[L.job] && JOBS[L.job].workplace) || "square";
+          if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slotL + 1) % 9, cy + FIELD_BOX.y0 + ((n.id + slotL) % 5)];
+          if (ENTER.has(kind)) { const sp = workSpot(w, bdOf(kind), n, slotL + 13); if (sp) return sp; }
+          return spotNear(w, placeOf(t, kind), n.id, 2);
+        }
         default: break; // work: 아래의 일터 자리
       }
     }
@@ -1899,9 +1907,21 @@
   }
 
   // ================================================================ 이곳의 사람들
+  /** 요즘 형편 한마디 (인물 수첩): 앓는 중·일을 놓음·상중 */
+  function lifeState(w, n) {
+    if (!n.alive) return "";
+    const I = A.illOf(n), out = [];
+    if (I) out.push(I.hurt ? "다쳐서 쉬는 중" : `${jo(I.name, "으로/로")} 앓는 중`);
+    if (n.retired) out.push(`${w.ago(n.retired)} 일을 놓았다`);
+    if (n.grief && w.npcs[n.grief.of]) out.push(`${jo(w.npcs[n.grief.of].name, "을/를")} 잃고 상중`);
+    return out.join(" · ");
+  }
   function activity(w, n) {
     if (n.away && w.towns[n.away.at]) { const home = w.towns[n.town].name, a = n.away, hn = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host].name : ""; return `${home}에서 온 손님 · ${{ see: hn ? jo(hn, "을/를") + " 보러" : "다니러", shop: "장 보러", heal: "몸 고치러", tour: "구경하러" }[a.why] || "다니러"}`; }
     if (n.going && !n.trip) return "마차 기다리는 중";
+    { const L = n.life && n.life.day === w.day ? n.life : null, I = A.illOf(n);
+      if (I && !n.trip && (!L || ["rest", "sleep"].includes(L.act))) return I.hurt ? "다쳐서 쉬는 중" : `${jo(I.name, "으로/로")} 앓는 중`;
+      if (L && L.act === "help") { const par = w.npcs[L.with]; return `${par ? par.name + " 곁에서 " : ""}${(JOBS[L.job] || {}).name || ""} 일 거드는 중`; } }
     const k = walkers.get(n.id);
     if (!k) return n.at_war ? "전선" : "어딘가";
     if (n.jail > 0) return "감옥";
@@ -1962,7 +1982,7 @@
     return out.length ? out : ["얻는 곳이 알려지지 않았다"];
   }
 
-  const G = { boardCoach, rideFare,
+  const G = { boardCoach, rideFare, lifeState,
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
