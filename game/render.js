@@ -271,6 +271,8 @@
   // 인물: 종족·직업 정의 → 조각 조합
   const HAT16 = { straw: "straw", chef: "chef", cap: "cap", helmet: "helmet", bandana: "bandana", witch: "wizard", hood: "hood", veil: "crown", circlet: "crown" };
   const PROP16 = { blacksmith: "hammer", builder: "hammer", guard: "sword", mercenary: "sword", adventurer: "sword", alchemist: "staff", priest: "book", doctor: "book", baker: "basket", cook: "basket" };
+  /** 플레이어가 손에 든 것: 지금 고른 도구 (맨손이면 아무것도 들지 않는다) */
+  const HELD16 = (id) => { const it = (G.ITEMS || {})[id] || {}; if (!id || id === "hand" || id === "skill") return "none"; if (/sword|dagger|spear|blade/.test(id) || it.weapon) return "sword"; if (/axe|hoe|hammer|pick/.test(id)) return "hammer"; if (/staff|wand/.test(id)) return "staff"; if (/book|scroll/.test(id)) return "book"; if (/basket/.test(id)) return "basket"; return "none"; };
   const STYLE16 = { short: "short", long: "long", pony: "long", bun: "bun", spiky: "short", bob: "short", curly: "short" };
   function look16(n, L) {
     const job = A.JOBS[n.job] || {}, jl = job.look || {}, hat = L.hat ? HAT16[L.hat] : null;
@@ -281,7 +283,7 @@
       over: L.apron ? "apron" : null, apron: L.apron ? ramp3(L.apron) : null,
       bottom: !robe && !L.kid && hash(n.id, 6, 9) < 0.3 ? "skirt" : "pants",
       hat, hatPal: hat && ["cap", "bandana", "wizard", "hood", "beanie"].includes(hat) ? ramp3(L.cloth) : null,
-      prop: L.kid ? null : jl.prop || PROP16[n.job] || (job.fighter ? "sword" : null),
+      prop: L.kid ? null : L.held !== undefined ? (L.held === "none" ? null : L.held) : jl.prop || PROP16[n.job] || (job.fighter ? "sword" : null),
       ears: L.ears, horns: L.horns ? (typeof L.horns === "string" && !L.horns.startsWith("#") ? L.horns : L.hornShape || "long") : null, hornColor: L.hornColor || (typeof L.horns === "string" && L.horns.startsWith("#") ? L.horns : null),
       tail: L.tail ? (typeof L.tail === "string" ? L.tail : "thin") : null, beard: !!L.beard, marks: L.marks || null, markColor: L.markColor || null,
     };
@@ -468,7 +470,7 @@
       if (p && p.alive && w.ppos && state.showPlayer) {
         const [sx, sy] = this.toBuf(w.ppos.x, w.ppos.y);
         this.playerBuf = [sx, sy];
-        items.push({ d: w.ppos.y, f: () => this.person(b, p, sx, sy, e.facing, state.walking, true, state) });
+        items.push({ d: w.ppos.y, f: () => this.person(b, p, sx, sy, e.facing, state.walking, true, { ...state, held: (e.hot || [])[e.sel || 0] || "hand" }) });
       } else this.playerBuf = null;
       items.sort((a, c) => a.d - c.d);
       for (const it of items) it.f();
@@ -529,6 +531,27 @@
       this.overlay(ctx, w, state);
     }
 
+    /** 길 안내: 목표가 화면 안이면 그 위에 떠 있는 표시, 밖이면 화면 가장자리에 그쪽을 가리키는 화살표와 거리 */
+    navMark(ctx, w, g, P, font) {
+      const Wv = this.buf.width * this.px, Hv = this.buf.height * this.px;
+      const [bx, by] = this.toBuf(g.x, g.y), [sx, sy] = P(bx + TS / 2 - TS / 2, by - TS * 1.6), d = Math.round(Math.hypot(g.x - w.ppos.x, g.y - w.ppos.y));
+      ctx.save(); ctx.font = font(13); ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20,30,20,0.9)"; ctx.fillStyle = "#7be07b";
+      const m = 28, on = sx > m && sy > m && sx < Wv - m && sy < Hv - m;
+      if (on) {
+        const bob = Math.sin(this.t * 4) * 3, y = sy + bob;
+        ctx.beginPath(); ctx.moveTo(sx - 7, y - 10); ctx.lineTo(sx + 7, y - 10); ctx.lineTo(sx, y); ctx.closePath(); ctx.stroke(); ctx.fill();
+        ctx.strokeText(g.label, sx, y - 15); ctx.fillText(g.label, sx, y - 15);
+      } else { // 화면 밖: 내 둘레에 그쪽을 가리키는 화살표 (구석의 창들에 가리지 않게)
+        const [pbx, pby] = this.toBuf(w.ppos.x, w.ppos.y), [pcx, pcy] = P(pbx, pby - TS * 0.6), ang = Math.atan2(sy - pcy, sx - pcx), R = Math.min(90, Math.min(Wv, Hv) * 0.22);
+        const ax = pcx + Math.cos(ang) * R, ay = pcy + Math.sin(ang) * R;
+        ctx.translate(ax, ay); ctx.rotate(ang);
+        ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.stroke(); ctx.fill();
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        const tx = ax + Math.cos(ang) * 4, ty = ay + (Math.sin(ang) > 0 ? 24 : -14);
+        ctx.font = font(12); ctx.strokeText(`${g.label} · ${d}칸`, tx, ty); ctx.fillText(`${g.label} · ${d}칸`, tx, ty);
+      }
+      ctx.restore();
+    }
     groundChunks(b, w, x0, x1, y0, y1, e) {
       if (!this.gcache || this.gver !== MAP.ver) { this.gcache = new Map(); this.gver = MAP.ver; }
       const ph = Math.floor(this.t * 1.6) % 2;
@@ -832,7 +855,8 @@
       }
     }
     person(b, n, sx, sy, dir, moving, isPlayer, state) {
-      const L = lookOf(n, isPlayer);
+      let L = lookOf(n, isPlayer);
+      if (isPlayer && state && state.held !== undefined) { const hp = HELD16(state.held); L = { ...L, held: hp, key: L.key + "|" + hp }; } // 내 손에는 지금 고른 도구
       b.fillStyle = C.shadow; b.beginPath(); b.ellipse(sx, sy, 6, 2, 0, 0, Math.PI * 2); b.fill();
       if (isPlayer) { b.strokeStyle = "rgba(255,220,90,0.9)"; b.lineWidth = 1; b.beginPath(); b.ellipse(sx, sy, 8, 3, 0, 0, Math.PI * 2); b.stroke(); }
       let ht;
@@ -886,6 +910,7 @@
     overlay(ctx, w, state) {
       const P = (bx, by) => [bx * this.px, by * this.px];
       const font = (sz) => `500 ${sz}px "Noto Sans KR", system-ui, sans-serif`;
+      if (state.nav && w.ppos) this.navMark(ctx, w, state.nav, P, font);
       const outline = (text, x, y, sz, fill) => { ctx.font = font(sz); ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(30,20,10,0.85)"; ctx.strokeText(text, x, y); ctx.fillStyle = fill; ctx.fillText(text, x, y); };
       // 건물 간판 글자
       for (const bd of MAP.buildings) {
@@ -970,7 +995,11 @@
     }
     for (const m of marks) {
       const [sx, sy] = pt(m.x, m.y);
-      ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(sx, sy, m.r || (full ? 4 : 2.5), 0, Math.PI * 2); ctx.fill();
+      if (m.shape === "home") { // 내 집: 작은 집 모양 (지붕 + 벽)
+        const r = full ? 6 : 4;
+        ctx.fillStyle = m.color; ctx.strokeStyle = "#3a2a1c"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(sx - r, sy - 1); ctx.lineTo(sx, sy - r - 2); ctx.lineTo(sx + r, sy - 1); ctx.lineTo(sx + r - 1, sy - 1); ctx.lineTo(sx + r - 1, sy + r); ctx.lineTo(sx - r + 1, sy + r); ctx.lineTo(sx - r + 1, sy - 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else { ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(sx, sy, m.r || (full ? 4 : 2.5), 0, Math.PI * 2); ctx.fill(); }
       if (m.label && full) { ctx.font = '500 12px "Noto Sans KR", system-ui, sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(30,20,10,0.8)"; ctx.strokeText(m.label, sx, sy - 7); ctx.fillStyle = "#fff"; ctx.fillText(m.label, sx, sy - 7); }
     }
     if (w.ppos) {

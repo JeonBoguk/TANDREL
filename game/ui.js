@@ -100,9 +100,14 @@ function frame(now) {
       G.updateWalkers(W, dt);
     }
     G.updateProjectiles(dt);
+    // 건물 메뉴(업무 창)는 그 자리에 있을 때만: 쓰러져 신전에서 깨거나, 붙잡혀 가거나, 죽거나, 마차를 타면 닫는다
+    if (bmenu && playing() && (!W.player.alive || W.player.jail > 0 || W.player.trip || Math.hypot(bmenu.pl.x + 0.5 - W.ppos.x, bmenu.pl.y + 0.5 - W.ppos.y) > 3)) closeMenu();
+    if (bmenu && !playing()) closeMenu();
     const e = G.ext(W);
     const marks = new Set([...W.episodes.map((x) => x.who), ...e.missions.filter((m) => !m.done).flatMap((m) => [m.to, m.b, m.target])].filter((x) => x !== null && x !== undefined));
-    view.draw(W, { dt, follow: playing(), showPlayer: playing(), walking, item: e.hot[e.sel], marks, wanted: e.wanted.level, target: aimTile() });
+    const navM = playing() && e.nav ? e.missions.find((m) => m.id === e.nav && !m.done) : null;
+    if (e.nav && !navM) e.nav = null; // 끝난 미션의 길 안내는 멈춘다
+    view.draw(W, { dt, follow: playing(), showPlayer: playing(), walking, item: e.hot[e.sel], marks, wanted: e.wanted.level, target: aimTile(), nav: navM ? S.missionGoal(W, navM) : null });
     hudT -= dt; miniT -= dt; hereT -= dt;
     if (hudT <= 0) { hudT = 0.25; renderHud(); renderHotbar(); }
     if (miniT <= 0) { miniT = 0.5; renderMini(); }
@@ -304,11 +309,13 @@ function renderHud() {
 }
 function renderQuests() {
   const e = G.ext(W), act = e.missions.filter((m) => !m.done);
-  const sig = act.map((m) => S.missionTitle(W, m) + S.missionWhere(W, m)).join("|") + playing();
+  const sig = act.map((m) => S.missionTitle(W, m) + S.missionWhere(W, m)).join("|") + playing() + "|" + e.nav;
   if ($("#questBody").dataset.sig === sig) return;
   $("#questBody").dataset.sig = sig;
-  $("#questBody").replaceChildren(...(act.length ? act.slice(0, 3).map((m) => h("button", { class: "q", type: "button", onclick: () => openWin("missions") },
-      h("span", { class: "qt" }, S.missionTitle(W, m)), h("span", { class: "where" }, S.missionWhere(W, m))))
+  // 미션을 누르면 그 미션으로 길 안내를 켜고 끈다 (자세한 것은 '전체' → 미션 탭)
+  $("#questBody").replaceChildren(...(act.length ? act.slice(0, 3).map((m) => h("button", { class: "q" + (e.nav === m.id ? " nav" : ""), type: "button", title: e.nav === m.id ? "길 안내 끄기" : "이 미션으로 길 안내", "aria-pressed": String(e.nav === m.id),
+      onclick: () => { e.nav = e.nav === m.id ? null : m.id; const g = e.nav && S.missionGoal(W, m); toast(e.nav ? (g ? `길 안내: ${g.label}` : "지금은 갈 곳을 알 수 없다") : "길 안내를 껐다"); renderQuests(); } },
+      h("span", { class: "qt" }, (e.nav === m.id ? "▸ " : "") + S.missionTitle(W, m)), h("span", { class: "where" }, S.missionWhere(W, m))))
     : [h("div", { class: "muted small" }, playing() ? "없음" : "—")]));
 }
 let hotSig = "";
@@ -329,6 +336,10 @@ function renderMini() {
   for (const m of e.missions) if (!m.done) for (const id of [m.to, m.b, m.target]) if (id !== null && id !== undefined && W.npcs[id] && W.npcs[id].alive) { const k = G.walkers.get(id); if (k) marks.push({ x: k.x, y: k.y, color: "#ffd75a" }); }
   if (playing()) for (const f of S.familyList(W, W.player)) { const k = G.walkers.get(f.x.id); if (k && f.x.alive) marks.push({ x: k.x, y: k.y, color: "#ff9ac8" }); }
   if (e.trackUntil > G.absMin(W)) for (const a of G.animals) marks.push({ x: a.x, y: a.y, color: "#ff6a5a", r: 1.6 });
+  const hb = playing() && G.homeBuilding ? G.homeBuilding(W) : null;
+  if (hb) marks.push({ x: hb.x + hb.w / 2, y: hb.y + hb.h / 2, color: "#7CB7E8", shape: "home" });
+  const nm = e.nav && e.missions.find((m) => m.id === e.nav && !m.done), ng = nm && S.missionGoal(W, nm);
+  if (ng) marks.push({ x: ng.x, y: ng.y, color: "#7be07b", r: 3.5 });
   window.drawMap($("#minimap"), W, { marks, scale: 2 });
   const p = W.player;
   let where = "탄드렐 전도";
@@ -584,11 +595,13 @@ function drawFullMap() {
   for (const m of e.missions) if (!m.done) { const id = m.to ?? m.b ?? m.target ?? m.from; const x = id !== undefined && id !== null ? W.npcs[id] : null; if (x && x.alive && !x.at_war) { const k = G.walkers.get(id); const [tx, ty] = k ? [k.x, k.y] : G.TOWN_POS[x.town]; marks.push({ x: tx, y: ty, color: "#ffd75a", label: x.name }); } }
   if (playing()) for (const f of S.familyList(W, W.player)) if (f.x.alive && !f.x.at_war) { const k = G.walkers.get(f.x.id); const [tx, ty] = k ? [k.x, k.y] : G.TOWN_POS[f.x.town]; marks.push({ x: tx, y: ty, color: "#ff9ac8", label: `${f.rel} ${f.x.name}` }); }
   if (W.war.active) { const c = G.placeOf(G.FRONT, "camp"); marks.push({ x: c.x, y: c.y, color: "#ff6a5a", label: "전선 진지" }); }
+  const hb = playing() && G.homeBuilding ? G.homeBuilding(W) : null;
+  if (hb) marks.push({ x: hb.x + hb.w / 2, y: hb.y + hb.h / 2, color: "#7CB7E8", shape: "home", label: "내 집" });
   window.drawMap(cv, W, { full: true, marks });
 }
 function winMap() {
   return [h("canvas", { id: "fullmap", "aria-label": "전체 지도" }),
-    h("div", { class: "row small", style: "margin-top:8px;gap:14px" }, h("span", { style: "color:#ffd75a" }, "▲ 나"), h("span", { style: "color:#ffd75a" }, "● 미션 대상"), h("span", { style: "color:#ff9ac8" }, "● 가족·연인"), h("span", { style: "color:#ff6a5a" }, "● 전선"),
+    h("div", { class: "row small", style: "margin-top:8px;gap:14px" }, h("span", { style: "color:#ffd75a" }, "▲ 나"), h("span", { style: "color:#7CB7E8" }, "■ 내 집"), h("span", { style: "color:#ffd75a" }, "● 미션 대상"), h("span", { style: "color:#ff9ac8" }, "● 가족·연인"), h("span", { style: "color:#ff6a5a" }, "● 전선"),
       h("span", { class: "muted" }, "짙은 초록은 숲(멧돼지·사슴·약초·버섯), 연두는 들판(토끼·사과나무), 북쪽 갈색은 황무지(늑대), 서쪽은 바다다. 동쪽과 남쪽은 아직 아무도 살지 않는 땅이다. 곳곳에 옛 유적과 수상한 흙더미가 있다."))];
 }
 function winRel() {
@@ -684,7 +697,10 @@ function winMissions() {
       return h("section", { class: "mcard" },
         h("div", { class: "mhead" }, h("b", null, S.missionTitle(W, m)), h("span", { class: "muted small" }, [S.missionWhere(W, m), m.reward ? `금화 ${m.reward}` : ""].filter(Boolean).join(" · "))),
         needs.length ? h("div", { class: "needs" }, needs.map(([id, n]) => needChip(id, n))) : null,
-        h("button", { class: "link small", type: "button", onclick: () => { m.done = true; m.gaveUp = true; renderWin(); renderQuests(); } }, "포기"));
+        h("div", { class: "row" },
+          h("button", { class: "wbtn" + (e.nav === m.id ? " gold" : ""), type: "button", "aria-pressed": String(e.nav === m.id), onclick: () => { e.nav = e.nav === m.id ? null : m.id; renderWin(); renderQuests(); } }, e.nav === m.id ? "길 안내 끄기" : "길 안내"),
+          (() => { const g = S.missionGoal(W, m); return h("span", { class: "small muted" }, g ? `지금 할 일: ${g.label}` : ""); })(),
+          h("button", { class: "link small", type: "button", onclick: () => { m.done = true; m.gaveUp = true; if (e.nav === m.id) e.nav = null; renderWin(); renderQuests(); } }, "포기")));
     }))
     : h("p", { class: "muted small" }, "없음"),
     done.length ? [h("h3", null, "마친 미션"), h("ul", { class: "list" }, done.map((m) => h("li", null, h("span", { class: "d" }, W.date(m.day)), h("span", { class: "t muted" }, `${m.gaveUp ? "(포기) " : ""}${S.missionTitle(W, m)}`))))] : null];
@@ -1110,6 +1126,7 @@ $("#minimap").addEventListener("click", () => openWin("map"));
 $("#hereToggle").addEventListener("click", (e) => { hereOpen = !hereOpen; $("#hereBody").hidden = !hereOpen; e.target.textContent = hereOpen ? "접기" : "펼치기"; e.target.setAttribute("aria-expanded", String(hereOpen)); if (hereOpen) renderHere(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden && W) autosave(); });
 G.onLog = (text, tone) => { if (tone !== "quiet") toast(text, tone); };
+G.onFaint = () => { if (session) { S.endTalk(W, session); session = null; } if (bmenu) closeMenu(); };
 G.onCodex = (id) => toast(`도감에 추가: ${G.ITEMS[id].name}`);
 G.onHurt = () => { view.hurt = 0.35; };
 G.onTalk = (id) => openTalk(id);
@@ -1162,11 +1179,11 @@ let testResults = null, testRunning = false;
 function runTests() {
   testRunning = true; renderWin();
   setTimeout(() => {
-    const hooks = [S.onEpisode, S.onMission, G.onLog, G.onMapChange, S.onOpenTalk, G.onTalk];
-    S.onEpisode = S.onMission = G.onCodex = G.onLog = G.onMapChange = S.onOpenTalk = G.onTalk = null; // 복사본에서 돌 때는 화면을 건드리지 않는다
+    const hooks = [S.onEpisode, S.onMission, G.onLog, G.onMapChange, S.onOpenTalk, G.onTalk, G.onFaint];
+    S.onEpisode = S.onMission = G.onCodex = G.onLog = G.onMapChange = S.onOpenTalk = G.onTalk = G.onFaint = null; // 복사본에서 돌 때는 화면을 건드리지 않는다
     const base = W.serialize();
     try { testResults = window.AsteriaTest.runAll(base); } catch (e) { testResults = [{ name: "테스트 실행", ok: false, checks: [], notes: [], error: String(e && e.stack || e) }]; }
-    [S.onEpisode, S.onMission, G.onLog, G.onMapChange, S.onOpenTalk, G.onTalk] = hooks;
+    [S.onEpisode, S.onMission, G.onLog, G.onMapChange, S.onOpenTalk, G.onTalk, G.onFaint] = hooks;
     W = A.World.deserialize(base); G.setup(W); view.cam = W.ppos ? { x: W.ppos.x, y: W.ppos.y } : view.cam; // 실제 세계로 돌아온다
     testRunning = false; renderAll(); renderWin();
   }, 30);

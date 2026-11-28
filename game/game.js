@@ -366,6 +366,25 @@
     if (o === O.MOUND && w && w.ext && w.ext.looted && w.ext.looted[MAP.I(x, y)] !== undefined) return O.NONE;
     return o;
   }
+  /** 한 점(실수 좌표)에 설 수 있는가: 울타리는 칸 전체가 아니라 그려진 가로대·기둥만 막는다 (자꾸 걸리던 것) */
+  function standOK(w, x, y) {
+    const tx = Math.floor(x), ty = Math.floor(y);
+    if (walkable(w, tx, ty)) return true;
+    if (!MAP.inb(tx, ty)) return false;
+    const sid = MAP.solid[MAP.I(tx, ty)];
+    if (sid >= 0) { // 건물 안의 얇은 가구
+      const bd = MAP.buildings[sid], f = furnitureIn(w, bd).find((q) => q.block && q.rx === tx - bd.x && q.ry === ty - bd.y), band = f && THIN_FURN[f.type];
+      if (!band || !interiorWalkable(w, bd, tx, ty, true)) return false;
+      const fy = y - ty; return fy < band[0] || fy > band[1];
+    }
+    if (objAt(w, tx, ty) !== O.FENCE) return false;
+    const t = MAP.tile[MAP.I(tx, ty)]; if (t === T.WATER || t === T.DEEP || t === T.CLIFF) return false;
+    const fx = x - tx, fy = y - ty, isF = (ax, ay) => objAt(w, ax, ay) === O.FENCE;
+    const horiz = isF(tx - 1, ty) || isF(tx + 1, ty), vert = isF(tx, ty - 1) || isF(tx, ty + 1);
+    if (horiz && fy > 0.35 && fy < 0.95) return false;             // 가로대
+    if ((vert || !horiz) && Math.abs(fx - 0.5) < 0.2) return false; // 기둥
+    return true;
+  }
   function walkable(w, x, y) {
     if (!MAP.inb(x, y)) return false;
     const i = MAP.I(x, y), t = MAP.tile[i];
@@ -479,10 +498,12 @@
     const id = MAP.solid[MAP.I(x, y)];
     return id >= 0 ? MAP.buildings[id] : null;
   }
-  function interiorWalkable(w, bd, x, y) {
+  /* 얇은 가구: 칸 전체가 아니라 그려진 띠만 막는다 (긴 의자 앉는 판 등). [위, 아래] 칸 안 비율 */
+  const THIN_FURN = { bench: [0.38, 0.82] };
+  function interiorWalkable(w, bd, x, y, thinOK = false) {
     if (!canEnter(w, bd) || y <= bd.y) return false;
     const rx = x - bd.x, ry = y - bd.y;
-    if (furnitureIn(w, bd).some((f) => f.block && f.rx === rx && f.ry === ry)) return false;
+    if (furnitureIn(w, bd).some((f) => f.block && f.rx === rx && f.ry === ry && !(thinOK && THIN_FURN[f.type]))) return false;
     const [ex, ey] = entryOf(bd);
     if (x === ex && y === ey) return true; // 문간은 누구나 디딜 수 있다
     if (bd.kind === "house") return true;   // 초대받은 집: 집주인도 손님도 안을 걸어 다닌다
@@ -760,6 +781,7 @@
     if (!p.at_war && p.jail === 0 && p.alive) { placeIn(w, town, "temple"); w.ppos.y += 0.6; text += ` ${w.towns[town].name} 신전에서 눈을 떴다.`; }
     if (w.rng.next() < 0.3) { const lost = Math.round(p.gold * 0.15); p.gold -= lost; if (lost) text += ` 금화 ${lost}닢이 없어졌다.`; }
     log(w, text, "warn");
+    if (G.onFaint) G.onFaint(); // 화면: 열려 있던 업무 창·대화를 닫는다
   }
   /** 마차: 타고 가는 동안은 수레를 따라가고, 닿으면 그 마을 광장에 내린다 */
   function rideTick(w, dt) {
@@ -807,8 +829,8 @@
   /** 벽이나 물체에 끼었으면 가장 가까운 설 수 있는 곳으로 꺼내 준다 */
   function unstick(w) {
     const x = Math.floor(w.ppos.x), y = Math.floor(w.ppos.y);
-    const fits = (fx, fy) => walkable(w, Math.floor(fx - 0.28), Math.floor(fy - 0.1)) && walkable(w, Math.floor(fx + 0.28), Math.floor(fy - 0.1)) && walkable(w, Math.floor(fx - 0.28), Math.floor(fy + 0.25)) && walkable(w, Math.floor(fx + 0.28), Math.floor(fy + 0.25));
-    if (walkable(w, x, y) && fits(w.ppos.x, w.ppos.y)) return false;
+    const fits = (fx, fy) => standOK(w, fx - 0.28, fy - 0.1) && standOK(w, fx + 0.28, fy - 0.1) && standOK(w, fx - 0.28, fy + 0.25) && standOK(w, fx + 0.28, fy + 0.25);
+    if (standOK(w, w.ppos.x, w.ppos.y) && fits(w.ppos.x, w.ppos.y)) return false;
     if (walkable(w, x, y)) { w.ppos = { x: x + 0.5, y: y + 0.5 }; return true; } // 타일 가운데로
     const sid = MAP.inb(x, y) ? MAP.solid[MAP.I(x, y)] : -1;
     if (sid >= 0) { const bd = MAP.buildings[sid]; w.ppos = { x: bd.door[0] + 0.5, y: bd.door[1] + 0.5 }; return true; } // 건물 벽 속이면 문 앞으로
@@ -830,7 +852,7 @@
     const nx = w.ppos.x + dx * sp, ny = w.ppos.y + dy * sp;
     unstick(w);
     const cx0 = Math.floor(w.ppos.x), cy0 = Math.floor(w.ppos.y);
-    const ok = (x, y) => crossOK(cx0, cy0, Math.floor(x), Math.floor(y)) && walkable(w, Math.floor(x - 0.28), Math.floor(y - 0.1)) && walkable(w, Math.floor(x + 0.28), Math.floor(y - 0.1)) && walkable(w, Math.floor(x - 0.28), Math.floor(y + 0.25)) && walkable(w, Math.floor(x + 0.28), Math.floor(y + 0.25));
+    const ok = (x, y) => crossOK(cx0, cy0, Math.floor(x), Math.floor(y)) && standOK(w, x - 0.28, y - 0.1) && standOK(w, x + 0.28, y - 0.1) && standOK(w, x - 0.28, y + 0.25) && standOK(w, x + 0.28, y + 0.25);
     let moved = false;
     if (ok(nx, w.ppos.y)) { w.ppos.x = nx; moved = true; }
     if (ok(w.ppos.x, ny)) { w.ppos.y = ny; moved = true; }
@@ -967,7 +989,7 @@
     const h = hour(w), hs = h2(n.id, w.day, 7), t = n.town;
     const [cx, cy] = TOWN_POS[t];
     const hh = houseOfNpc(n);
-    const houseOf = () => { const b = MAP.buildings.find((q) => q.town === hh.town && q.kind === "house" && q.hid === hh.hid); if (b) return [b.door[0], b.door[1], true]; const pl = placeOf(t, "inn"); return [pl.x, pl.y, true]; };
+    const houseOf = () => { const b = MAP.buildings.find((q) => q.town === hh.town && q.kind === "house" && q.hid === hh.hid); if (b) return [b.door[0], b.door[1], true]; const pl = placeOf(t, myInn(w, t) ? "tavern" : "inn"); return [pl.x, pl.y, true]; }; // 집이 없으면 여관(내 방이면 주점)에서
     if (n.jail > 0) { const g = placeOf(t, "guild"); return [g.x, g.y, true]; }
     // 손님을 초대한 날: 약속 시간에는 집 안에서 기다린다
     // 집주인은 가운데, 같은 집 식구들은 저마다 빈자리에서 손님을 맞는다
@@ -1040,20 +1062,22 @@
     const slot = Math.floor(h); // 한 시간마다 자리를 바꾼다
     if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slot) % 9, cy + FIELD_BOX.y0 + ((n.id + slot) % 5)];
     // 일터 건물이 있으면 대개 안에서 일한다 (가끔 문 앞에 나와 있다)
-    if (ENTER.has(kind) && h2(n.id, slot + w.day * 24, 19) > 0.22) {
+    if (ENTER.has(kind) && !(kind === "inn" && myInn(w, t)) && h2(n.id, slot + w.day * 24, 19) > 0.22) { // 내 방이 된 여관 안에는 주민이 들어오지 않는다
       const b = MAP.buildings.find((q) => q.town === t && q.kind === kind);
       const sp = b && workSpot(w, b, n, slot);
       if (sp) return sp;
     }
     return spotNear(w, placeOf(t, kind), n.id, 2);
   }
+  /** 이 마을의 여관이 플레이어의 집(방)인가 */
+  const myInn = (w, town) => !!(w.player && w.player.alive && w.player.home === town);
   /** 다른 마을에 다니러 온 사람의 자리: 밤엔 여관(보러 온 사람이 있으면 그 집), 낮엔 온 까닭에 따라 */
   function awaySpot(w, n) {
     const a = n.away, t = a.at, h = hour(w), slot = Math.floor(h);
     const bd = (kind) => MAP.buildings.find((q) => q.town === t && q.kind === kind);
     const host = a.host !== undefined ? w.npcs[a.host] : null, hh = host && host.town === t ? houseOfNpc(host) : null;
     const hostHouse = hh && MAP.buildings.find((b) => b.town === hh.town && b.kind === "house" && b.hid === hh.hid);
-    if (h >= 21 || h < 7) return (hostHouse && workSpot(w, hostHouse, n, 5)) || workSpot(w, bd("inn"), n, 3) || spotNear(w, placeOf(t, "square"), n.id, 3);
+    if (h >= 21 || h < 7) return (hostHouse && workSpot(w, hostHouse, n, 5)) || (!myInn(w, t) && workSpot(w, bd("inn"), n, 3)) || workSpot(w, bd("tavern"), n, slot + 3) || spotNear(w, placeOf(t, "square"), n.id, 3);
     const R = (w.rites || []).find((x) => x.state === "planned" && x.day === w.day && x.town === t && h >= x.hour && h < x.hour + 3 && (x.id === a.rite || (host && [x.a, x.b].includes(host.id))));
     if (R) return (["temple", "forge", "market", "tavern"].includes(R.place) && workSpot(w, bd(R.place), n, slot + 61)) || spotNear(w, placeOf(t, R.place === "meadow" || R.place === "hill" || R.place === "river" ? "square" : R.place) || placeOf(t, "square"), n.id, 3);
     if (h >= 12 && h < 13.5) return workSpot(w, bd("tavern"), n, slot + 77) || spotNear(w, placeOf(t, "square"), n.id, 3);
@@ -2019,7 +2043,7 @@
   const G = { boardCoach, rideFare, lifeState,
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
-    walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
+    walkable, standOK, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
     updateAnimals, updateWalkers, visibleNPCs, say, npcAtTile, forageReady, farmDawn, canTill, homeBuilding,
     buildingMenu, doBuilding, reportCrime, knownCrimes, crime, peopleHere, activity, weaponDmg, log, attackNPC,

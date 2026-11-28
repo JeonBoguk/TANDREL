@@ -214,7 +214,7 @@
       const bd = G.MAP.buildings.find((b) => b.town === t.town() && b.kind === "house" && G.residentsOf(W, b).length);
       t.check(bd && G.residentsOf(W, bd).every((n) => n.house === A.houseId(bd.town, bd.hid)), "집 안 사람들 = 그 집에 사는 사람들");
       // 이사: 배우자와 어린 자녀가 함께 새 마을의 집으로
-      const mover = people.find((n) => n.spouse !== null && W.npcs[n.spouse].alive && W.npcs[n.spouse].town === n.town && !W.npcs[n.spouse].at_war);
+      const mover = people.find((n) => n.spouse !== null && W.npcs[n.spouse].alive && W.npcs[n.spouse].town === n.town && !W.npcs[n.spouse].at_war && !W.npcs[n.spouse].title && !n.title); // 왕은 나라를 떠나지 않는다
       if (mover) {
         const dest = Object.values(W.towns).find((x) => x.id !== mover.town && !x.fallen), sp = W.npcs[mover.spouse];
         W.move(mover, dest.id);
@@ -351,7 +351,7 @@
       t.check(J && J.name === "야전 의원" && vet.job === J.id && wk.client === "sick" && wk.effects.heal, `전쟁 중 → ${J && J.name}: ‘${wk && wk.name}’ ${wk && wk.steps.map((s) => s.name).join("→")}`);
       // 모험가는 유적에서 두루마리를 찾아 잊힌 지식을 세상에 내놓는다
       const adv = W.spawn(t.town(), { race: "human", job: "adventurer", ageYears: 30 }); const r0 = W.rng.next;
-      let found = false; for (let i = 0; i < 3000 && !found; i++) { adv.health = 10; A._.rWork(adv, W); found = ["rune", "elixir", "medicine", "dragon_tongue"].some((k) => A.knows(adv, k)); }
+      let found = false; for (let i = 0; i < 20000 && !found; i++) { adv.health = 10; A._.rWork(adv, W); found = ["rune", "elixir", "medicine", "dragon_tongue"].some((k) => A.knows(adv, k)); }
       t.check(found, found ? W.events.filter((e) => e && e.kind === "discovery" && e.actor === adv.id).pop().text : "유적에서 아무것도 못 찾았다");
     } },
     { id: "joblife", name: "직업은 전문화되고, 사라졌다가 되살아나며, 한 사람이 부업을 가진다", run(t) {
@@ -495,6 +495,7 @@
       while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
       W.appts = W.appts.filter((x) => ![x.a, x.b].some((id) => id === a.id || id === b.id));
       b.town = a.town; b.outside = false; a.outside = false; a.job_cooldown = b.job_cooldown = 999; // 시험 동안 이사하지 않게
+      for (const x of [a, b]) { x.trip = null; x.away = null; x.going = null; x.ill = null; x.jail = 0; } // 길 위·나들이·앓는 중이 아니게
       const ap2 = A.makeAppt(W, a, b, { act: "play", day: W.day, hour: 11 }); W.weather = { kind: "비", day: W.day }; W.festivalToday = {}; W.holiday = null;
       G.tick(W, 5 * 60 + 30);
       t.check(ap2.state === "moved" && W.appts.some((x) => x.state === "planned" && x.a === a.id && x.act === "play" && x.day > W.day), "비가 와서 소풍을 미뤘다");
@@ -652,6 +653,8 @@
       while (W.residents(T, true).filter((n) => n.controller !== "player").length / A._.hidsOf(W, T).length < 5) W.spawn(T, { race: "human", job: "farmer", ageYears: 30 });
       for (const n of W.residents(T, true)) if (!n.house) A.settleIn(W, n, A.pickHouse(W, T));
       TW.build = null; TW.lastBuild = -1e9;
+      const freeSlots = G.houseSlots(T).filter((x) => !(TW.extra || []).includes(x.hid));
+      if (!freeSlots.length) { t.note("이 마을엔 더 지을 자리가 없다"); return; }
       A._.townBuild(W);
       t.check(TW.build && TW.build.by !== null, `${W.events.filter((e) => e && e.kind === "build_start" && e.town === T).pop().text}`);
       const hid = TW.build.hid; TW.build.done = TW.build.need - 0.5; A._.buildWork(W, W.npcs[TW.build.by], 1);
@@ -697,6 +700,36 @@
       A._.realmOf(W).wealth = 0; Object.assign(A._.lordOf(W), { pride: 0.2 });
       A._.warDay(W); W.rng.next = rr;
       t.check(!war.active && W.events.some((e) => e && e.kind === "truce"), `${(W.events.filter((e) => e && e.kind === "truce").pop() || {}).text}`);
+    } },
+    { id: "polish", name: "걸리지 않는 울타리·의자, 미션 길 안내, 첫 만남 자기소개, 동난 물건 익혀 만들기", run(t) {
+      const W = t.w, p = t.p(), T = t.town(), M = G.MAP;
+      // 울타리: 가로대만 막는다 (칸 위쪽은 지나갈 수 있다)
+      const f = t.findTile((x, y) => G.objAt(W, x, y) === G.O.FENCE && G.objAt(W, x - 1, y) === G.O.FENCE && G.objAt(W, x + 1, y) === G.O.FENCE && G.objAt(W, x, y - 1) !== G.O.FENCE, [p.x || 0, 0]);
+      t.check(f && G.standOK(W, f[0] + 0.5, f[1] + 0.15) && !G.standOK(W, f[0] + 0.5, f[1] + 0.6), `울타리 칸 (${f}): 위쪽은 디딜 수 있고 가로대는 막힌다`);
+      // 신전 긴 의자: 앉는 판만 막는다 (신전 안에 있을 때)
+      const tb = M.buildings.find((b) => b.town === T && b.kind === "temple"), [ex, ey] = G.entryOf(tb); t.standAt(ex, ey); G.tick(W, 1);
+      const bx = tb.x + 1, by = tb.y + 3;
+      t.check(G.insideBuilding(W) && G.standOK(W, bx + 0.5, by + 0.15) && !G.standOK(W, bx + 0.5, by + 0.6), "신전 긴 의자: 앉는 판만 막는다");
+      // 길 안내: 할 일 중이면 할 곳, 마쳤으면 마무리할 곳
+      const giver = t.npcs((x) => A.isAdult(x) && !x.trip && !x.away)[0];
+      const m = S.addMission(W, { type: "fetch", item: "herb", n: 2, from: giver.id, reward: 5 });
+      t.e().inv.herb = 0; const g1 = S.missionGoal(W, m);
+      t.e().inv.herb = 2; const g2 = S.missionGoal(W, m);
+      t.check(g1 && /구하기/.test(g1.label) && g2 && g2.label.includes(giver.name), `길 안내: 모으는 중 → ${g1 && g1.label} · 다 모으면 → ${g2 && g2.label}`);
+      t.e().nav = m.id; m.done = true; t.e().inv.herb = 0;
+      // 첫 만남: 자기소개 (두 번째부터는 하지 않는다)
+      const z = t.npcs((x) => A.isAdult(x) && !(t.e().met || {})[x.id] && A.opinion(x, p.id) > -20)[0];
+      t.tickTo(10);
+      const s1 = S.talk(W, z.id), intro = s1.lines.filter((l) => l.who === "npc").map((l) => l.text).join(" "); S.endTalk(W, s1);
+      const s2 = S.talk(W, z.id), again = s2.lines.filter((l) => l.who === "npc").length; S.endTalk(W, s2);
+      t.check(intro.includes(z.name) && intro.includes((A.JOBS[z.job] || {}).name || "?") && again < s1.lines.filter((l) => l.who === "npc").length, `처음 만난 ${z.name}: ${intro}`);
+      // 빵이 오래 동나고 아는 사람도 없으면, 누군가 익혀서 만들기 시작한다
+      const TW = W.towns[T]; TW.stock = { ...(TW.stock || {}), bread: 0 };
+      for (const n of W.residents(T, true)) { if (A.worksOf(n.job).some((x) => x.gives && x.gives.bread)) A.setJob(n, "farmer"); if (n.side && A.worksOf(n.side).some((x) => x.gives && x.gives.bread)) n.side = null; if (n.skills) delete n.skills.baking; }
+      TW.short = { bread: 20 }; TW.missed = { bread: 3 };
+      const rr = W.rng.next; W.rng.next = () => 0.01; A._.shortDay(W); W.rng.next = rr;
+      const ev = W.events.filter((e) => e && e.kind === "side_job" && e.town === T).pop();
+      t.check(ev && ev.data && ev.data.learned && W.residents(T, true).some((n) => n.side && A.worksOf(n.side).some((x) => x.gives && x.gives.bread)), ev ? ev.text : "아무도 빵을 만들기 시작하지 않았다");
     } },
     { id: "rites", name: "혼례와 장례: 풍습대로 치르고, 먼 마을의 가족이 찾아온다", run(t) {
       const W = t.w, T = t.town();

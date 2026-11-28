@@ -685,7 +685,7 @@
       if (house) settleIn(this, n, house);
       if (withFamily) for (const fid of family(n)) {
         const f = this.npcs[fid];
-        if (f.alive && f.town === old && !f.at_war && f.controller !== "player" && (fid === n.spouse || !isAdult(f))) { f.town = tid; if (house) settleIn(this, f, house); }
+        if (f.alive && f.town === old && !f.at_war && f.controller !== "player" && !isRuler(this, f) && (fid === n.spouse || !isAdult(f))) { f.town = tid; if (house) settleIn(this, f, house); }
       }
     }
 
@@ -1781,6 +1781,7 @@
   const allTownDefs = (w) => [...CONTENT.towns, ...(w.founded || [])];
   /** 꿈을 이룬 개척자가 무리를 이끌고 빈 땅에 새 나라를 세운다 */
   function foundNation(n, w, opts = {}) {
+    if (isRuler(w, n)) return null; // 이미 한 나라를 다스리는 사람은 새 나라를 세우러 떠나지 않는다
     const NN = CONTENT.nationNames, used = new Set(Object.values(w.towns).map((t) => t.name)), usedN = new Set(Object.values(w.nations).map((x) => x.name));
     const style = opts.style || (n.traits.ambition > 0.85 && n.traits.bravery > 0.6 ? "proud" : n.traits.kindness > 0.6 ? "kind" : "plain");
     let nationName = opts.name && !usedN.has(opts.name) ? opts.name : null;
@@ -2208,7 +2209,18 @@
         if (people.some((n) => makes(n.job) || (n.side && makes(n.side)))) continue;
         const jobs = CONTENT.jobs.filter((j) => w.jobOpen(j.id) && makes(j.id) && (j.teaches || []).length);
         const who = people.filter((n) => !n.side && !n.pioneer && jobs.some((j) => knows(n, j.teaches[0])));
-        if (!who.length) continue;
+        if (!who.length) {
+          // 아는 사람도 없으면: 두 이레 넘게 동난 물건은 누군가 어깨너머로 익혀 만들기 시작한다 (요리사·먹을 것 만드는 사람이 먼저)
+          const all = CONTENT.jobs.filter((j) => makes(j.id) && (j.teaches || []).length && !j.ended);
+          const cand = people.filter((n) => isAdult(n) && !n.side && !n.pioneer && !n.retired && !n.ill);
+          if (d < 14 || !all.length || !cand.length) continue;
+          const j = all[0], n = maxBy(cand, (x) => (JOBS[x.job] && JOBS[x.job].food ? 1 : 0) + (x.job === "cook" ? 1 : 0) + x.traits.ambition + x.traits.kindness * 0.5);
+          learn(n, j.teaches[0]); n.side = j.id;
+          if (!w.jobOpen(j.id)) w.jobsOpen = [...new Set([...(w.jobsOpen || []), j.id])];
+          const nm = (itemOf(id) || {}).name || id;
+          w.record("side_job", `${t.name}에 ${nm}${jo(nm, "이/가").slice(nm.length)} 동난 지 오래되자, ${jo(n.name, "이/가")} 어깨너머로 ${(KNOW(j.teaches[0]) || {}).name || j.name}${jo((KNOW(j.teaches[0]) || {}).name || j.name, "을/를").slice(((KNOW(j.teaches[0]) || {}).name || j.name).length)} 익혀 ${jo(nm, "을/를")} 만들기 시작했다`, { actor: n.id, town: t.id, imp: 3, wr: 0.2, data: { job: j.id, item: id, learned: true } });
+          continue;
+        }
         const n = maxBy(who, (x) => x.traits.kindness + x.traits.ambition * 0.5), j = jobs.find((x) => knows(n, x.teaches[0]));
         n.side = j.id;
         const nm = (itemOf(id) || {}).name || id;
@@ -2981,6 +2993,7 @@
       if (!heir) continue;
       const word = (N.rulerTitle = N.rulerTitle || (founder && founder.title ? founder.title.split("의 ").pop() : "국왕"));
       if (cur && cur.title === `${nameOfNation(w, N.id)}의 ${word}`) cur.title = null;
+      heir.follows = null; if (heir.dream && heir.dream.id === "nation") heir.dream = null; // 왕이 되면 새 나라의 꿈과 따르던 사람을 내려놓는다
       N.ruler = heir.id; heir.title = `${nameOfNation(w, N.id)}의 ${word}`; heir.fame += 3;
       if (w.day > 1) w.record("crowned", cur ? `${jo(cur.name, "이/가")} ${cur.alive ? "물러나고" : "세상을 떠나"} ${jo(heir.name, "이/가")} ${nameOfNation(w, N.id)}의 새 ${jo(word, "이/가")} 되었다` : `${jo(heir.name, "이/가")} ${nameOfNation(w, N.id)}의 ${jo(word, "이/가")} 되었다`,
         { actor: heir.id, target: cur ? cur.id : null, town: heir.town, imp: 5, wr: 0.6, data: { nation: N.id } });
