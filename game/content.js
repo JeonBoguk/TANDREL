@@ -61,7 +61,7 @@
       { id: "alchemist", exp: [["nature", "herb"], ["magic", "potion"], ["knowledge", "herb"]] }, { id: "priest", exp: [["magic", "light"], ["care", "heart"], ["knowledge", "star"]] },
       { id: "cook", exp: [["heat", "meat"], ["care", "food"], ["art", "food"]] }, { id: "builder", exp: [["craft", "wood"], ["art", "house"]] }, { id: "courier", exp: [["knowledge", "road"], ["social", "news"]] },
       { id: "doctor", exp: [["care", "body"], ["knowledge", "body"]] }, { id: "mercenary", exp: [["body", "battle"], ["body", "beast"]] },
-      { id: "merchant", teaches: ["weaving"] }, { id: "alchemist", teaches: ["herbal"] }, { id: "priest", teaches: ["herbal"] }, { id: "baker", teaches: ["baking"] }, { id: "cook", teaches: ["cooking"] },
+      { id: "merchant", teaches: ["weaving", "letters"] }, { id: "alchemist", teaches: ["herbal", "letters"] }, { id: "priest", teaches: ["herbal", "letters"] }, { id: "baker", teaches: ["baking"] }, { id: "cook", teaches: ["cooking"] },
       // ---------------------------------------------------------- 수요가 생기면 나타나는 직업 (emerge). 누가 언제 처음 시작하느냐는 세계마다 다르다
       { id: "builder", teaches: ["woodwork"], needKnow: "woodwork", name: "목수", income: [2.0, 5.0], entry_cost: 30, weight: 0.7, color: "#a0703a", icon: "🔨", workplace: "guild", look: { hat: "cap", apron: "#7a5230" },
         emerge: { demand: (w) => ((w.founded || []).length >= 1 ? 1 : 0) + A.recent(w, ["marriage"], 120) / 6 + w.alive().filter((n) => n.gold > 150).length / 12, know: "woodwork",
@@ -433,6 +433,7 @@
       { id: "law", name: "법", desc: "다툼과 죄를 가리는 규칙", domain: ["social", "knowledge"], noun: "법", jobName: "재판관", workName: "다툼 가리기",
         born: { life: ["report", "arrest", "theft", "revenge"], n: 2, p: 0.0015, text: "죄와 다툼을 여러 번 겪으며 무엇이 옳은지 가리는 ‘{k}’{k:을/를} 세우기 시작했다" },
         demand: { crime: 7, within: 120 }, client: "any", effects: { rel: 5, gold: [2, 5], fame: 1, record: { kind: "judgment", text: "{me:이/가} {town}의 다툼을 법대로 가려 주었다", imp: 3, p: 0.12 } } },
+      { id: "letters", name: "글", desc: "글을 읽고 쓰는 법. 아이들은 글방에서 사제나 글을 아는 어른에게 배운다", domain: ["knowledge", "language"], noun: "글" },
       { id: "reckoning", name: "셈", desc: "곳간과 장부를 맞추는 셈법", domain: ["knowledge", "social"], noun: "셈", jobName: "장부지기", workName: "곳간 장부 맞추기",
         born: { job: "merchant", lv: 3, p: 0.0012, text: "오래 장사하며 셈이 늘어, 마을 곳간까지 셈할 수 있게 되었다" },
         demand: { pop: 80, events: ["food_worry", "granary_open", "food_aid"], within: 240, n: 2 }, client: null, effects: { food: 6, gold: [2, 5], record: { kind: "ledger", text: "{me:이/가} {town} 곳간 장부를 바로잡아 새는 곡식을 막았다", imp: 3, p: 0.1 } } },
@@ -443,11 +444,29 @@
       { id: "scroll_medicine", w: 1 }, { id: "scroll_rune", w: 1 }, { id: "scroll_elixir", w: 1 },
       { id: "scroll_dragon", w: 0.7, where: ["ruin", "waste"] }, { id: "relic", n: [1, 2], w: 3, where: ["waste"] },
     ],
+    /* 혼례와 장례의 풍습: 종족마다(없으면 그 종족 문화가 귀하게 여기는 것마다) 자리와 모습이 다르다.
+     *  place: temple·forge·square·meadow·hill·river (마을 안 건물이나 마을 밖 자리), text: 사건 문장에 들어가는 모습 */
+    rites: {
+      human: { wedding: { place: "temple", text: "신전에서 사제의 축복을 받고 광장에서 잔치를 벌였다" }, funeral: { place: "temple", text: "신전 뒤뜰에 묻고 사흘 밤 촛불을 밝혔다" } },
+      elf: { wedding: { place: "meadow", text: "오래된 나무 아래에서 별빛을 두고 백 년의 맹세를 나눴다" }, funeral: { place: "meadow", text: "숲가에 묻고 그 위에 어린 나무를 심었다" } },
+      dwarf: { wedding: { place: "forge", text: "대장간 불 앞에서 서로의 쇠가락지를 벼려 끼워 주었다" }, funeral: { place: "square", text: "돌무덤을 쌓고 비석에 이름과 솜씨를 새겼다" } },
+      beastkin: { wedding: { place: "square", text: "온 마을이 둘러앉아 밤늦도록 노래하며 둘을 맞았다" }, funeral: { place: "hill", text: "언덕에서 불에 태워 재를 바람에 날려 보냈다" } },
+      halfling: { wedding: { place: "square", text: "광장에 긴 식탁을 펴고 하루 종일 먹고 마셨다" }, funeral: { place: "meadow", text: "들꽃 언덕에 묻고 저마다 그 사람과의 우스운 일을 하나씩 이야기했다" } },
+      byValue: {
+        honor: { wedding: { place: "square", text: "광장에서 서로의 칼에 맹세를 걸었다" }, funeral: { place: "square", text: "칼과 방패를 함께 묻고 이름을 크게 세 번 불렀다" } },
+        wealth: { wedding: { place: "market", text: "시장에서 두 집안의 금화를 한 상자에 합쳐 보였다" }, funeral: { place: "temple", text: "가진 것을 마을 사람들에게 하나씩 나눠 주며 보냈다" } },
+        harmony: { wedding: { place: "square", text: "온 마을이 음식을 한 가지씩 들고 와 나눠 먹었다" }, funeral: { place: "meadow", text: "모두 손을 잡고 둥글게 서서 말없이 배웅했다" } },
+        lore: { wedding: { place: "temple", text: "두 사람의 이름을 마을 책에 나란히 적었다" }, funeral: { place: "temple", text: "그 사람의 이야기를 책에 적어 신전에 두었다" } },
+        wild: { wedding: { place: "river", text: "냇물에 함께 발을 담그고 첫 열매를 나눠 먹었다" }, funeral: { place: "meadow", text: "흙으로 돌려보내고 씨앗을 뿌렸다" } },
+        craft: { wedding: { place: "forge", text: "서로를 위해 손수 만든 물건을 주고받았다" }, funeral: { place: "square", text: "그 사람이 만든 물건들을 광장에 늘어놓고 하나씩 기렸다" } },
+      },
+    },
     // 새 사건 종류가 신문의 어느 지면에 실리는지
     eventKinds: {
       festival: "마을 소식", caravan: "살림·장사", plague: "사건·사고", plague_heal: "사람들", bandits: "사건·사고", bandits_beaten: "사건·사고", bandits_won: "사건·사고",
       renovate: "살림·장사", renovate_done: "사람들", discovery: "사람들", learn: "사람들", independence: "전황", race_born: "사람들", contact: "전황",
       dream_done: "사람들", dream_lost: "사람들", dream_start: "사람들", feast: "사람들",
+      engaged: "사람들", burial: "사람들", rite_off: "사람들", build_start: "마을 소식", build_done: "마을 소식", apprentice_done: "사람들",
       ill: "사람들", care: "사람들", retire: "사람들", support: "사람들", estate: "살림·장사",
       nation_founded: "전황", follow_founder: "사람들", granary_open: "마을 소식", food_aid: "살림·장사", food_worry: "마을 소식", job_born: "살림·장사", founding: "전황",
     },

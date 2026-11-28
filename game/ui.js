@@ -812,7 +812,12 @@ function winNations() {
   const founded = W.founded || [], born = W.events.filter((e) => e && e.kind === "job_born");
   const dreamer = W.alive().find((n) => n.dream && n.dream.id === "nation");
   const who = (id) => W.npcs[id] ? h("button", { class: "link", type: "button", onclick: () => { bioId = id; openWin("people"); } }, W.npcs[id].name) : "누군가";
+  const L = A.lordOf(W), R = A.realmOf(W), K = A.kingsMood(W);
+  const warBox = h("div", { class: "card soft", style: "margin-bottom:10px" }, h("div", { class: "ttl" }, h("span", null, W.war.needLord ? "북쪽 마계" : L.name), h("span", { class: "chip" + (W.war.active ? " gold" : "") }, W.war.active ? `전쟁 중 · 전선 ${Math.round(W.war.front)}` : "평화")),
+    h("div", { class: "small" }, W.war.needLord ? "앞의 마왕이 쓰러진 뒤 아직 새 마왕이 일어서지 않았다." : `${A.lordWords(L).join(", ")}고들 한다.`),
+    h("div", { class: "small muted" }, `마계의 곳간은 ${A.realmWord(R.wealth)}는 소문이다.${K.kings.length ? ` 왕들은 ${K.resolve > 0.6 ? "싸울 뜻이 굳다" : K.mercy > 0.6 ? "싸움보다 화친을 바란다" : "신중하다"}.` : ""}`));
   return [
+    warBox,
     h("h3", { style: "margin-top:0" }, "이 세계의 나라"),
     h("div", { class: "towns" }, Object.entries(nations).map(([nid, ts]) => {
       const N = W.nations[nid] || {}, name = nm(nid);
@@ -820,6 +825,7 @@ function winNations() {
       const pop = ts.reduce((s, t) => s + W.residents(t.id).length, 0);
       return h("div", { class: "card town" + (f ? " here" : "") }, h("div", { class: "ttl" }, h("span", null, name), f ? h("span", { class: "chip gold" }, f.indep ? `${f.indep}에서 독립` : "이 세계에서 세워짐") : h("span", { class: "chip" }, "옛 나라")),
         h("div", { class: "small" }, `마을 ${ts.map((t) => t.name).join(", ")} · 주민 ${pop}명${N.race && A.RACES[N.race] ? ` · ${A.RACES[N.race].name}의 나라` : ""}`),
+        N.ruler !== undefined && N.ruler !== null && W.npcs[N.ruler] && W.npcs[N.ruler].alive ? h("div", { class: "small" }, `${N.rulerTitle || "국왕"} `, who(N.ruler)) : null,
         f ? h("div", { class: "small", style: "margin-top:4px" }, `${W.date(f.day)}, `, who(f.founder), W.npcs[f.founder] ? jo(W.npcs[f.founder].name, "이/가").slice(W.npcs[f.founder].name.length) + " 세웠다" : " 세웠다", W.npcs[f.founder] && W.npcs[f.founder].title ? ` · ${W.npcs[f.founder].title}` : "") : null);
     })),
     (() => { const gone = Object.values(W.nations).filter((N) => N.ended !== undefined && N.ended !== null); return gone.length ? h("p", { class: "small muted", style: "margin:8px 0 0" }, "사라진 나라: ", gone.map((N) => `${N.name} (${W.date(N.since)} ~ ${W.date(N.ended)})`).join(", ")) : null; })(),

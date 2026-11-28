@@ -32,6 +32,13 @@
     { kind: "house", name: "", x: -17, y: 4, w: 4, h: 3, hid: 5 },
   ];
   const FIELD_BOX = { x0: -4, x1: 4, y0: 11, y1: 15 };
+  /* 사람이 늘면 새로 짓는 집 자리 (hid 6부터). 앞의 셋은 마을 안 빈터, 뒤(wide)는 울타리 밖으로 마을을 넓혀 짓는 자리.
+   * 지형(물·절벽·밭)이나 다른 건물과 겹치는 자리는 그 마을에선 쓰지 않는다 (houseSlots) */
+  const EXTRA_HOUSES = [
+    { hid: 6, x: 8, y: 11 }, { hid: 7, x: -12, y: 11 }, { hid: 8, x: 12, y: -10 },
+    { hid: 9, x: 19, y: -4, wide: true }, { hid: 10, x: 19, y: 4, wide: true }, { hid: 11, x: -23, y: -4, wide: true },
+    { hid: 12, x: -23, y: 4, wide: true }, { hid: 13, x: -13, y: 18, wide: true }, { hid: 14, x: 9, y: 18, wide: true },
+  ].map((b) => ({ kind: "house", name: "", w: 4, h: 3, ...b }));
 
   function h2(x, y, s) {
     let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 982451653)) | 0;
@@ -120,12 +127,14 @@
     // 건물
     const buildings = [], places = [];
     const inTown = (x, y) => Object.values(TOWN_POS).some(([cx, cy]) => x >= cx + TOWN_BOX.x0 - 1 && x <= cx + TOWN_BOX.x1 + 1 && y >= cy + TOWN_BOX.y0 - 1 && y <= cy + TOWN_BOX.y1 + 1);
+    const extraOf = (mods["#houses"] || {}), clear = new Uint8Array(MW * MH);
     for (const [town, [cx, cy]] of Object.entries(TOWN_POS)) {
-      for (const b0 of BUILD_DEF) {
+      for (const b0 of [...BUILD_DEF, ...EXTRA_HOUSES.filter((b) => (extraOf[town] || []).includes(b.hid))]) {
         const m = b0.kind === "inn" ? mods[town] : b0.kind === "house" ? mods[town + ":" + b0.hid] : null; // 목수가 넓힌 집 (내 집·주민 집)
         const b = m ? { ...b0, x: b0.x + (m.dx || 0), w: b0.w + (m.dw || 0), h: b0.h + (m.dh || 0) } : b0;
         const bx = cx + b.x, by = cy + b.y;
         const bd = { town, kind: b.kind, name: b.name, x: bx, y: by, w: b.w, h: b.h, hid: b.hid || 0, door: [bx + Math.floor(b.w / 2), by + b.h] };
+        if (b.hid >= 6) for (let y = by - 1; y <= by + b.h; y++) for (let x = bx - 1; x <= bx + b.w; x++) { if (inb(x, y)) { obj[I(x, y)] = 0; clear[I(x, y)] = 1; if (getT(x, y) === T.FLOOR || getT(x, y) === T.SAND) setT(x, y, T.GRASS); } } // 새 집 터를 닦는다
         bd.id = buildings.length;
         buildings.push(bd);
         for (let y = by; y < by + b.h; y++) for (let x = bx; x < bx + b.w; x++) solid[I(x, y)] = bd.id;
@@ -155,7 +164,7 @@
     // 자연물
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       const i = I(x, y), t = tile[i];
-      if (obj[i] || solid[i] >= 0 || inTown(x, y)) continue;
+      if (obj[i] || solid[i] >= 0 || clear[i] || inTown(x, y)) continue;
       const r = h2(x, y, 11), r2 = h2(x, y, 12);
       const r3 = h2(x, y, 31);
       if ((t === T.FLOOR && r3 < 0.004) || (t === T.WASTE && r3 < 0.01) || (t === T.GRASS && x >= 150 && r3 < 0.0015)) { obj[i] = O.RUIN; continue; } // 옛 유적
@@ -174,6 +183,8 @@
     const e = w && w.ext && w.ext.home ? w.ext.home : {}, out = {};
     for (const [town, h] of Object.entries(e)) if (h.dx || h.dw || h.dh) out[town] = { dx: h.dx || 0, dw: h.dw || 0, dh: h.dh || 0 };
     for (const a of Object.values((w && w.assets) || {})) { const h = a.mods || {}; if (a.kind === "house" && (h.dx || h.dw || h.dh)) out[`${a.town}:${a.hid}`] = { dx: h.dx || 0, dw: h.dw || 0, dh: h.dh || 0 }; }
+    const extra = {}; for (const t of Object.values((w && w.towns) || {})) if (t.extra && t.extra.length) extra[t.id] = [...t.extra];
+    if (Object.keys(extra).length) out["#houses"] = extra;
     for (const [town, h] of Object.entries((w && w.innMods) || {})) { const o = out[town] = out[town] || { dx: 0, dw: 0, dh: 0 }; o.dx += h.dx || 0; o.dw += h.dw || 0; o.dh += h.dh || 0; }
     return out;
   }
@@ -308,6 +319,19 @@
     w.record("renovate_done", `목수 ${jo(b.name, "이/가")} ${p.name}의 집 공사를 마쳤다 (${r.name || renoName(def)})`, { actor: b.id, target: p.id, town: r.town, imp: 3, sent: 2, wr: 0.5 });
     if (def.kind === "expand") w.onMapChange(true);
     log(w, `집 공사가 끝났다: ${r.name || renoName(def)}`, "good");
+  }
+  /** 이 마을에 아직 짓지 않은 새 집 자리 가운데 지을 수 있는 것 (마을 안 빈터 먼저, 그다음 울타리 밖) */
+  function houseSlots(town) {
+    const pos = TOWN_POS[town]; if (!pos) return [];
+    const [cx, cy] = pos, built = new Set(MAP.buildings.filter((b) => b.town === town && b.kind === "house").map((b) => b.hid));
+    return EXTRA_HOUSES.filter((b) => !built.has(b.hid) && (() => {
+      for (let y = cy + b.y - 1; y <= cy + b.y + b.h + 1; y++) for (let x = cx + b.x - 1; x <= cx + b.x + b.w; x++) {
+        if (!MAP.inb(x, y)) return false;
+        const t = MAP.getT(x, y), o = MAP.obj[MAP.I(x, y)];
+        if (t === T.WATER || t === T.DEEP || t === T.CLIFF || t === T.FIELD || t === T.BRIDGE || MAP.solid[MAP.I(x, y)] >= 0 || o === O.FENCE || o === O.SIGN || o === O.TENT) return false;
+      }
+      return true;
+    })()).map((b) => ({ hid: b.hid, wide: !!b.wide, x: cx + b.x, y: cy + b.y }));
   }
   /** 새 나라를 세울 빈 땅을 지도에서 찾는다. 다른 마을과 겹치지 않고, 물·절벽·황무지가 적은 곳 */
   function findSite(w, origin) {
@@ -468,6 +492,8 @@
   function townAt(x, y) {
     for (const [id, [cx, cy]] of Object.entries(TOWN_POS))
       if (x >= cx + TOWN_BOX.x0 - 1 && x <= cx + TOWN_BOX.x1 + 2 && y >= cy + TOWN_BOX.y0 - 1 && y <= cy + TOWN_BOX.y1 + 2) return id;
+    // 울타리 밖으로 넓힌 마을: 새로 지은 집과 그 앞마당까지 그 마을이다
+    for (const b of MAP.buildings) if (b.hid >= 9 && x >= b.x - 2 && x <= b.x + b.w + 2 && y >= b.y - 2 && y <= b.y + b.h + 3) return b.town;
     return null;
   }
   const placeOf = (town, kind) => MAP.places.find((p) => p.town === town && p.kind === kind);
@@ -975,6 +1001,7 @@
           }
           return spotNear(w, placeOf(t, "square"), n.id, 3);
         }
+        case "rite": if (["temple", "forge", "market", "tavern"].includes(L.place)) { const sp = workSpot(w, bdOf(L.place), n, slotL + 61); if (sp) return sp; return spotNear(w, placeOf(t, L.place), n.id, 3); } // falls through: 광장·들판·언덕·냇가
         case "fish": case "play": {
           if (L.place === "river") { // 냇가: 마을에서 가장 가까운 물가 근처에 앉는다
             const R0 = 30; let best = null, bd = 1e9;
@@ -990,6 +1017,7 @@
           return spotNear(w, placeOf(t, "square"), n.id, 3);
         }
         case "kid": return L.place === "home" ? houseOf() : [cx - 2 + (n.id % 5), cy - 2 + (n.id % 4)];
+        case "school": { const sp = workSpot(w, bdOf("temple"), n, slotL + 57); if (sp) return sp; return spotNear(w, placeOf(t, "temple"), n.id, 2); }
         case "help": { // 부모의 일터에서 곁을 지킨다
           const kind = (JOBS[L.job] && JOBS[L.job].workplace) || "square";
           if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slotL + 1) % 9, cy + FIELD_BOX.y0 + ((n.id + slotL) % 5)];
@@ -1006,6 +1034,8 @@
     if (h >= 15 && hs > 0.7) return spotNear(w, placeOf(t, "square"), n.id, 3);
     const rn = w.ext && w.ext.reno;
     if (rn && rn.builder === n.id && h >= 8 && h < 17) { const hb = MAP.buildings.find((b) => b.town === rn.town && b.kind === "inn"); if (hb && n.town === rn.town) return [hb.x + hb.w, hb.y + hb.h + 1]; }
+    const tb = w.towns[t] && w.towns[t].build; // 새 집 공사를 맡은 목수는 공사 터에서 일한다
+    if (tb && tb.by === n.id) { const sl = EXTRA_HOUSES.find((b) => b.hid === tb.hid); if (sl) return [cx + sl.x + ((n.id + Math.floor(h)) % 4), cy + sl.y + sl.h]; }
     const kind = n.job === "guard" && n.id % 2 ? "square" : (JOBS[n.job] && JOBS[n.job].workplace) || "square";
     const slot = Math.floor(h); // 한 시간마다 자리를 바꾼다
     if (kind === "fields") return [cx + FIELD_BOX.x0 + (n.id * 3 + slot) % 9, cy + FIELD_BOX.y0 + ((n.id + slot) % 5)];
@@ -1024,6 +1054,8 @@
     const host = a.host !== undefined ? w.npcs[a.host] : null, hh = host && host.town === t ? houseOfNpc(host) : null;
     const hostHouse = hh && MAP.buildings.find((b) => b.town === hh.town && b.kind === "house" && b.hid === hh.hid);
     if (h >= 21 || h < 7) return (hostHouse && workSpot(w, hostHouse, n, 5)) || workSpot(w, bd("inn"), n, 3) || spotNear(w, placeOf(t, "square"), n.id, 3);
+    const R = (w.rites || []).find((x) => x.state === "planned" && x.day === w.day && x.town === t && h >= x.hour && h < x.hour + 3 && (x.id === a.rite || (host && [x.a, x.b].includes(host.id))));
+    if (R) return (["temple", "forge", "market", "tavern"].includes(R.place) && workSpot(w, bd(R.place), n, slot + 61)) || spotNear(w, placeOf(t, R.place === "meadow" || R.place === "hill" || R.place === "river" ? "square" : R.place) || placeOf(t, "square"), n.id, 3);
     if (h >= 12 && h < 13.5) return workSpot(w, bd("tavern"), n, slot + 77) || spotNear(w, placeOf(t, "square"), n.id, 3);
     if (a.why === "see" && host) { const k = walkers.get(host.id); if (h >= 17 && hostHouse) return workSpot(w, hostHouse, n, slot + 91) || spotNear(w, placeOf(t, "square"), n.id, 3); if (k && !k.inside && !k.road) return [Math.floor(k.x) + 1, Math.floor(k.y)]; return spotNear(w, placeOf(t, "square"), n.id + host.id, 3); }
     if (a.why === "shop") return workSpot(w, bd("market"), n, slot + 31) || spotNear(w, placeOf(t, "market"), n.id, 2);
@@ -1916,11 +1948,13 @@
     if (n.grief && w.npcs[n.grief.of]) out.push(`${jo(w.npcs[n.grief.of].name, "을/를")} 잃고 상중`);
     return out.join(" · ");
   }
+  const riteWhy = (w, a) => { const R = (w.rites || []).find((x) => x.id === a.rite); return !R ? "다니러" : R.kind === "wedding" ? "혼례 보러" : `${w.npcs[R.a].name}의 장례에`; };
   function activity(w, n) {
-    if (n.away && w.towns[n.away.at]) { const home = w.towns[n.town].name, a = n.away, hn = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host].name : ""; return `${home}에서 온 손님 · ${{ see: hn ? jo(hn, "을/를") + " 보러" : "다니러", shop: "장 보러", heal: "몸 고치러", tour: "구경하러" }[a.why] || "다니러"}`; }
+    if (n.away && w.towns[n.away.at]) { const home = w.towns[n.town].name, a = n.away, hn = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host].name : ""; return `${home}에서 온 손님 · ${{ see: hn ? jo(hn, "을/를") + " 보러" : "다니러", shop: "장 보러", heal: "몸 고치러", tour: "구경하러", rite: riteWhy(w, a) }[a.why] || "다니러"}`; }
     if (n.going && !n.trip) return "마차 기다리는 중";
     { const L = n.life && n.life.day === w.day ? n.life : null, I = A.illOf(n);
       if (I && !n.trip && (!L || ["rest", "sleep"].includes(L.act))) return I.hurt ? "다쳐서 쉬는 중" : `${jo(I.name, "으로/로")} 앓는 중`;
+      if (L && L.act === "rite") { const R = (w.rites || []).find((x) => x.id === L.rite); if (R) return R.kind === "wedding" ? ([R.a, R.b].includes(n.id) ? `${jo(w.npcs[n.id === R.a ? R.b : R.a].name, "과/와")} 혼례 올리는 중` : `${jo(w.npcs[R.a].name, "과/와")} ${w.npcs[R.b].name}의 혼례에`) : `${w.npcs[R.a].name}의 장례에`; }
       if (L && L.act === "help") { const par = w.npcs[L.with]; return `${par ? par.name + " 곁에서 " : ""}${(JOBS[L.job] || {}).name || ""} 일 거드는 중`; } }
     const k = walkers.get(n.id);
     if (!k) return n.at_war ? "전선" : "어딘가";
@@ -1993,4 +2027,5 @@
   };
   root.Game = G;
   G.findSite = findSite;
+  G.houseSlots = houseSlots;
 })(typeof window !== "undefined" ? window : globalThis);

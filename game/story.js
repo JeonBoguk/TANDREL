@@ -489,6 +489,45 @@
     if (t.bravery < 0.3) return "shy";
     return "plain";
   }
+  /* 사건 문장(신문 문체 '…했다')을 그 사람의 입말로. how: heard(들은 것) · seen(직접 본 것) · remind(따질 때 '…했지')
+   *  말투(tone)에 따라 끝맺음이 다르다: 들은 것 → 했대요 / 했대(bold) / 했다더군요(proud) / 했다지 뭐예요(greedy),
+   *  본 것 → 했더라고요 / 했더라 / 했더군요. 듣는 사람(플레이어)과 말하는 사람 자신의 이름은 '당신'·'저'로 바꾼다 */
+  const JONG = (ch) => { const c = ch.charCodeAt(0) - 0xac00; return c >= 0 && c < 11172 ? c % 28 : -1; };
+  const dropJong = (ch) => String.fromCharCode(ch.charCodeAt(0) - JONG(ch));
+  const ENDS = {
+    heard: { warm: "대요", plain: "대요", shy: "대요", bold: "대", proud: "다더군요", greedy: "다지 뭐예요" },
+    seen: { warm: "더라고요", plain: "더라고요", shy: "더라고요", bold: "더라", proud: "더군요", greedy: "더라고요" },
+    remind: { _: "지" }, join: { _: "고" },
+  };
+  function endClause(c, tn, how) {
+    const m = /^(.*?)(것이다|이다|는다|다)(\s*(?:\(.*\))?)$/.exec(c);
+    if (!m) return c;
+    let [, head, end, tail] = m;
+    const E = ENDS[how][tn] || ENDS[how]._ || ENDS[how].plain;
+    if (end === "것이다") return head + (how === "heard" ? { bold: "거래", proud: "거라더군요", greedy: "거라지 뭐예요" }[tn] || "거래요" : "거" + (how === "remind" ? "였지" : "더라고요")) + tail;
+    if (end === "이다" && JONG(head.slice(-1)) === 0) { head += ""; end = "다"; return head + (how === "heard" ? { bold: "래", proud: "라더군요", greedy: "라지 뭐예요" }[tn] || "래요" : E) + tail; } // 붉은재이다 → 붉은재래요
+    if (how === "join") { // 앞 문장은 '…했고,'로 잇는다
+      if (end === "것이다") return head + "것이고" + tail;
+      if (end === "이다") return head + "이고" + tail;
+      if (end === "는다") return head + "고" + tail;
+      const l = head.slice(-1);
+      return (JONG(l) === 4 && !/[었았였했]$/.test(l) ? head.slice(0, -1) + dropJong(l) : head) + "고" + tail;
+    }
+    if (end === "이다") return head + (how === "heard" ? { bold: "이래", proud: "이라더군요", greedy: "이라지 뭐예요" }[tn] || "이래요" : "이" + E) + tail;
+    if (end === "는다") return head + (how === "heard" ? "는" + E : E) + tail; // 먹는다 → 먹는대요 / 먹더라고요
+    const last = head.slice(-1);
+    if (how !== "heard" && JONG(last) === 4 && !/[었았였했]$/.test(last)) return head.slice(0, -1) + dropJong(last) + E + tail; // 모신다 → 모시더라고요
+    return head + E + tail;
+  }
+  function speak(w, n, text, how = "heard") {
+    const p = w.player, tn = tone(n), banmal = tn === "bold";
+    const sub = (name, forms) => { if (!name) return; text = text.replace(new RegExp(name + "(에게|한테|이|가|을|를|은|는|과|와|의)?(?=[\\s,.·]|$)", "g"), (_, j) => forms[j || ""] ?? forms[""]); };
+    if (p && p.name !== n.name) sub(p.name, banmal ? { 이: "네가", 가: "네가", 을: "너를", 를: "너를", 은: "너는", 는: "너는", 과: "너와", 와: "너와", 의: "네", 에게: "너에게", 한테: "너한테", "": "너" } : { 이: "당신이", 가: "당신이", 을: "당신을", 를: "당신을", 은: "당신은", 는: "당신은", 과: "당신과", 와: "당신과", 의: "당신의", 에게: "당신에게", 한테: "당신한테", "": "당신" });
+    sub(n.name, banmal ? { 이: "내가", 가: "내가", 을: "나를", 를: "나를", 은: "나는", 는: "나는", 과: "나와", 와: "나와", 의: "내", 에게: "나에게", 한테: "나한테", "": "나" } : { 이: "제가", 가: "제가", 을: "저를", 를: "저를", 은: "저는", 는: "저는", 과: "저와", 와: "저와", 의: "제", 에게: "저에게", 한테: "저한테", "": "저" });
+    const cs = text.replace(/\.\s*$/, "").split(/(?<=다)\. /);
+    return cs.map((c, i) => endClause(c, tn, i < cs.length - 1 ? "join" : how)).join(", ") + (how === "remind" ? "" : ".");
+  }
+  const m_seen = (m) => (m && m.f ? "seen" : "heard");
   function tier(w, n) {
     const p = w.player;
     if (p.spouse === n.id) return "spouse";
@@ -523,6 +562,8 @@
   function nowLine(w, n) {
     if (n.away && w.towns[n.away.at]) { // 다른 마을에서 다니러 온 손님
       const a = n.away, home = w.towns[n.town].name, h = a.host !== undefined && w.npcs[a.host] ? w.npcs[a.host] : null, left = a.until - w.day;
+      const R = a.why === "rite" && (w.rites || []).find((x) => x.id === a.rite);
+      if (R) return R.kind === "wedding" ? `${jo(w.npcs[R.a].name, "과/와")} ${w.npcs[R.b].name} 혼례 보러 ${home}에서 왔어요.` : `${w.npcs[R.a].name}… 마지막 길은 배웅해야죠. ${home}에서 왔어요.`;
       const why = { see: h ? `${jo(h.name, "을/를")} 보러` : "사람 보러", shop: `${a.got || a.item ? jo((G.ITEMS[a.got || a.item] || {}).name || "물건", "을/를") : "물건을"} 사러`, heal: "몸 좀 고치러", tour: "구경 삼아" }[a.why] || "볼일이 있어서";
       return `${home}에서 ${why} 왔어요. ${left <= 0 ? "내일 아침이면 돌아가요." : `${left}밤 더 묵고 가요.`}`;
     }
@@ -530,6 +571,9 @@
     if (I) return I.hurt ? pick(w, ["일하다 좀 다쳐서요. 며칠은 쉬어야 한대요.", "다친 데가 아직 욱신거려요."]) : I === A.ILLS.frail ? pick(w, ["요즘은 몸이 예전 같지 않아요.", "기운이 없어서 누워 있었어요."]) : pick(w, [w.day - n.ill.since >= 2 ? `${I.name} 때문에 며칠째 누워 있어요.` : `${jo(I.name, "이/가")} 들었나 봐요. 오늘은 누워 있으려고요.`, `${jo(I.name, "이/가")} 들어서 몸이 무거워요. 옮을지 모르니 가까이 오지 마요.`]);
     if (n.grief && w.npcs[n.grief.of] && w.rng.next() < 0.6) { const d = w.npcs[n.grief.of], who = d.id === n.lateSpouse ? "그이" : n.children.includes(d.id) ? "우리 애" : n.parents.includes(d.id) ? "부모님" : d.name; return pick(w, [`요즘은 ${who} 생각이 자꾸 나요.`, `${jo(who, "이/가")} 떠난 뒤로 집이 너무 조용해요.`, "괜찮아요… 시간이 지나면 나아지겠죠."]); }
     const L = n.life && n.life.day === w.day ? n.life : null;
+    if (L && L.act === "rite") { const R = (w.rites || []).find((x) => x.id === L.rite); if (R) { const a = w.npcs[R.a]; return R.kind === "wedding" ? ([R.a, R.b].includes(n.id) ? pick(w, ["오늘 제 혼례날이에요! 와 줘서 고마워요.", "떨려서 아무 말도 안 나와요."]) : pick(w, [`${jo(a.name, "과/와")} ${w.npcs[R.b].name} 혼례예요. 둘이 참 잘 어울리죠?`, "오늘은 다 같이 축하해 주는 날이에요."])) : pick(w, [`${a.name}… 좋은 사람이었어요.`, `${a.name}을 보내러 왔어요. 아직 믿기지가 않네요.`.replace(`${a.name}을`, jo(a.name, "을/를"))]); } }
+    if (L && L.act === "school") return pick(w, [`글방에서 ${A.knows(n, "letters") ? "셈" : "글"} 배우는 중이에요!`, "사제님이 오늘은 받아쓰기를 시킨대요.", "이거 다 외워야 집에 갈 수 있어요…"]);
+    if (n.apprentice && w.npcs[n.apprentice.master] && w.rng.next() < 0.5) { const ms = w.npcs[n.apprentice.master]; return pick(w, [`${ms.name} 밑에서 ${(A.JOBS[n.job] || {}).name || "일"} 일을 배우는 중이에요. 아직 혼나는 날이 더 많아요.`, `${jo(ms.name, "은/는")} 엄하지만 솜씨는 정말 좋아요.`]); }
     if (L && L.act === "help") { const par = w.npcs[L.with]; return pick(w, [`${par ? jo(par.name, "을/를") : "엄마 아빠를"} 돕고 있어요. 저도 커서 ${(A.JOBS[L.job] || {}).name || "이 일"} 할 거예요.`, "일 배우는 중이에요. 어렵지만 재밌어요."]); }
     if (n.retired && (!L || L.act !== "work") && w.rng.next() < 0.5) return pick(w, ["일은 이제 젊은 사람들 몫이죠. 저는 쉬엄쉬엄 지내요.", "평생 일했으니 이젠 좀 쉬어도 되겠지요.", n.children.length ? "애들이 잘 챙겨 줘서 걱정 없어요." : "모아 둔 걸로 그럭저럭 지내요."]);
     if (!L || w.rng.next() > 0.75) return "";
@@ -581,7 +625,7 @@
     say("npc", greeting(w, n));
     if (opener === "approach") {
       const news = n.mem.filter((m) => !w.player.known.has(m.e) && w.events[m.e] && w.events[m.e].imp >= 3);
-      if (news.length) { const e = w.events[maxBy(news, (m) => w.events[m.e].imp * m.s).e]; say("npc", `있잖아요, ${e.text}. 들었어요?`); w.remember(w.player, e, false, n.id); s.lastRumor = e.id; }
+      if (news.length) { const e = w.events[maxBy(news, (m) => w.events[m.e].imp * m.s).e]; say("npc", `있잖아요, ${speak(w, n, e.text)} 들었어요?`); w.remember(w.player, e, false, n.id); s.lastRumor = e.id; }
     }
     toMenu(w, s);
     return s;
@@ -955,8 +999,9 @@
     const m = maxBy(news, (x) => w.events[x.e].imp * x.s * (0.6 + w.rng.next() * 0.8));
     const e = w.events[m.e];
     s.rumors++;
-    const lead = { warm: "음, 이건 좀 안타까운 얘기인데요… ", greedy: "이건 아무한테나 안 해 주는 얘긴데… ", bold: "들었어? ", proud: "제가 듣기로는요, ", shy: "저, 저도 들은 얘긴데요… ", plain: "그러고 보니, " }[tone(n)];
-    s.say("npc", `${lead}${e.text}.${m.f ? " 제가 직접 봤어요." : m.v !== null && w.npcs[m.v] ? ` ${w.npcs[m.v].name}한테 들었어요.` : ""}`);
+    const sad = (e.sent || 0) < 0 || ["death", "fallen", "plague", "raid", "fall", "theft", "murder", "quarrel", "ill", "rejected", "bandits_won", "drought"].includes(e.kind), glad = !sad && ((e.sent || 0) > 0 || ["marriage", "birth", "lovers", "victory", "wedding", "friendship"].includes(e.kind));
+    const lead = { warm: sad ? "음, 이건 좀 안타까운 얘기인데요… " : glad ? "좋은 소식이 있어요! " : "그러고 보니요, ", greedy: "이건 아무한테나 안 해 주는 얘긴데… ", bold: "들었어? ", proud: "제가 듣기로는요, ", shy: "저, 저도 들은 얘긴데요… ", plain: "그러고 보니, " }[tone(n)];
+    s.say("npc", `${lead}${speak(w, n, e.text, m.f ? "seen" : "heard")}${m.f ? (tone(n) === "bold" ? " 내가 직접 봤어." : " 제가 직접 봤어요.") : m.v !== null && w.npcs[m.v] ? (tone(n) === "bold" ? ` ${w.npcs[m.v].name}한테 들었어.` : ` ${w.npcs[m.v].name}한테 들었어요.`) : ""}`);
     w.remember(p, e, false, n.id);
     s.lastRumor = e.id;
     const actor = e.actor !== null && e.actor !== p.id && e.actor !== n.id ? w.npcs[e.actor] : null;
@@ -964,7 +1009,7 @@
       O("자세히 들려줘요", "왜 그런 일이 일어났는지", () => {
         tick5(s); s.say("me", "어쩌다 그렇게 됐대요?");
         const cause = e.cause !== null ? w.events[e.cause] : null;
-        if (cause && n.known.has(cause.id)) { s.say("npc", `그게 다… ${cause.text}. 그 일 때문이래요.`); w.remember(p, cause, false, n.id); }
+        if (cause && n.known.has(cause.id)) { s.say("npc", `그게 다… ${speak(w, n, cause.text)} 그 일 때문이${tone(n) === "bold" ? "래" : "래요"}.`); w.remember(p, cause, false, n.id); }
         else if (actor) { const op = opinion(n, actor.id); s.say("npc", op <= -30 ? `${jo(actor.name, "이/가")} 원래 그런 사람이에요. 언젠가 일 낼 줄 알았다니까요.` : op >= 30 ? `${jo(actor.name, "이/가")} 그럴 사람이 아닌데… 무슨 사정이 있었겠죠.` : "자세한 건 저도 몰라요."); }
         else s.say("npc", "자세한 건 저도 몰라요.");
         s.options = s.options.filter((o) => o.label !== "자세히 들려줘요");
@@ -996,7 +1041,7 @@
     const feel = family(n).has(z.id) ? "제 가족인걸요." : op >= 50 ? "정말 좋은 사람이에요." : op >= 15 ? "괜찮은 사람이에요." : op <= -50 ? "그 사람 얘기는 하고 싶지도 않아요." : op <= -15 ? "솔직히 좀 별로예요." : "잘은 몰라요.";
     s.say("npc", `${z.name}이요? ${feel} ${facts.join(", ")}.`);
     const mem = n.mem.filter((m) => { const e = w.events[m.e]; return e && (e.actor === z.id || e.target === z.id) && !p.known.has(e.id); }).sort((a, b) => w.events[b.e].imp - w.events[a.e].imp)[0];
-    if (mem) { const e = w.events[mem.e]; s.say("npc", `그러고 보니… ${e.text}.`); w.remember(p, e, false, n.id); }
+    if (mem) { const e = w.events[mem.e]; s.say("npc", `그러고 보니… ${speak(w, n, e.text, m_seen(mem))}`); w.remember(p, e, false, n.id); }
     adjust(n, p.id, 1);
     s.options = [O("다른 사람에 대해서도 물어볼게요", "", () => askMenu(w, s)), back(w, s)];
   }
@@ -1205,7 +1250,7 @@
   }
   function confrontByNPC(w, s, n) {
     const p = w.player, og = n.goal ? w.events[n.goal.origin] : null;
-    s.say("npc", pick(w, ["드디어 만났군.", "너, 거기 서.", "기다리고 있었다."]) + (og ? ` ${og.text}… 잊었다고 생각했어?` : ""));
+    s.say("npc", pick(w, ["드디어 만났군.", "너, 거기 서.", "기다리고 있었다."]) + (og ? ` ${speak(w, n, og.text, "remind")}… 잊었다고 생각했어?` : ""));
     if (og) w.remember(p, og, false, n.id);
     s.options = [
       O("미안해요. 정말 잘못했어요", "진심으로 사과한다", () => {
@@ -1268,7 +1313,7 @@
   }
 
   const Story = { setup, onDawn, welcomePaper, knowsDream, offerBuild, completeMission, afterTick, sourceText, SRC_LABEL, paperSection, resolve, checkOracle, addMission, missionTitle, missionWhere, takeBoard, deliverToBoard, refreshBoard,
-    onKill, onItem, onHitNPC, onArrest, onEnterTown, talk, toMenu, endTalk, tone, tier, attitudeWord, relTag, familyList, relGraph, reasons,
+    onKill, onItem, onHitNPC, onArrest, onEnterTown, talk, toMenu, endTalk, tone, speak, tier, attitudeWord, relTag, familyList, relGraph, reasons,
     onEpisode: null, onOpenTalk: null, onMission: null };
   root.Story = Story;
 })(typeof window !== "undefined" ? window : globalThis);

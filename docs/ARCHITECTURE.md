@@ -27,6 +27,10 @@ ui.js      ─ (화면 전체) HUD·창·대화·제목 화면·저장 칸·터�
 - 길 위의 일: `w.trips`·`w.waiting`, 사람은 `n.trip`. 아침 7시 `haulHour`가 짐꾼(`job.haul: goods`)·마부(`people`)를 내보내고 `arriveDue`가 도착을 처리한다. 경로 `routeOf`, 자리 `tripPoint`(game.js `scheduleSpot`이 길 위에 그림). 플레이어의 마차는 game.js `boardCoach`·`rideTick`.
 - 다니러 가기: `n.going{to, kind: move|visit|home, why}`(떠나려는 길) → `depart`(마차 기다리기 `w.waiting` 또는 걷기 trip `walk`) → `land`(닿음). 머무는 중은 `n.away{at, until, why, host}`(사는 마을 `n.town`은 그대로, `residents`에서 빠짐). 지금 있는 곳은 `locOf(n)`. 아침 7시 `visitDay`가 까닭(see·shop·heal·tour)을 정하고 돌아올 사람을 보낸다. 화면 자리는 game.js `awaySpot`.
 - 생애 주기(engine `lifeCourse`, 하루 끝 `upkeep` 다음): 병·다침 `n.ill{id: cold|fever|hurt|frail, since, until}`(표 `ILLS`, 걸리기 `fallIll`, 치료 `treat`), 늙음 `lifeFrac(n)`·`isElder`·`healthCap`(회복할 수 있는 체력의 끝), 일을 놓음 `n.retired`(날짜), 밥값을 식구가 댐 `supportFor`, 슬픔 `n.grief{of, until, len}`(`mourn`), 유산 `estate`(금화·소지품 → 배우자, 없으면 자녀), 아이가 부모 일을 거듦(삶의 층 할 일 `help`, 거든 시간 `n.helped{job: 시간}` → 어른이 될 때 그 일을 이을 가능성). 앓는 사람은 `planHour`에서 쉬기만 하고, 약속·길 나서기(`visitDay`·`haulHour`)도 건너뛴다
+- 혼례·장례 `w.rites[{id, kind: wedding|funeral, town, day, hour, a, b, place, text, state, far}]`(`planWedding`·`planFuneral`·`riteDay`·`riteNow`), 풍습 표 `CONTENT.rites`(종족 id → {wedding, funeral}, `byValue`: 문화 가치별). 그 시간엔 삶의 층 할 일 `rite`. 먼 가족은 `going.why = "rite"`로 다니러 온다
+- 새 집 `t.extra[hid]`·공사 `t.build{hid, by, done, need, pot}`(engine `townBuild`·`finishHouse`, 목수는 `settleWork`에서 `buildWork`), 자리 표 game.js `EXTRA_HOUSES`·`houseSlots`(지형으로 정함). 집 번호 목록은 `hidsOf`
+- 전쟁: 마왕 `w.war.lord{greed, cruelty, cunning, pride}`, 마계 `w.realm.wealth`, 왕 `w.nations[id].ruler`(`ensureRulers`), 왕들 기질 `kingsMood`. 평화 중 `peaceDay`(마계 흉년·도발·공물·개전), 전쟁 중 `warDay`(휴전·전선·약탈)
+- 배움 `school`(글방, `teacherIn`·`schoolSubject`·`schoolP`), 견습 `n.apprentice{master, since, until}`. 소문 말투 story.js `speak(w, n, text, how)`
 - 주민 행동은 `ACTIONS`(행동 후보)의 효용 점수 + 꿈(`dreams[].bias`) + 성격 가중치로 고른다.
 - 일어난 일은 `w.record(kind, text, {actor, target, town, imp, ...})`로 사건이 되고,
   본 사람·들은 사람의 기억(`n.mem`)으로 퍼진다. 중요한 사건은 신문과 연대기에 오른다.
