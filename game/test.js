@@ -738,12 +738,15 @@
       const W = t.w, p = t.p(), e = t.e();
       e.missions = e.missions.filter((m) => m.type !== "story");
       const m = S.beginStory(W);
-      t.check(m && m.type === "story" && e.nav === m.id && e.inv.hoe >= 1 && e.inv.seed_turnip >= 3, `${S.missionTitle(W, m)} (괭이와 씨앗을 받았다, 길 안내 켜짐)`);
+      t.check(m && m.type === "story" && e.nav === m.id && /공동 밭/.test(S.missionTitle(W, m)), `${S.missionTitle(W, m)} (길 안내 켜짐)`);
       const g = S.missionGoal(W, m);
       t.check(g && /공동 밭/.test(g.label), `길 안내: ${g && g.label}`);
-      e.farm = e.farm || {}; e.farm["9999"] = { crop: "turnip", owner: p.id, watered: W.day };
+      e.tally = e.tally || {}; e.tally.work = (e.tally.work || 0) + 1; // 공동 밭 일을 한 번 했다
       const g0 = p.gold; S.storyTick(W);
-      t.check(m.step === 1 && p.gold > g0 && /수확/.test(S.missionTitle(W, m)), `다음 단계: ${S.missionTitle(W, m)}`);
+      t.check(m.step === 1 && p.gold > g0 && e.inv.hoe >= 1 && e.inv.can >= 1 && e.inv.seed_turnip >= 4, `선배가 괭이·물뿌리개·씨앗을 줬다 → ${S.missionTitle(W, m)}`);
+      e.farm = e.farm || {}; e.farm["9999"] = { crop: "turnip", owner: p.id, watered: W.day };
+      S.storyTick(W);
+      t.check(m.step === 2 && /수확/.test(S.missionTitle(W, m)), `다음 단계: ${S.missionTitle(W, m)}`);
       delete e.farm["9999"];
       // 사냥터: 짐승 한 마리가 아니라 그 짐승이 사는 넓은 땅
       const hm = S.addMission(W, { type: "hunt", animal: "deer", n: 1, reward: 5, board: t.town() });

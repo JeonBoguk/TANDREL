@@ -398,7 +398,7 @@ function renderMenubar() {
   const btn = (id, label, key, extra = {}) => h("button", { class: "mbtn" + (extra.primary ? " primary" : ""), type: "button", "aria-pressed": String(g === (GROUP_OF[id] || id)), onclick: () => (g === (GROUP_OF[id] || id) ? closeWin() : openWin(id)) }, label, key ? h("kbd", null, key) : null, extra.badge ? h("span", { class: "badge" }, extra.badge) : null);
   $("#menubar").replaceChildren(
     btn("info", "나", "C"),
-    playing() ? h("button", { class: "mbtn", type: "button", "aria-pressed": String(win === "bag"), onclick: () => (win === "bag" ? closeWin() : openWin("bag")) }, "가방", h("kbd", null, "I")) : null,
+    playing() ? h("button", { class: "mbtn", type: "button", "aria-pressed": String(win === "bag"), onclick: () => (win === "bag" ? closeWin() : openWin("bag")) }, "가방", h("kbd", null, "I")) : "", // null은 글자 "null"로 찍힌다
     btn(eps ? "news" : "paperToday", "소식", "N", { badge: eps ? String(eps) : unread ? "새" : null }),
     btn("people", "세계", "P"),
     btn("map", "지도", "M"),
@@ -1009,51 +1009,84 @@ function winJobMake() {
           const r = G.createJob(W, d); toast(r.text, r.ok ? "good" : "warn"); if (r.ok) { jmDraft = null; autosave(); closeWin(); renderAll(); } } }, d.addTo ? "업무 등록하기" : `등록하기 (금화 ${J.cost})`))),
   ];
 }
-function winBorn() {
-  const p = W.player, pastLife = !!p;
-  const mode = pastLife ? bornMode || "new" : "here";
-  // 새 세계는 아직 만들기 전이므로, 처음부터 있는 종족·직업·마을 중에서 고른다
-  const races = mode === "new" ? A.CONTENT.races.filter((r) => !r.hidden && !r.mix) : A.racesInWorld(W);
-  const jobs = mode === "new" ? A.CONTENT.jobs.filter((j) => !j.emerge) : W.openJobs();
-  const towns = mode === "new" ? A.CONTENT.towns.map((t) => ({ id: t.id, name: t.name, nation: A.CONTENT.nations[t.nation] })) : Object.values(W.towns).filter((t) => !t.fallen).map((t) => ({ id: t.id, name: t.name, nation: A.nationName(W, t.nation) }));
-  const submit = h("button", { class: "wbtn gold full", type: "submit" }, mode === "new" ? "새로운 세계에 태어나기" : "이 세계에서 다시 태어나기");
-  const form = h("form", null,
-    h("label", { class: "full" }, "이름", h("input", { class: "field", id: "bName", maxlength: 10, required: true, placeholder: "예: 하늘" })),
-    h("label", null, "종족", h("select", { class: "field", id: "bRace" }, races.map((r) => h("option", { value: r.id }, r.name)))),
-    h("label", null, "처음 직업", h("select", { class: "field", id: "bJob" }, jobs.map((j) => h("option", { value: j.id }, `${j.name} — ${G.SKILL[j.id].name}`)))),
-    h("label", { class: "full" }, "살 마을", h("select", { class: "field", id: "bTown" }, towns.map((t) => h("option", { value: t.id }, `${t.name} · ${t.nation}`)))),
-    submit);
-  const birth = (opts) => {
+function birth(opts) {
     G.newLife(W, opts);
+    if (opts.gender) { W.player.gender = opts.gender; const L = W.player.look || {}; const pool = opts.gender === "여자" ? ["long", "pony", "bun", "bob"] : opts.gender === "남자" ? ["short", "spiky", "curly"] : null; if (pool && !pool.includes(L.style)) W.player.look = { ...L, style: pool[Math.floor(Math.random() * pool.length)] }; } // 부를 말에 따라 머리 모양
     view.cam = { x: W.ppos.x, y: W.ppos.y }; speed = settings.speed; obsRun = false; hotSig = ""; $("#bl").dataset.pid = ""; bornMode = null;
     S.welcomePaper(W); S.beginStory(W); // 직업마다 첫 걸음 이야기 (길 안내가 켜진다)
     autosave(); closeWin(); toast(touchMode ? "왼쪽 아래 막대로 걷고, 오른쪽 버튼으로 행동" : "이동 WASD · 행동 Space(E) · 공격 F · 도움말 H");
-  };
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = form.querySelector("#bName").value.trim().slice(0, 10);
-    if (!name) return;
-    const opts = { name, race: form.querySelector("#bRace").value, job: form.querySelector("#bJob").value, town: form.querySelector("#bTown").value };
-    if (mode !== "new") { birth(opts); return; }
-    submit.disabled = true; submit.textContent = "새로운 세계를 빚는 중…";
-    setTimeout(() => {
-      if (W.player && W.player.alive) autosave(); // 떠나는 세계는 제 칸에 남는다
-      const seed = 1 + Math.floor(Math.random() * 999998);
-      if (slotsList().length < MAX_SLOTS || !slotId) slotId = newSlotId();
-      setWorld(freshWorld(seed, "탄드렐"), `새 세계 · 시드 ${seed}`);
-      birth(opts);
-    }, 20);
-  });
+  }
+/* 새 삶: 직업을 고르는 서류 대신, 고른 마을의 촌장과 마주 앉는다. 촌장이 이름·겨레·부를 말·잘하는 일을 묻고,
+ * 같은 일 하는 선배가 있으면 그 사람에게, 없으면 자기가 일러 주겠다며 여관 방을 내준다. 새 세계는 마을을 고르는 순간 빚는다 */
+let iv = null; // 면담 { mode, step: town|name|race|gender|job|done, town, name, race, gender, job, busy }
+const JOB_ASK_WORD = { farmer: "밭을 갈고 곡식을 기르는 일", baker: "반죽하고 빵 굽는 일", blacksmith: "쇠를 두드려 연장을 만드는 일", merchant: "물건을 사고파는 일", guard: "마을을 지키는 일", adventurer: "먼 데를 다니며 모험하는 일", alchemist: "약초로 약을 달이는 일", priest: "기도하고 아픈 이를 돌보는 일", cook: "음식을 만드는 일", jeweler: "보석을 다듬는 일", doctor: "사람을 고치는 일", builder: "집을 짓는 일", courier: "편지와 소식을 나르는 일", mercenary: "칼로 먹고사는 일" };
+const RACE_WORD = (r) => [r.lifespan ? `${r.lifespan[0]}~${r.lifespan[1]}년을 산다` : "", r.adultAge ? `${r.adultAge}살에 어른이 된다` : "", r.traits && r.traits.bravery > 0.1 ? "용감하다" : r.traits && r.traits.kindness > 0.05 ? "너그럽다" : r.traits && r.traits.greed > 0.05 ? "셈이 밝다" : ""].filter(Boolean).join(" · ");
+function winBorn() {
+  const p = W.player, pastLife = !!p;
+  const mode = pastLife ? bornMode || "new" : "here";
+  if (!iv || iv.mode !== mode) iv = { mode, step: "town" };
+  const races = mode === "new" ? A.CONTENT.races.filter((r) => !r.hidden && !r.mix) : A.racesInWorld(W);
+  const towns = mode === "new" ? A.CONTENT.towns.map((t) => ({ id: t.id, name: t.name, nation: A.CONTENT.nations[t.nation], races: t.races })) : Object.values(W.towns).filter((t) => !t.fallen).map((t) => ({ id: t.id, name: t.name, nation: A.nationName(W, t.nation), races: t.races }));
   const nations = new Set(Object.values(W.towns).map((t) => t.nation)).size, born = (W.founded || []).length;
-  const choose = pastLife ? h("div", { class: "tabs", style: "padding:0;background:none;border:0;margin:6px 0 10px" },
+  const choose = pastLife && iv.step === "town" ? h("div", { class: "tabs", style: "padding:0;background:none;border:0;margin:6px 0 10px" },
     h("button", { type: "button", class: "tab", "aria-selected": String(mode === "new"), onclick: () => { bornMode = "new"; renderWin(); } }, "새로운 세계에서 처음부터"),
     h("button", { type: "button", class: "tab", "aria-selected": String(mode === "here"), onclick: () => { bornMode = "here"; renderWin(); } }, "이 세계에서 이어 살기")) : null;
-  const explain = !pastLife ? null : mode === "new"
+  const explain = !pastLife || iv.step !== "town" ? null : mode === "new"
     ? h("p", { class: "small muted", style: "margin:0 0 8px" }, "새 시드로 세계를 만들고 새 인물로 시작한다. 지금 세계는 불러오기 목록에 남는다.")
-    : h("p", { class: "small muted", style: "margin:0 0 8px" }, `‘${W.name}’ ${W.year}년째 · 나라 ${nations}개${born ? ` (그중 ${born}개는 이 세계에서 세워짐)` : ""} · 주민 ${W.alive().length}명. 세계의 역사는 그대로 이어지고, 나는 이 세계의 새로운 사람으로 다시 시작한다.`);
-  return [p && !p.alive ? h("p", { style: "margin-top:0" }, `${p.name}의 삶이 끝났다. ${W.date(p.death_day)}, ${p.death_cause} 세상을 떠났다.`)
-    : h("p", { style: "margin-top:0" }, "빈손으로 시작한다. 가진 것은 맨손과 빵 한 조각, 금화 8닢이다."),
-    choose, explain, form, h("p", { class: "small muted" }, "창을 닫으면 태어나지 않고 세계를 지켜본다.")];
+    : h("p", { class: "small muted", style: "margin:0 0 8px" }, `‘${W.name}’ ${W.year}년째 · 나라 ${nations}개${born ? ` (그중 ${born}개는 이 세계에서 세워짐)` : ""} · 주민 ${W.alive().length}명. 세계의 역사는 그대로 이어지고, 나는 이 세계의 새로운 사람이 된다.`);
+  const head = p && !p.alive ? h("p", { style: "margin-top:0" }, `${p.name}의 삶이 끝났다. ${W.date(p.death_day)}, ${p.death_cause} 세상을 떠났다.`) : null;
+  const btn = (label, hint, go, gold) => h("button", { class: "opt" + (gold ? " quest" : ""), type: "button", onclick: go }, h("b", null, label), hint ? h("span", null, hint) : null);
+  const next = (patch) => { Object.assign(iv, patch); renderWin(); };
+  // 1) 마을 고르기 (새 세계면 이때 세계를 빚는다)
+  if (iv.step === "town") {
+    return [head, choose, explain, h("p", { style: "margin-top:0" }, "빈손으로 길을 나섰다. 가진 것은 빵 한 조각과 금화 8닢. 어느 마을로 갈까?"),
+      h("div", { class: "opts" }, towns.map((t) => btn(t.name, `${t.nation}${t.races ? " · " + Object.keys(t.races).map((r) => (A.RACES[r] || {}).name).filter(Boolean).join("·") + "이 산다" : ""}`, () => {
+        if (iv.busy) return;
+        if (mode !== "new") { next({ town: t.id, step: "name" }); return; }
+        iv.busy = true; renderWin();
+        setTimeout(() => {
+          if (W.player && W.player.alive) autosave(); // 떠나는 세계는 제 칸에 남는다
+          const seed = 1 + Math.floor(Math.random() * 999998);
+          if (slotsList().length < MAX_SLOTS || !slotId) slotId = newSlotId();
+          setWorld(freshWorld(seed, "탄드렐"), `새 세계 · 시드 ${seed}`);
+          bornMode = null; iv = { mode: W.player ? "new" : "here", step: "name", town: t.id };
+          if (!W.player) iv.mode = "here";
+          renderWin();
+        }, 20);
+      }))),
+      iv.busy ? h("p", { class: "small muted" }, "새로운 세계를 빚는 중…") : null,
+      h("p", { class: "small muted" }, "창을 닫으면 태어나지 않고 세계를 지켜본다.")];
+  }
+  // 2~5) 촌장과의 면담
+  const T = W.towns[iv.town], ch = S.chiefOf(W, iv.town);
+  if (G.TOWN_POS[iv.town] && !W.player) { const [tx, ty] = G.TOWN_POS[iv.town]; view.cam = { x: tx + 0.5, y: ty + 0.5 }; } // 면담하는 동안 그 마을이 뒤에 보인다
+  if (!T || !ch) { iv = null; return [h("p", null, "그 마을에 맞아 줄 사람이 없다. 다른 마을을 골라 보자.")]; }
+  const c = ch.n, cr = A.RACES[c.race] || {};
+  const say = (text) => h("div", { class: "row", style: "gap:12px;align-items:flex-start;margin:0 0 12px" }, portraitCanvas(c, 64),
+    h("div", { style: "min-width:0" }, h("div", { class: "small muted" }, `${T.name}의 ${ch.title} ${c.name} · ${cr.name || ""}`), h("p", { style: "margin:4px 0 0" }, text)));
+  const back = h("button", { class: "link small", type: "button", onclick: () => next({ step: { name: "town", race: "name", gender: "race", job: "gender", done: "job" }[iv.step] }) }, "← 앞 질문으로");
+  if (iv.step === "name") {
+    const input = h("input", { class: "field", id: "bName", maxlength: 10, required: true, placeholder: "예: 하늘", value: iv.name || "" });
+    const form = h("form", { class: "row", style: "gap:8px" }, input, h("button", { class: "wbtn gold", type: "submit" }, "말한다"));
+    form.addEventListener("submit", (e) => { e.preventDefault(); const nm = input.value.trim().slice(0, 10); if (nm) next({ name: nm, step: "race" }); });
+    setTimeout(() => input.focus(), 30);
+    return [say(`어서 오시오. 나는 ${T.name}의 ${ch.title} ${c.name}이오. 먼 길 오느라 고생했구려. 이름이 어떻게 되시오?`), form, back];
+  }
+  if (iv.step === "race") return [say(`${iv.name}… 좋은 이름이오. 어느 겨레 사람이오?`), h("div", { class: "opts" }, races.map((r) => btn(r.name, RACE_WORD(r), () => next({ race: r.id, step: "gender" })))), back];
+  if (iv.step === "gender") {
+    const same = iv.race === c.race, rn = (A.RACES[iv.race] || {}).name || "";
+    const react = same ? `같은 ${cr.name}${jo(cr.name || "", "이로군/로군").slice((cr.name || "").length)}. 반갑소.` : Object.keys(T.races || {}).includes(iv.race) ? `우리 마을에도 ${jo(rn, "이/가")} 여럿 사오. 금방 익숙해질 거요.` : `우리 마을엔 ${jo(rn, "이/가")} 드무니 다들 신기해할 거요. 너무 마음 쓰지 마시오.`;
+    return [say(`${react} 그리고 실례지만, 어떻게 불러 드리면 되겠소?`), h("div", { class: "opts" }, [["남자", "형씨라고 불러도 좋소"], ["여자", "아가씨라고 불러도 좋소"], ["말하지 않겠다", "이름으로 불러 주시오"]].map(([g, hint]) => btn(g, hint, () => next({ gender: g, step: "job" })))), back];
+  }
+  if (iv.step === "job") {
+    const jobs = (mode === "new" ? A.CONTENT.jobs.filter((j) => !j.emerge) : W.openJobs()).filter((j) => G.SKILL[j.id]);
+    return [say(`좋소, ${iv.name}. 이 마을에서 먹고살려면 일이 있어야 하오. 무슨 일에 자신이 있소?`), h("div", { class: "opts" }, jobs.map((j) => btn(JOB_ASK_WORD[j.id] || `${j.name} 일`, `${j.name} · ${G.SKILL[j.id].name}`, () => next({ job: j.id, step: "done" })))), back];
+  }
+  // 6) 마무리: 누구에게 배울지 일러 주고 방을 내준다
+  const J = A.JOBS[iv.job] || {}, senior = W.residents(iv.town, true).filter((x) => x.controller !== "player" && A.isAdult(x) && x.job === iv.job && x !== c).sort((a, b) => b.fame - a.fame)[0];
+  const teach = c.job === iv.job ? `마침 나도 ${jo(J.name, "이오/요")}. 내가 직접 가르쳐 주겠소.` : senior ? `그렇다면 우리 마을 ${J.name} ${senior.name}에게 배우시오. 내 미리 말해 두리다.` : `우리 마을엔 아직 ${jo(J.name, "이/가")} 없소. 처음 하는 일이라도 내가 아는 만큼은 일러 주겠소.`;
+  return [say(`${teach} 여관에 방 하나를 내주겠소. 오늘부터 ${iv.name}${jo(iv.name, "은/는").slice(iv.name.length)} ${T.name} 사람이오.`),
+    h("button", { class: "wbtn gold full", type: "button", onclick: () => { const o = { name: iv.name, race: iv.race, job: iv.job, town: iv.town, gender: iv.gender }; iv = null; birth(o); } }, `${T.name}에서 살기 시작하기`), back];
 }
 
 // ---- 저장

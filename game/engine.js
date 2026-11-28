@@ -482,7 +482,7 @@
       const diff = this.day - d;
       if (diff >= DPY) return `${Math.floor(diff / DPY)}년 전`;
       if (diff >= DPS) return `${Math.floor(diff / DPS)}계절 전`;
-      return diff > 0 ? `${diff}일 전` : "같은 날";
+      return diff === 1 ? "하루 전" : diff === 2 ? "이틀 전" : diff === 3 ? "사흘 전" : diff > 0 ? `${diff}일 전` : "같은 날";
     }
     harvestMult() { const m = HARVEST[this.season]; return this.day < this.droughtUntil ? m * 0.5 : m; }
 
@@ -717,7 +717,7 @@
         mem: n.mem.map((m) => [m.e, m.s, m.f ? 1 : 0, m.v]),
         known: [...n.known].filter((id) => memIds.has(id)), flags: [...n.flags] }));
       const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, stock: t.stock || {}, agri: t.agri || null, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null,
-        short: t.short || {}, missed: t.missed || {}, extra: t.extra || [], build: t.build || null, lastBuild: t.lastBuild ?? null }]));
+        short: t.short || {}, missed: t.missed || {}, field: t.field || null, extra: t.extra || [], build: t.build || null, lastBuild: t.lastBuild ?? null }]));
       return JSON.stringify({
         format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
@@ -1281,6 +1281,7 @@
     actUntil(w, Infinity);
     lifeUntil(w, 1440);
     settleWork(w);
+    fieldDay(w);
     stockDecay(w);
     shortDay(w);
     riteDay(w);
@@ -1738,7 +1739,7 @@
       for (const m of [head, head.spouse !== null ? w.npcs[head.spouse] : null]) if (m && m.alive && m.house === crowded) { settleIn(w, m, id); movers.push(m); }
       for (const c of head.children.map((x) => w.npcs[x])) if (c && c.alive && !isAdult(c) && c.house === crowded) settleIn(w, c, id);
     }
-    w.record("build_done", `${t.name}에 새 집이 섰다${by ? ` (${by.job === "builder" ? "목수 " : ""}${by.name}의 솜씨)` : ""}${movers.length ? `. ${movers.map((m) => m.name).join("·")}${jo(movers[movers.length - 1].name, "이/가").slice(movers[movers.length - 1].name.length)} 새 집으로 들어갔다` : ""}`,
+    w.record("build_done", `${t.name}에 ${by ? `${by.job === "builder" ? "목수 " : ""}${by.name}${jo(by.name, "이/가").slice(by.name.length)} 지은 ` : ""}새 집이 섰다${movers.length ? `. ${movers.map((m) => m.name).join("·")}${jo(movers[movers.length - 1].name, "이/가").slice(movers[movers.length - 1].name.length)} 새 집으로 들어갔다` : ""}`,
       { actor: by ? by.id : null, target: head ? head.id : null, town: t.id, imp: 3, sent: 2, wr: 0.3, data: { hid: b.hid, wide: b.wide } });
     if (w.onMapChange) w.onMapChange(true);
   }
@@ -2442,6 +2443,25 @@
   }
 
   /** 하루 끝: 일한 만큼 정산한다 (7시간이 하루치) */
+  /* 공동 밭의 모습 (t.field = { year, crop, planted, harvested, growth }): 그 마을 농부들이 실제로 일한 만큼 바뀐다.
+   *  봄: 일한 만큼 이랑이 하나씩 심긴다 · 여름: 초록으로 자란다 · 가을: 익었다가(10일쯤) 일한 만큼 거둬져 그루터기만 남는다 · 겨울: 빈 밭.
+   *  화면(render.js)은 밭 칸에 순서대로 그린다: 앞에서부터 planted칸까지 작물(growth 0~3), 거둔 칸은 그루터기 */
+  const FIELD_TILES = 45, FIELD_CROPS = ["wheat", "potato", "turnip"];
+  function fieldDay(w) {
+    const S = w.season, d = dayInSeason(w), yr = Math.floor(w.day / DPY);
+    for (const t of Object.values(w.towns)) {
+      if (t.fallen) continue;
+      const f = (t.field = t.field || { year: -1, crop: "wheat", planted: 0, harvested: 0, growth: 0 });
+      const hours = w.residents(t.id, true).reduce((s, n) => s + ((JOBS[n.job] || {}).seasonal && n.today && n.today.day === w.day ? n.today.worked || 0 : 0), 0);
+      if (S === "봄") {
+        if (f.year !== yr) { f.year = yr; f.crop = FIELD_CROPS[(yr + t.id.length) % FIELD_CROPS.length]; f.planted = 0; f.harvested = 0; f.growth = 0; }
+        f.planted = Math.min(FIELD_TILES, f.planted + hours / 3);
+        f.growth = d > 18 ? 1 : 0;
+      } else if (S === "여름") { f.planted = Math.max(f.planted, Math.min(FIELD_TILES, f.planted + hours / 3)); f.growth = d > 12 ? 2 : 1; }
+      else if (S === "가을") { f.growth = d > 6 ? 3 : 2; if (d > 10) f.harvested = Math.min(f.planted, f.harvested + hours / 2.5); }
+      else { f.planted = 0; f.harvested = 0; f.growth = 0; }
+    }
+  }
   function settleWork(w) {
     for (const n of w.alive()) {
       const t = n.today;
@@ -3246,7 +3266,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, visitDay, depart, land, rHeal, rForage, enlist, returnHome, borderTown, DPS, makeLord, lordOf, realmOf, ensureRulers, kingsMood, peaceDay, warDay, planWedding, planFuneral, riteDay, riteNow, riteGuests, riteOf, wed, teacherIn, schoolSubject, comeOfAge, townBuild, finishHouse, buildWork, hidsOf, lifeCourse, supportFor, estate, mourn, helpParent };
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, shortDay, haulHour, rTravel, startTrip, visitDay, depart, land, rHeal, rForage, enlist, returnHome, borderTown, DPS, fieldDay, makeLord, lordOf, realmOf, ensureRulers, kingsMood, peaceDay, warDay, planWedding, planFuneral, riteDay, riteNow, riteGuests, riteOf, wed, teacherIn, schoolSubject, comeOfAge, townBuild, finishHouse, buildWork, hidsOf, lifeCourse, supportFor, estate, mourn, helpParent };
   root.Asteria = { SAVE_VERSION, SPREAD, lordOf, lordWords, realmOf, realmWord, kingsMood, ILLS, illOf, lifeFrac, isElder, healthCap, fallIll, treat, locOf, journeyText, arriveDue, startTrip, routeOf, tripPoint, tradeGaps, ROAD_SPEED, cargoText, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

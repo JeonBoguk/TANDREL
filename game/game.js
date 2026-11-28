@@ -1644,7 +1644,7 @@
     if (typeof wk === "string") wk = [...A.worksOf(p.job), ...(p.side ? A.worksOf(p.side) : [])].find((x) => x.id === wk);
     if (!wk) return { text: "할 수 없는 일이다" };
     const lack = Object.entries(wk.needs || {}).filter(([id, n]) => !has(w, id, n));
-    if (!lack.length) { const e = ext(w); e.tally = e.tally || {}; e.tally.work = (e.tally.work || 0) + 1; }
+    if (!lack.length) { const e = ext(w); e.tally = e.tally || {}; e.tally.work = (e.tally.work || 0) + 1; e.tally.wk = e.tally.wk || {}; e.tally.wk[wk.id] = (e.tally.wk[wk.id] || 0) + 1; const td = A.dayOf(p, w); td.worked = (td.worked || 0) + (wk.mins || 60) / 60; } // 내가 일한 시간도 공동 밭에 보탠다
     if (lack.length) return { text: "재료가 모자라다" };
     const auto = !scores && !grade;
     if (auto) scores = A.autoScores(p, wk, w.rng, 0.12);

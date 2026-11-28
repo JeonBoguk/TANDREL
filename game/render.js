@@ -436,6 +436,15 @@
         const o = G.objAt(w, x, y);
         if (o) items.push({ d: y + 0.9, f: () => this.object(b, w, x, y, o, pal) });
       }
+      // 공동 밭: 마을 농부들이 일한 만큼 이랑이 심기고 자라고 거둬진다 (내가 일군 칸은 내 작물)
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        if (MAP.getT(x, y) !== G.T.FIELD || e.farm[x + "," + y]) continue;
+        const tid = G.townAt(x, y), tw = tid && w.towns[tid], fd = tw && tw.field; if (!fd) continue;
+        const [cx0, cy0] = G.TOWN_POS[tid], i = (y - cy0 - 11) * 9 + (x - cx0 + 4);
+        if (i < 0) continue;
+        if (i < Math.floor(fd.harvested)) items.push({ d: y + 0.6, f: () => this.stubble(b, x, y) });
+        else if (i < Math.floor(fd.planted)) items.push({ d: y + 0.7, f: () => this.crop(b, w, x, y, { crop: { type: fd.crop, g: fd.growth, town: true } }) });
+      }
       for (const [key, f] of Object.entries(e.farm)) {
         if (!f.crop) continue;
         const [fx, fy] = key.split(",").map(Number);
@@ -681,9 +690,11 @@
       }
       // 작물
     }
+    /** 거두고 남은 그루터기 */
+    stubble(b, x, y) { const [sx, sy] = this.toBuf(x, y); for (const [ox, oy] of [[3, 6], [9, 5], [6, 12], [12, 11]]) { b.fillStyle = "#7a5a24"; b.fillRect(sx + ox - 1, sy + oy + 2, 4, 1); b.fillStyle = "#d8b45a"; b.fillRect(sx + ox - 1, sy + oy, 1, 2); b.fillRect(sx + ox + 1, sy + oy - 1, 1, 3); b.fillRect(sx + ox + 2, sy + oy, 1, 2); } }
     crop(b, w, x, y, f) {
       const [sx, sy] = this.toBuf(x, y), c = G.CROPS[f.crop.type], cx = sx + 8, by = sy + 13;
-      const st = f.crop.dead ? -1 : Math.min(3, Math.floor((f.crop.g / c.days) * 3 + (f.crop.g >= c.days ? 1 : 0)));
+      const st = f.crop.town ? f.crop.g : f.crop.dead ? -1 : Math.min(3, Math.floor((f.crop.g / c.days) * 3 + (f.crop.g >= c.days ? 1 : 0)));
       if (root.Spr16) {
         const s = root.Spr16.crop(f.crop.type, st);
         b.drawImage(s.c, cx - s.ax, by + 2 - s.ay);

@@ -143,10 +143,10 @@
   const workPlace = (w) => { const J = A.JOBS[w.player.job] || {}; return place(w, w.player.town, J.workplace || "guild", `${J.name || ""} 일터`); };
   const STARTS = {
     farmer: [
-      { text: "마을 공동 밭을 괭이로 갈고 씨앗 심기", done: (w, d) => d.planted > 0, goal: (w) => place(w, w.player.town, "fields", "공동 밭") || openGround(w), reward: 6, say: "내가 쓰던 괭이랑 순무 씨앗을 줄게. 공동 밭 빈 자리를 갈고 심어 봐. 씨앗이 더 필요하면 시장에 있어." },
-      { text: "물을 주며 길러 첫 수확 거두기", done: (w, d) => d.harvest > 0, goal: myFarm, reward: 10, say: "매일 물을 주면 며칠이면 자라. 다 자라면 맨손으로 거두면 돼." },
+      { text: "공동 밭에서 마을 일 한 번 거들기", done: (w, d) => d.work > 0, goal: (w) => place(w, w.player.town, "fields", "공동 밭"), reward: 4, say: "우선 공동 밭 일부터 같이 하자. 밭 앞에서 ‘밭 가꾸기’를 고르면 돼. 품삯도 나오니까 당장 먹고살 걱정은 덜 거야." },
+      { text: "공동 밭 빈 이랑을 갈고 내 씨앗 심기", done: (w, d) => d.planted > 0, goal: (w) => place(w, w.player.town, "fields", "공동 밭") || openGround(w), reward: 6, say: "잘했어. 이제 네 몫이야. 내가 쓰던 괭이랑 물뿌리개, 순무 씨앗을 줄게. 빈 이랑을 갈고 심어 봐." },
+      { text: "날마다 물을 주어 첫 수확 거두기", done: (w, d) => d.harvest > 0, goal: myFarm, reward: 10, say: "순무는 하루 한 번 물을 주면 나흘이면 자라. 비 오는 날은 하늘이 대신 줘. 그동안 공동 밭 일로 품삯을 벌어 둬." },
       { text: "거둔 작물을 시장에 팔기", done: (w, d) => d.sold > 0, goal: (w) => place(w, w.player.town, "market", "시장"), reward: 8, say: "첫 수확은 시장에 내 봐. 마을에 모자란 건 값을 더 쳐 줘." },
-      { text: "마을 사람 셋과 인사하기", done: (w, d) => d.met >= 3, goal: unmet, reward: 8, say: "농사는 혼자 짓는 게 아니야. 이웃들 얼굴을 익혀 둬." },
     ],
     adventurer: [
       { text: "길드 게시판에서 의뢰 하나 받기", done: (w) => EX(w).missions.some((m) => m.board), goal: (w) => place(w, w.player.town, "guild", "길드 게시판"), reward: 5, say: "모험가는 길드에서 시작하지. 게시판 의뢰부터 하나 받아 와." },
@@ -158,19 +158,58 @@
       { text: "일터에 가서 처음으로 일해 보기", done: (w, d) => d.work > 0, goal: workPlace, reward: 6, say: "일은 일터에서 해. 들어가서 '일하기'를 골라 봐." },
       { text: "마을 사람 셋과 인사하기", done: (w, d) => d.met >= 3, goal: unmet, reward: 6, say: "손님이 될 사람들이야. 얼굴을 익혀 둬." },
       { text: "일을 세 번 더 해서 손에 익히기", done: (w, d) => d.work >= 4, goal: workPlace, reward: 10, say: "솜씨는 해 본 만큼 늘어. 몇 번 더 해 봐." },
-      { text: "주민의 부탁이나 길드 의뢰 하나 들어주기", done: (w, d) => d.quests > 0, goal: (w) => { const m = EX(w).missions.find((x) => !x.done && x.type !== "story"); return m ? missionGoal(w, m) : place(w, w.player.town, "guild", "길드 게시판"); }, reward: 12, say: "이웃 부탁을 들어주다 보면 일거리도 저절로 생겨." },
+      { text: "주민의 부탁이나 길드 의뢰 하나 들어주기", done: (w, d) => d.quests > 0, goal: (w) => { const m = EX(w).missions.find((x) => !x.done && x.type !== "story" && x.type !== "appt"); return m ? missionGoal(w, m) : place(w, w.player.town, "guild", "길드 게시판"); }, reward: 12, say: "이웃 부탁을 들어주다 보면 일거리도 저절로 생겨." },
     ],
   };
-  const startsOf = (job) => STARTS[job] || STARTS._;
+  /* 손으로 만드는 직업의 첫 걸음: 선배가 준 재료로 그 직업다운 일 → 재료를 스스로 모으기 → 그 재료로 다시(또는 다음 일) → 만든 것 팔기·부탁.
+   *  대장장이는 도끼부터(그 도끼로 나무를 벤다), 세공사는 다듬은 보석으로 반지까지. 손님을 받는 일(축복 기도·순찰)은 그 일을 해 보고 손에 익히기 */
+  const FIRST_WORK = { blacksmith: "forge_axe" };
+  const wkCount = (w, id) => ((EX(w).tally || {}).wk || {})[id] || 0;
+  const iname = (id) => (G.ITEMS[id] || {}).name || id;
+  const startCache = {};
+  function craftStarts(job) {
+    if (startCache[job] !== undefined) return startCache[job];
+    const ws = A.worksOf(job).filter((x) => x.steps);
+    if (!ws.length) return (startCache[job] = null);
+    const w1 = ws.find((x) => x.id === FIRST_WORK[job]) || ws.find((x) => x.needs) || ws[0];
+    const w2 = ws.find((x) => x !== w1 && x.needs) || w1;
+    const wp = (w) => workPlace(w);
+    if (!w1.needs) return (startCache[job] = [ // 손님을 받는 일
+      { text: `${w1.name} 해 보기`, done: (w) => wkCount(w, w1.id) >= 1, goal: wp, reward: 6, say: `일터에서 ‘${w1.name}’부터 해 봐. 처음엔 서툴러도 괜찮아.` },
+      { text: "마을 사람 셋과 인사하기", done: (w, d) => d.met >= 3, goal: unmet, reward: 6, say: "손님이 될 사람들이야. 얼굴을 익혀 둬." },
+      { text: `${w1.name} 세 번 더 해서 손에 익히기`, done: (w) => wkCount(w, w1.id) >= 4, goal: wp, reward: 10, say: "솜씨는 해 본 만큼 늘어." },
+      { text: "주민의 부탁이나 길드 의뢰 하나 들어주기", done: (w, d) => d.quests > 0, goal: (w) => { const m = EX(w).missions.find((x) => !x.done && x.type !== "story" && x.type !== "appt"); return m ? missionGoal(w, m) : place(w, w.player.town, "guild", "길드 게시판"); }, reward: 12, say: "이웃 부탁을 들어주다 보면 일거리도 저절로 생겨." },
+    ]);
+    const needs2 = Object.entries(w2.needs || {}).filter(([id]) => !(w1.gives && w1.gives[id])); // 앞 일이 만들어 주는 것은 빼고
+    const has = (w, id, k) => (EX(w).inv[id] || 0) >= k;
+    return (startCache[job] = [
+      { text: `${w1.name} 해 보기 (받은 재료로)`, kit: w1.needs, done: (w) => wkCount(w, w1.id) >= 1, goal: wp, reward: 6, say: `내가 쓰던 재료를 좀 줄게. ${Object.entries(w1.needs).map(([id, k]) => `${iname(id)} ${k}`).join(", ")}. 일터에서 ‘${w1.name}’을 해 봐.` },
+      { text: `재료 모으기: ${needs2.map(([id, k]) => `${iname(id)} ${k}`).join(", ") || "없음"}`, done: (w) => needs2.every(([id, k]) => has(w, id, k)) || wkCount(w, w2.id) >= (w1 === w2 ? 2 : 1), goal: (w) => { const miss = needs2.find(([id, k]) => !has(w, id, k)); return miss ? gatherGoal(w, miss[0]) || place(w, w.player.town, "market", `${iname(miss[0])} 사기 (시장)`) : wp(w); }, reward: 8, say: `이제 재료는 네 손으로 구해 와. ${needs2.map(([id]) => iname(id)).join("·")}${jo(needs2.map(([id]) => iname(id)).join("·") || "재료", "이/가").slice((needs2.map(([id]) => iname(id)).join("·") || "재료").length)} 어디서 나는지 알아 두면 평생 써먹어.` },
+      { text: `${w2.name} 해 보기 (내가 모은 재료로)`, done: (w) => wkCount(w, w2.id) >= (w1 === w2 ? 2 : 1), goal: wp, reward: 10, say: `좋아. 그 재료로 ‘${w2.name}’까지 해 봐.` },
+      { text: "만든 것을 팔거나 주민 부탁 하나 들어주기", done: (w, d) => d.sold > 0 || d.quests > 0, goal: (w) => place(w, w.player.town, "market", "시장"), reward: 12, say: "만든 건 시장에 내도 되고, 필요한 이웃에게 갖다줘도 돼. 이제 제 몫을 하는 거야." },
+    ]);
+  }
+  const startsOf = (job) => STARTS[job] || craftStarts(job) || STARTS._;
+  /** 마을의 촌장: 그 마을에 사는 왕(나라를 다스리는 사람), 없으면 그 마을에서 가장 이름나고 나이 든 어른. { n, title } */
+  function chiefOf(w, town) {
+    const t = w.towns[town]; if (!t) return null;
+    const N = (w.nations || {})[t.nation], k = N && N.ruler !== undefined && N.ruler !== null ? w.npcs[N.ruler] : null;
+    if (k && k.alive && k.town === town && k.controller !== "player") return { n: k, title: N.rulerTitle || "국왕" };
+    const c = w.residents(town, true).filter((x) => x.controller !== "player" && A.isAdult(x) && !x.at_war).sort((a, b) => (b.fame + A.age(b) / 8) - (a.fame + A.age(a) / 8))[0];
+    return c ? { n: c, title: "촌장" } : null;
+  }
   /** 새 삶의 첫 걸음을 연다 (newLife 뒤에 부른다) */
   function beginStory(w) {
     const p = w.player, e = EX(w); if (!p) return null;
     if (e.missions.some((m) => m.type === "story" && !m.done)) return null;
-    const mentor = w.residents(p.town, true).filter((n) => n.controller !== "player" && A.isAdult(n) && n.job === p.job).sort((a, b) => b.fame - a.fame)[0];
+    const senior = w.residents(p.town, true).filter((n) => n.controller !== "player" && A.isAdult(n) && n.job === p.job).sort((a, b) => b.fame - a.fame)[0];
+    const chief = chiefOf(w, p.town), mentor = senior || (chief && chief.n); // 같은 일 하는 선배가 없으면 촌장이 일러 준다
     const m = { type: "story", job: p.job, step: 0, mentor: mentor ? mentor.id : null, base: tallyOf(w), reward: 0, id: ++e.msSeq, got: 0, day: w.day, done: false };
     e.missions.unshift(m); e.nav = m.id;
-    if (p.job === "farmer") { G.give(w, "hoe", 1, "선배에게 받기", mentor ? mentor.name : "길드"); G.give(w, "seed_turnip", 3, "선배에게 받기", mentor ? mentor.name : "길드"); } // 빈손의 농부에게 헌 괭이와 씨앗
-    G.log(w, `${mentor ? `${A.JOBS[p.job].name} 선배 ${mentor.name}: ` : "길드 사람: "}“${startsOf(p.job)[0].say}”`, "good");
+    const kit = (startsOf(p.job)[0] || {}).kit; if (kit) for (const [id, k] of Object.entries(kit)) G.give(w, id, k, "선배에게 받기", mentor ? mentor.name : "촌장"); // 첫 일의 재료
+    // 첫날 저녁: 선배가 주점에서 밥을 사며 마을 사람들 얘기를 해 준다 (약속 → 미션)
+    if (mentor && G.hour(w) < 16) { const ap = A.makeAppt(w, mentor, p, { act: "meal", day: w.day, hour: 18 }); if (ap) { const am = apptMission(w, mentor, ap); if (am) am.welcome = true; G.log(w, `${mentor.name}: “오늘 저녁 6시에 주점에서 밥 먹자. 내가 살게.”`, "good"); } }
+    G.log(w, `${senior ? `${A.JOBS[p.job].name} 선배 ${senior.name}: ` : mentor ? `${chief.title} ${mentor.name}: ` : "길드 사람: "}“${startsOf(p.job)[0].say}”`, "good");
     return m;
   }
   function storyTick(w) {
@@ -180,6 +219,7 @@
     const now = tallyOf(w), d = Object.fromEntries(Object.keys(now).map((k) => [k, now[k] - (m.base[k] || 0)]));
     if (!st.done(w, d, m)) return;
     p.gold += st.reward; m.step += 1; m.base = tallyOf(w);
+    if (m.job === "farmer" && m.step === 1) { const by = m.mentor !== null && w.npcs[m.mentor] ? w.npcs[m.mentor].name : "길드"; for (const [id, k] of [["hoe", 1], ["can", 1], ["seed_turnip", 4]]) G.give(w, id, k, "선배에게 받기", by); } // 헌 괭이·물뿌리개·씨앗
     const next = steps[m.step], who = m.mentor !== null && w.npcs[m.mentor] ? w.npcs[m.mentor].name : "길드 사람";
     if (next) G.log(w, `첫 걸음: ‘${st.text}’ 마침 (금화 ${st.reward}). ${who}: “${next.say}”`, "good");
     else {
@@ -243,6 +283,19 @@
     toMenu(w, s);
   }
   /** 플레이어와의 약속: 그 시간(2시간 안)에 그 사람 곁에 가면 지킨 것, 시간이 지나면 바람맞힌 것 */
+  /** 첫날 저녁 선배의 밥상: 알아 두면 좋은 마을 사람 셋을 소개한다 (먹을 것·아플 때·법, 그리고 도움이 필요한 사람). 소개받은 사람과는 조금 가까워진다 */
+  function welcomeDinner(w, mentor) {
+    const p = w.player, town = w.residents(p.town, true).filter((x) => x.controller !== "player" && A.isAdult(x) && x !== mentor);
+    const pickJob = (f) => town.find(f);
+    const lines = [], who = [];
+    const food = pickJob((x) => ["baker", "cook"].includes(x.job)); if (food) { lines.push(`${(JOBS[food.job] || {}).name} ${jo(food.name, "은/는")} ${food.job === "baker" ? "새벽에 빵을 구우니 아침 일찍 가야 있어" : "주점 밥을 책임지지. 배고프면 그리로 가"}.`); who.push(food); }
+    const heal = pickJob((x) => (JOBS[x.job] || {}).healer); if (heal) { lines.push(`아프면 ${(JOBS[heal.job] || {}).name} ${jo(heal.name, "을/를")} 찾아가. 금화 몇 닢이면 고쳐 줘.`); who.push(heal); }
+    const guard = pickJob((x) => (JOBS[x.job] || {}).guard); if (guard) { lines.push(`경비병 ${jo(guard.name, "은/는")} 깐깐하니까 남의 물건엔 손대지 마.`); who.push(guard); }
+    const needy = town.filter((x) => !who.includes(x) && (x.gold < 8 || x.ill || x.grief)).sort((a, b) => a.gold - b.gold)[0];
+    if (needy) { lines.push(`${jo(needy.name, "이/가")} 요즘 ${needy.ill ? "앓아누웠어" : needy.grief ? "식구를 잃고 힘들어해" : "형편이 어려워"}. 들여다봐 주면 고마워할 거야.`); who.push(needy); }
+    for (const x of who) { adjust(x, p.id, 5); adjust(p, x.id, 3); }
+    if (lines.length) G.log(w, `${mentor.name}: “이 마을에서 알아 두면 좋은 사람들이 있어. ${lines.slice(0, 3).join(" ")}”`, "good");
+  }
   function checkAppts(w) {
     const p = w.player; if (!p || !p.alive || !w.ppos) return;
     const h = G.hour(w), e = EX(w);
@@ -254,6 +307,8 @@
         ap.state = "kept"; adjust(n, p.id, 8); p.fame += 0;
         w.record("chat", `${jo(p.name, "과/와")} ${jo(n.name, "이/가")} 약속대로 ${A.apptText(ap)}${jo(A.apptText(ap), "을/를").slice(A.apptText(ap).length)} 했다`, { actor: p.id, target: n.id, town: p.town, imp: 2, sent: 3, wr: 0 });
         if (m) { m.done = true; G.log(w, `${jo(n.name, "과/와")}의 약속을 지켰다. 즐거운 시간이었다.`, "good"); }
+        if (ap.act === "meal") { p.hunger = Math.max(0, (p.hunger || 0) - 2); p.energy = Math.min(100, p.energy + 15); } // 함께 저녁을 먹었다
+        if (m && m.welcome) welcomeDinner(w, n);
         G.say(n.id, pick(w, ["왔네요! 기다렸어요.", "딱 맞춰 왔네요!"]), 3);
       } else if (late || !n.alive) {
         ap.state = "broken";
@@ -497,7 +552,7 @@
   }
   /** 모을 물건이 나는 곳: 약초·버섯은 숲의 풀숲, 사과는 사과나무, 나뭇가지·나무는 나무 밑, 돌은 바위, 산딸기·풀섬유는 덤불, 고기·가죽은 사냥터.
    *  가까운 것 가운데 지금 딸 수 있는 것(다시 자랐는지)을 먼저 */
-  const GATHER_AT = { herb: [["HERB"], "약초 캐기"], mushroom: [["SHROOM"], "버섯 따기"], apple: [["APPLE"], "사과 따기"], flower: [["FLOWER"], "꽃 꺾기"], branch: [["OAK", "PINE"], "나뭇가지 줍기"], wood: [["OAK", "PINE"], "나무 베기 (도끼)"], stone: [["ROCK"], "돌 줍기"], berry: [["BUSH"], "산딸기 따기"], fiber: [["BUSH"], "풀섬유 모으기"] };
+  const GATHER_AT = { herb: [["HERB"], "약초 캐기"], mushroom: [["SHROOM"], "버섯 따기"], apple: [["APPLE"], "사과 따기"], flower: [["FLOWER"], "꽃 꺾기"], branch: [["OAK", "PINE"], "나뭇가지 줍기"], wood: [["OAK", "PINE"], "나무 베기 (도끼)"], stone: [["ROCK"], "돌 줍기"], berry: [["BUSH"], "산딸기 따기"], fiber: [["BUSH"], "풀섬유 모으기"], rough_gem: [["ROCK"], "바위에서 원석 찾기"], old_coin: [["RUIN", "MOUND"], "옛 유적·흙더미에서 옛 금화 찾기"] };
   const gatherCache = {};
   function gatherGoal(w, item) {
     if (item === "meat" || item === "hide") return huntGround(w, "deer");
@@ -668,7 +723,7 @@
     const sub = (name, forms) => { if (!name) return; text = text.replace(new RegExp(name + "(에게|한테|이|가|을|를|은|는|과|와|의)?(?=[\\s,.·]|$)", "g"), (_, j) => forms[j || ""] ?? forms[""]); };
     if (p && p.name !== n.name) sub(p.name, banmal ? { 이: "네가", 가: "네가", 을: "너를", 를: "너를", 은: "너는", 는: "너는", 과: "너와", 와: "너와", 의: "네", 에게: "너에게", 한테: "너한테", "": "너" } : { 이: "당신이", 가: "당신이", 을: "당신을", 를: "당신을", 은: "당신은", 는: "당신은", 과: "당신과", 와: "당신과", 의: "당신의", 에게: "당신에게", 한테: "당신한테", "": "당신" });
     sub(n.name, banmal ? { 이: "내가", 가: "내가", 을: "나를", 를: "나를", 은: "나는", 는: "나는", 과: "나와", 와: "나와", 의: "내", 에게: "나에게", 한테: "나한테", "": "나" } : { 이: "제가", 가: "제가", 을: "저를", 를: "저를", 은: "저는", 는: "저는", 과: "저와", 와: "저와", 의: "제", 에게: "저에게", 한테: "저한테", "": "저" });
-    const cs = text.replace(/\.\s*$/, "").split(/(?<=다)\. /);
+    const cs = text.replace(/ \(원인: [^)]*\)/g, "").replace(/\.\s*$/, "").split(/(?<=다)\. /);
     return cs.map((c, i) => endClause(c, tn, i < cs.length - 1 ? "join" : how)).join(", ") + (how === "remind" ? "" : ".");
   }
   const m_seen = (m) => (m && m.f ? "seen" : "heard");
@@ -698,7 +753,7 @@
     const head = {
       warm: `저는 ${jo(n.name, "이라고/라고")} 해요. ${T}에서 ${J} 일을 하고 있어요.`,
       greedy: `${jo(n.name, "이오/요")}. ${J}지. 값 좋은 거래라면 언제든 환영이에요.`,
-      bold: `난 ${n.name}. ${J}다. ${T}에서 내 이름 모르면 간첩이지.`,
+      bold: `난 ${n.name}. ${jo(J, "이다/다")}. ${T}에서 내 이름 모르면 간첩이지.`,
       proud: `${nm}입니다. ${T}의 ${J}지요. 아마 들어 보셨을 거예요.`,
       shy: `저, 저는 ${jo(n.name, "이에요/예요")}… ${J} 일을 해요.`,
       plain: `${jo(n.name, "이에요/예요")}. ${T}에서 ${J} 일을 해요.`,
@@ -713,7 +768,7 @@
     else if (n.apprentice && w.npcs[n.apprentice.master]) bits.push(`${w.npcs[n.apprentice.master].name} 밑에서 배우는 중이에요.`);
     if (n.flags.has("veteran")) bits.push("전선에도 다녀왔죠.");
     const t = n.traits, like = t.kindness > 0.7 ? "사람 돕는 걸 좋아해요" : t.bravery > 0.75 ? "겁나는 게 별로 없어요" : t.ambition > 0.75 ? "언젠가 큰일을 해 보고 싶어요" : t.greed > 0.7 ? "금화 세는 게 제일 즐거워요" : null;
-    if (like && bits.length < 3) bits.push(tn === "bold" ? like.replace(/요$/, "") + "." : like + ".");
+    if (like && bits.length < 3 && !(n.title && /큰일/.test(like))) bits.push(tn === "bold" ? like.replace(/요$/, "") + "." : like + ".");
     const tail = bits.filter(Boolean).slice(0, 2).map((b) => (tn === "bold" ? b.replace(/이에요\.$/, "이야.").replace(/예요\.$/, "야.").replace(/요\.$/, ".").replace(/죠\.$/, "지.") : b)); // 반말하는 사람은 끝까지 반말
     return [head, ...tail].join(" ") + (tn === "warm" ? " 잘 부탁해요!" : tn === "shy" ? " …잘 부탁드려요." : "");
   }
@@ -721,8 +776,10 @@
     const p = w.player, tn = tone(n);
     let tr = tier(w, n);
     if (!(EX(w).met || {})[n.id] && ["acq", "friend", "close"].includes(tr)) tr = "stranger"; // 처음 만났으면 아직 이름을 모른다
-    const pool = GREET[tr][tn] || GREET[tr]._ || GREET.acq.plain;
-    let s = fill(pick(w, pool), { me: p.name, time: TIMEW(w), town: w.towns[n.town].name, self: n.name });
+    const firstMeet = !(EX(w).met || {})[n.id];
+    const pool0 = GREET[tr][tn] || GREET[tr]._ || GREET.acq.plain;
+    const pool = firstMeet ? (pool0 || []).filter((x) => !x.includes("{self}")) : pool0; // 곧 자기소개를 하니 인사에서 이름을 미리 말하지 않는다
+    let s = fill(pick(w, pool && pool.length ? pool : pool0), { me: p.name, time: TIMEW(w), town: w.towns[n.town].name, self: n.name });
     if (n.hunger >= 3) s += " …배가 너무 고프네요.";
     else if (n.health < 5) s += " 몸이 좀 안 좋아서요.";
     if (G.isNight(w)) s = "이 시간에 무슨 일이에요…? " + s;
@@ -765,12 +822,24 @@
       default: return "";
     }
   }
+  /** 일 이야기: 그 직업의 한마디에, 오늘 그 사람의 일·날씨·마을 사정을 섞는다 (농부들이 똑같은 말만 하지 않게) */
+  function jobTalk(w, n) {
+    const jt = JOBTALK[n.job], base = fill(typeof jt === "string" ? jt : jt[w.season] || Object.values(jt)[0], { price: w.foodPrice(w.towns[n.town]) });
+    const J = JOBS[n.job] || {}, t = w.towns[n.town], wk = (w.weather || {}).kind, c = [];
+    if (n.lastWork && n.lastWork.day === w.day && n.lastWork.q >= 0.8) c.push(`오늘은 손이 잘 풀려서 ${jo((A.worksOf(n.job).find((x) => x.id === n.lastWork.id) || {}).name || "일", "이/가")} 아주 잘됐어요.`);
+    if (J.seasonal && t.field) { const f = t.field, k = { 봄: f.planted < 40 ? `공동 밭에 ${jo(G.ITEMS[f.crop] ? G.ITEMS[f.crop].name : "곡식", "을/를")} 심는 중이에요. ${f.planted < 20 ? "아직 반도 못 심었어요." : "거의 다 심었어요."}` : "올해 밭은 다 심었어요. 이제 하늘이 도와줘야죠.", 여름: "여름엔 김매기가 일이에요. 하루만 걸러도 풀이 무릎까지 와요.", 가을: f.harvested < f.planted ? "거둘 게 산더미예요. 손 하나라도 아쉬워요." : "올해 거둘 건 다 거뒀어요. 곳간이 든든하네요.", 겨울: "겨울엔 밭이 쉬어요. 연장이나 손보며 봄을 기다려요." }[w.season]; if (k) c.push(k); }
+    if ((wk === "비" || wk === "폭풍") && J.workplace === "fields") c.push("비가 와서 밭일이 영 안 돼요. 그래도 물 줄 걱정은 없네요.");
+    const short = Object.keys(t.short || {}).filter((id) => t.short[id] >= 3 && A.worksOf(n.job).some((x) => x.gives && x.gives[id]));
+    if (short.length) c.push(`요즘 ${jo(G.ITEMS[short[0]] ? G.ITEMS[short[0]].name : "물건", "이/가")} 동나서 다들 찾아요. 만드는 손이 모자라네요.`);
+    if (n.fatigue > 0.7) c.push("오늘은 좀 지쳤어요. 일찍 들어가 쉬려고요.");
+    return c.length && w.rng.next() < 0.75 ? w.rng.choice(c) : base;
+  }
   const JOBTALK = new Proxy({}, { get: (_, id) => (A.JOBS[id] && A.JOBS[id].talk) || "요즘은 그냥 그래요. 하루하루 열심히 사는 거죠." });
   /** 대화 세션을 연다. opener: talk | approach | confess | propose | confront */
   function talk(w, nid, opener = "talk") {
     const n = w.npcs[nid];
     const s = { nid, lines: [], options: [], over: false, mins: 0, rumors: 0, stack: [] };
-    const say = (who, text) => s.lines.push({ who, text });
+    const say = (who, text) => s.lines.push({ who, text: who === "npc" ? voice(n, text) : text }); // 반말하는 사람은 모든 말이 반말
     s.say = say;
     if (opener === "confess") { say("npc", `저… ${w.player.name}. 할 말이 있어요. 사실… 당신이 좋아요.`); s.options = [O("마음을 받아준다", "연인이 된다", () => romance(w, s, "accept")), O("정중히 거절한다", "", () => romance(w, s, "gentle")), O("차갑게 거절한다", "상대가 크게 상처받는다", () => romance(w, s, "cold"))]; return s; }
     if (opener === "propose") { say("npc", `${w.player.name}. 이거… 받아 줄래? 나와 결혼해 줘.`); s.options = [O("청혼을 받아들인다", "결혼한다", () => { say("me", "응, 좋아!"); say("sys", marry(w, w.player, n)); toMenu(w, s); }), O("아직은 때가 아니라고 말한다", "", () => { adjust(n, w.player.id, -10); say("me", "조금만 더 기다려 줄래?"); say("npc", "…알았어. 기다릴게."); toMenu(w, s); })]; return s; }
@@ -1094,8 +1163,9 @@
         back(w, s)];
       return;
     }
+    const trust = opinion(n, p.id) >= 20 || family(p).has(n.id); // 속 얘기(연애·원한)는 어느 정도 가까워진 뒤에
     // 2) 복수심
-    if (n.goal && n.goal.type === "revenge" && w.npcs[n.goal.target].alive) {
+    if (trust && n.goal && n.goal.type === "revenge" && w.npcs[n.goal.target].alive) {
       const t = w.npcs[n.goal.target], og = w.events[n.goal.origin];
       s.say("npc", pick(w, [`${t.name}… 그 녀석만 생각하면 피가 끓어요.`, `${t.name}에게 당한 걸 잊을 수가 없어요.`, `언젠가 ${t.name}에게 갚아 줄 날이 올 거예요.`]) + (og ? ` ${speak(w, n, og.text, "seen")}` : ""));
       if (og) w.remember(p, og, false, n.id);
@@ -1103,7 +1173,7 @@
       return;
     }
     // 3) 사랑
-    if (n.lover !== null && w.npcs[n.lover].alive && n.lover !== p.id) { s.say("npc", pick(w, [`요즘 ${jo(w.npcs[n.lover].name, "이랑/랑")} 잘 지내요. 헤헤.`, `사실 ${jo(w.npcs[n.lover].name, "이랑/랑")} 사귀고 있어요. 비밀이에요!`])); s.options = [O("잘 어울려요!", "", () => { adjust(n, p.id, 4); s.say("npc", "정말요? 고마워요!"); toMenu(w, s); }), O("오래가길 바라요", "", () => { s.say("npc", "그러게요."); toMenu(w, s); }), back(w, s)]; return; }
+    if (trust && n.lover !== null && w.npcs[n.lover].alive && n.lover !== p.id) { s.say("npc", pick(w, [`요즘 ${jo(w.npcs[n.lover].name, "이랑/랑")} 잘 지내요. 헤헤.`, `사실 ${jo(w.npcs[n.lover].name, "이랑/랑")} 사귀고 있어요. 비밀이에요!`])); s.options = [O("잘 어울려요!", "", () => { adjust(n, p.id, 4); s.say("npc", "정말요? 고마워요!"); toMenu(w, s); }), O("오래가길 바라요", "", () => { s.say("npc", "그러게요."); toMenu(w, s); }), back(w, s)]; return; }
     const crush = Object.entries(n.rel).map(([k, v]) => [w.npcs[+k], v]).filter(([z, v]) => z && z.alive && v >= 50 && z.id !== p.id && z.spouse === null && n.spouse === null && n.lover === null && !related(n, z) && isAdult(z)).sort((a, b) => b[1] - a[1])[0];
     if (crush && opinion(n, p.id) >= 20) {
       const z = crush[0];
@@ -1155,8 +1225,7 @@
     const away = [...fam].map((id) => w.npcs[id]).find((x) => x.alive && x.at_war);
     if (away) { s.say("npc", `${jo(away.name, "이/가")} 전선에 나가 있어요. 매일 밤 무사하길 빌어요.`); s.options = [O("무사히 돌아올 거예요", "", () => { adjust(n, p.id, 5); s.say("npc", "…그렇겠죠. 고마워요."); toMenu(w, s); }), back(w, s)]; return; }
     // 6) 일 이야기
-    const jt = JOBTALK[n.job];
-    s.say("npc", fill(typeof jt === "string" ? jt : jt[w.season], { price: w.foodPrice(w.towns[n.town]) }));
+    s.say("npc", jobTalk(w, n));
     s.options = [O("도울 일 있어요?", "부탁을 들어준다", () => offerJob(w, s)), O("그렇군요", "", () => toMenu(w, s))];
   }
   function revengeOptions(w, s, n, t) {
@@ -1577,7 +1646,7 @@
     return out.sort((a, b) => b.e.imp - a.e.imp || b.e.day - a.e.day).slice(0, n);
   }
 
-  const Story = { setup, onDawn, welcomePaper, knowsDream, offerBuild, completeMission, afterTick, sourceText, SRC_LABEL, paperSection, resolve, checkOracle, addMission, missionTitle, missionWhere, missionGoal, beginStory, storyTick, STARTS, takeBoard, deliverToBoard, refreshBoard,
+  const Story = { setup, onDawn, welcomePaper, knowsDream, offerBuild, completeMission, afterTick, sourceText, SRC_LABEL, paperSection, resolve, checkOracle, addMission, missionTitle, missionWhere, missionGoal, beginStory, chiefOf, storyTick, STARTS, takeBoard, deliverToBoard, refreshBoard,
     onKill, onItem, onHitNPC, onArrest, onEnterTown, talk, toMenu, endTalk, tone, speak, tier, attitudeWord, relTag, familyList, relGraph, reasons,
     onEpisode: null, onOpenTalk: null, onMission: null };
   root.Story = Story;
