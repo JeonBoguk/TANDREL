@@ -706,6 +706,9 @@
       // 울타리: 가로대만 막는다 (칸 위쪽은 지나갈 수 있다)
       const f = t.findTile((x, y) => G.objAt(W, x, y) === G.O.FENCE && G.objAt(W, x - 1, y) === G.O.FENCE && G.objAt(W, x + 1, y) === G.O.FENCE && G.objAt(W, x, y - 1) !== G.O.FENCE, [p.x || 0, 0]);
       t.check(f && G.standOK(W, f[0] + 0.5, f[1] + 0.15) && !G.standOK(W, f[0] + 0.5, f[1] + 0.6), `울타리 칸 (${f}): 위쪽은 디딜 수 있고 가로대는 막힌다`);
+      // 나무: 줄기만 막는다 (줄기 옆과 칸 위쪽은 지나갈 수 있다)
+      const tr = t.findTile((x, y) => G.objAt(W, x, y) === G.O.OAK && !G.townAt(x, y) && [[1, 0], [-1, 0], [0, -1]].every(([a, b]) => G.walkable(W, x + a, y + b)));
+      t.check(tr && !G.bodyFits(W, tr[0] + 0.5, tr[1] + 0.85) && G.bodyFits(W, tr[0] + 0.5, tr[1] + 0.15) && G.bodyFits(W, tr[0] + 1.0, tr[1] + 0.85), `참나무 (${tr}): 줄기는 막히고, 줄기 옆과 위쪽은 지나간다`);
       // 신전 긴 의자: 앉는 판만 막는다 (신전 안에 있을 때)
       const tb = M.buildings.find((b) => b.town === T && b.kind === "temple"), [ex, ey] = G.entryOf(tb); t.standAt(ex, ey); G.tick(W, 1);
       const bx = tb.x + 1, by = tb.y + 3;

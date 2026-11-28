@@ -369,25 +369,40 @@
     if (o === O.MOUND && w && w.ext && w.ext.looted && w.ext.looted[MAP.I(x, y)] !== undefined) return O.NONE;
     return o;
   }
-  /** 한 점(실수 좌표)에 설 수 있는가: 울타리는 칸 전체가 아니라 그려진 가로대·기둥만 막는다 (자꾸 걸리던 것) */
-  function standOK(w, x, y) {
-    const tx = Math.floor(x), ty = Math.floor(y);
-    if (walkable(w, tx, ty)) return true;
-    if (!MAP.inb(tx, ty)) return false;
+  /* 발자국: 막히는 것들이 칸 전체가 아니라 실제로 그려진 땅 위 자리만 막도록 [x0, x1, y0, y1] (칸 안 비율). 그림의 픽셀 크기에서 잰 것.
+   *  나무는 줄기, 덤불·바위는 아랫부분, 표지판은 기둥, 울타리는 가로대(세로로 이어지면 기둥 줄), 가구는 그려진 몸통. 없는 것(침대·화덕·천막·유적)은 칸 전체 */
+  const OBJ_FOOT = { [O.OAK]: [0.3, 0.7, 0.55, 1], [O.APPLE]: [0.3, 0.7, 0.55, 1], [O.PINE]: [0.36, 0.64, 0.55, 1], [O.BUSH]: [0.12, 0.88, 0.4, 1], [O.ROCK]: [0.1, 0.9, 0.5, 1], [O.SIGN]: [0.38, 0.62, 0.55, 1] };
+  const FURN_FOOT = { bench: [0, 1, 0.38, 0.82], chest: [0.12, 0.88, 0.45, 0.9], barrel: [0.18, 0.82, 0.45, 0.9], counter: [0, 1, 0.4, 0.9], table: [0.06, 0.94, 0.4, 0.82], anvil: [0.12, 0.88, 0.5, 0.85], rack: [0.12, 0.88, 0.25, 0.65], altar: [0, 1, 0.35, 0.9], desk: [0, 1, 0.4, 0.82], crate: [0.12, 0.88, 0.4, 0.9], chair: [0.25, 0.75, 0.4, 0.85], pot: [0.3, 0.7, 0.5, 0.85], basket: [0.18, 0.82, 0.4, 0.85] };
+  /** 막힌 칸의 막는 부분들: [] = 디딜 수 있음, null = 칸 전체가 막힘 */
+  function footRects(w, tx, ty) {
+    if (walkable(w, tx, ty)) return [];
+    if (!MAP.inb(tx, ty)) return null;
+    const t = MAP.tile[MAP.I(tx, ty)]; if (t === T.WATER || t === T.DEEP || t === T.CLIFF) return null;
     const sid = MAP.solid[MAP.I(tx, ty)];
-    if (sid >= 0) { // 건물 안의 얇은 가구
-      const bd = MAP.buildings[sid], f = furnitureIn(w, bd).find((q) => q.block && q.rx === tx - bd.x && q.ry === ty - bd.y), band = f && THIN_FURN[f.type];
-      if (!band || !interiorWalkable(w, bd, tx, ty, true)) return false;
-      const fy = y - ty; return fy < band[0] || fy > band[1];
+    if (sid >= 0) { // 건물 안 가구
+      const bd = MAP.buildings[sid], f = furnitureIn(w, bd).find((q) => q.block && q.rx === tx - bd.x && q.ry === ty - bd.y), r = f && FURN_FOOT[f.type];
+      return r && interiorWalkable(w, bd, tx, ty, true) ? [r] : null;
     }
-    if (objAt(w, tx, ty) !== O.FENCE) return false;
-    const t = MAP.tile[MAP.I(tx, ty)]; if (t === T.WATER || t === T.DEEP || t === T.CLIFF) return false;
-    const fx = x - tx, fy = y - ty, isF = (ax, ay) => objAt(w, ax, ay) === O.FENCE;
-    const horiz = isF(tx - 1, ty) || isF(tx + 1, ty), vert = isF(tx, ty - 1) || isF(tx, ty + 1);
-    if (horiz && fy > 0.35 && fy < 0.95) return false;             // 가로대
-    if ((vert || !horiz) && Math.abs(fx - 0.5) < 0.2) return false; // 기둥
+    const o = objAt(w, tx, ty);
+    if (o === O.FENCE) {
+      const isF = (ax, ay) => objAt(w, ax, ay) === O.FENCE, horiz = isF(tx - 1, ty) || isF(tx + 1, ty), vert = isF(tx, ty - 1) || isF(tx, ty + 1);
+      return [...(horiz ? [[0, 1, 0.35, 0.95]] : []), ...(vert || !horiz ? [[0.3, 0.7, 0, 1]] : [])];
+    }
+    return OBJ_FOOT[o] ? [OBJ_FOOT[o]] : null;
+  }
+  /** 내 몸(발 둘레의 상자)이 (x, y)에 들어가는가: 상자가 겹치는 칸마다 그 칸의 막는 부분과 겹치지 않아야 한다 */
+  const BODY = { l: 0.28, r: 0.28, u: 0.1, d: 0.25 };
+  function bodyFits(w, x, y) {
+    const x0 = x - BODY.l, x1 = x + BODY.r, y0 = y - BODY.u, y1 = y + BODY.d;
+    for (let ty = Math.floor(y0); ty <= Math.floor(y1); ty++) for (let tx = Math.floor(x0); tx <= Math.floor(x1); tx++) {
+      const rs = footRects(w, tx, ty);
+      if (rs === null) return false;
+      for (const [a, b, c, d] of rs) if (x0 < tx + b && x1 > tx + a && y0 < ty + d && y1 > ty + c) return false;
+    }
     return true;
   }
+  /** 한 점에 설 수 있는가 (발자국 기준) */
+  function standOK(w, x, y) { const tx = Math.floor(x), ty = Math.floor(y), rs = footRects(w, tx, ty); if (rs === null) return false; const fx = x - tx, fy = y - ty; return !rs.some(([a, b, c, d]) => fx > a && fx < b && fy > c && fy < d); }
   function walkable(w, x, y) {
     if (!MAP.inb(x, y)) return false;
     const i = MAP.I(x, y), t = MAP.tile[i];
@@ -501,12 +516,10 @@
     const id = MAP.solid[MAP.I(x, y)];
     return id >= 0 ? MAP.buildings[id] : null;
   }
-  /* 얇은 가구: 칸 전체가 아니라 그려진 띠만 막는다 (긴 의자 앉는 판 등). [위, 아래] 칸 안 비율 */
-  const THIN_FURN = { bench: [0.38, 0.82] };
   function interiorWalkable(w, bd, x, y, thinOK = false) {
     if (!canEnter(w, bd) || y <= bd.y) return false;
     const rx = x - bd.x, ry = y - bd.y;
-    if (furnitureIn(w, bd).some((f) => f.block && f.rx === rx && f.ry === ry && !(thinOK && THIN_FURN[f.type]))) return false;
+    if (furnitureIn(w, bd).some((f) => f.block && f.rx === rx && f.ry === ry && !(thinOK && FURN_FOOT[f.type]))) return false;
     const [ex, ey] = entryOf(bd);
     if (x === ex && y === ey) return true; // 문간은 누구나 디딜 수 있다
     if (bd.kind === "house") return true;   // 초대받은 집: 집주인도 손님도 안을 걸어 다닌다
@@ -840,7 +853,7 @@
   /** 벽이나 물체에 끼었으면 가장 가까운 설 수 있는 곳으로 꺼내 준다 */
   function unstick(w) {
     const x = Math.floor(w.ppos.x), y = Math.floor(w.ppos.y);
-    const fits = (fx, fy) => standOK(w, fx - 0.28, fy - 0.1) && standOK(w, fx + 0.28, fy - 0.1) && standOK(w, fx - 0.28, fy + 0.25) && standOK(w, fx + 0.28, fy + 0.25);
+    const fits = (fx, fy) => bodyFits(w, fx, fy);
     if (standOK(w, w.ppos.x, w.ppos.y) && fits(w.ppos.x, w.ppos.y)) return false;
     if (walkable(w, x, y)) { w.ppos = { x: x + 0.5, y: y + 0.5 }; return true; } // 타일 가운데로
     const sid = MAP.inb(x, y) ? MAP.solid[MAP.I(x, y)] : -1;
@@ -863,7 +876,7 @@
     const nx = w.ppos.x + dx * sp, ny = w.ppos.y + dy * sp;
     unstick(w);
     const cx0 = Math.floor(w.ppos.x), cy0 = Math.floor(w.ppos.y);
-    const ok = (x, y) => crossOK(cx0, cy0, Math.floor(x), Math.floor(y)) && standOK(w, x - 0.28, y - 0.1) && standOK(w, x + 0.28, y - 0.1) && standOK(w, x - 0.28, y + 0.25) && standOK(w, x + 0.28, y + 0.25);
+    const ok = (x, y) => crossOK(cx0, cy0, Math.floor(x), Math.floor(y)) && bodyFits(w, x, y);
     let moved = false;
     if (ok(nx, w.ppos.y)) { w.ppos.x = nx; moved = true; }
     if (ok(w.ppos.x, ny)) { w.ppos.y = ny; moved = true; }
@@ -2078,7 +2091,7 @@
   const G = { boardCoach, rideFare, lifeState,
     buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
-    walkable, standOK, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
+    walkable, standOK, bodyFits, footRects, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, jailDay, bail, bailOf, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
     updateAnimals, updateWalkers, visibleNPCs, say, npcAtTile, forageReady, farmDawn, canTill, homeBuilding,
     buildingMenu, doBuilding, reportCrime, knownCrimes, crime, peopleHere, activity, weaponDmg, log, attackNPC,
