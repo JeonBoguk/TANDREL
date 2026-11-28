@@ -485,15 +485,16 @@
       a.rel[b.id] = 60; b.rel[a.id] = 60; a.traits.kindness = 1; b.traits.kindness = 1; a.traits.greed = 0; b.traits.greed = 0;
       W.appts = []; W.weather = { kind: "맑음", day: W.day };
       while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
-      const ap = A.makeAppt(W, a, b, { act: "fish", day: W.day, hour: 10 }); // 시계가 0이면 그날 아침 6시
+      const ap = A.makeAppt(W, a, b, { act: "fish", day: W.day, hour: 10 }); ap.flake = null; // 시계가 0이면 그날 아침 6시 · 이 시험에선 바람맞히지 않는다
       t.check(ap && ap.place === "river", `약속: ${A.apptWhen(W, ap)} ${A.apptText(ap)}`);
-      W.weather = { kind: "맑음", day: W.day };
+      W.weather = { kind: "맑음", day: W.day }; W.festivalToday = {}; W.holiday = null; // 평일로
       G.tick(W, 4 * 60 + 30); // 10:30
       t.check(ap.state === "kept" && a.life.act === "fish" && b.life.act === "fish", `약속한 시간에 둘 다 낚시 중 (${a.name}: ${A.LIFE_LABEL[a.life.act]}, ${b.name}: ${A.LIFE_LABEL[b.life.act]})`);
       // 비 오는 날의 바깥 약속은 미룬다
       while (W.clock !== 0) G.tick(W, Math.min(60, 1440 - W.clock));
       W.appts = W.appts.filter((x) => ![x.a, x.b].some((id) => id === a.id || id === b.id));
-      const ap2 = A.makeAppt(W, a, b, { act: "play", day: W.day, hour: 11 }); W.weather = { kind: "비", day: W.day };
+      b.town = a.town; b.outside = false; a.outside = false; a.job_cooldown = b.job_cooldown = 999; // 시험 동안 이사하지 않게
+      const ap2 = A.makeAppt(W, a, b, { act: "play", day: W.day, hour: 11 }); W.weather = { kind: "비", day: W.day }; W.festivalToday = {}; W.holiday = null;
       G.tick(W, 5 * 60 + 30);
       t.check(ap2.state === "moved" && W.appts.some((x) => x.state === "planned" && x.a === a.id && x.act === "play" && x.day > W.day), "비가 와서 소풍을 미뤘다");
       // 플레이어와의 약속: 미션이 되고, 그 시간에 곁에 가면 지킨 것
@@ -510,6 +511,32 @@
       G.updateWalkers(W, 0.1); const k = G.walkers.get(a.id); if (k) { W.ppos.x = k.x + 1; W.ppos.y = k.y; }
       S.afterTick(W);
       t.check(pa.state === "kept" && m.done && !m.failed, `${a.name}와의 약속을 지켰다`);
+    } },
+    { id: "stock", name: "마을 재고: 일해서 만든 물건이 쌓이고, 주민이 사서 쓰고, 값이 오르내린다", run(t) {
+      const W = t.w, T = W.towns[t.town()], p = t.p(), market = t.placeOf("market");
+      T.stock = {};
+      const baker = W.spawn(T.id, { race: "human", job: "baker", ageYears: 40 });
+      for (const n of W.alive()) n.today = null; // 이 시험에선 빵집 주인만 일한 날로
+      baker.today = { day: W.day, intent: "work", worked: 7, ate: {}, with: [] };
+      A._.settleWork(W); // 하루 끝 정산: 일한 만큼 벌고, 업무(빵 굽기)의 빵이 마을 재고로
+      t.check(T.stock.bread > 0 && baker.lastWork && baker.lastWork.id === "bake", `${baker.name}이 구운 빵 ${T.stock.bread}개가 마을 재고에`);
+      const cheap = A.stockPrice(W, T, "bread"); A.stockAdd(T, "bread", 30); const cheaper = A.stockPrice(W, T, "bread");
+      t.check(cheaper <= cheap, `재고가 넘치면 싸진다 (${cheap} → ${cheaper}닢)`);
+      // 주민이 장 보러 와서 사고, 집에서 먹는다
+      const buyer = W.spawn(T.id, { race: "human", job: "merchant", ageYears: 30 }); buyer.gold = 50; buyer.inv = {};
+      const got = A.shopFor(W, buyer);
+      t.check(got === "bread" && buyer.inv.bread === 1 && buyer.gold < 50, `${buyer.name}이 ${got}을 샀다`);
+      buyer.mood = 0.5; buyer.hunger = 2; const ate = A.useOwn(W, buyer, "eat");
+      t.check(ate === "bread" && !buyer.inv.bread, "집에서 사 둔 빵을 먹었다");
+      // 플레이어: 시장에서 재고로 사고, 다 떨어지면 품절
+      t.standAt(market.x, market.y); p.gold = 500; T.stock = { bread: 1 };
+      const m1 = G.buildingMenu(W, market).find((v) => v.id === "buy:bread");
+      t.check(m1 && /재고 1개/.test(m1.hint), `시장: ${m1 && m1.label} (${m1 && m1.hint})`);
+      G.doBuilding(W, market, "buy:bread");
+      t.check(!T.stock.bread && G.buildingMenu(W, market).some((v) => v.id === "soldout:bread"), "다 팔리면 빵이 품절");
+      G.give(W, "salve", 3); const before = T.stock.salve || 0; G.doBuilding(W, market, "sell:salve");
+      t.check((T.stock.salve || 0) === before + 3, "플레이어가 판 물건은 마을 재고가 된다");
+      const w2 = A.World.deserialize(JSON.parse(W.serialize())); t.check(w2.towns[T.id].stock.salve === T.stock.salve, "재고가 저장된다");
     } },
     { id: "jobmake", name: "플레이어가 직업과 업무를 짜서 이 세계에 등록한다", run(t) {
       const W = t.w, p = t.p(), guild = t.placeOf("guild"); t.standAt(guild.x, guild.y);

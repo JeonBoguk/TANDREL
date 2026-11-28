@@ -704,7 +704,7 @@
       const npcs = this.npcs.map((n) => ({ ...n,
         mem: n.mem.map((m) => [m.e, m.s, m.f ? 1 : 0, m.v]),
         known: [...n.known].filter((id) => memIds.has(id)), flags: [...n.flags] }));
-      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, agri: t.agri || null, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
+      const towns = Object.fromEntries(Object.entries(this.towns).map(([k, t]) => [k, { food: t.food, stock: t.stock || {}, agri: t.agri || null, store: t.store || 0, worry: !!t.worry, storeOpen: !!t.storeOpen, aidDay: t.aidDay ?? null, fallen: t.fallen, seeded: true, nation: t.nation, indep: t.indep || null }]));
       return JSON.stringify({
         format: "asteria-world", version: SAVE_VERSION, worldId: this.worldId,
         clock: this.clock, dayOpen: this.dayOpen, queue: this.queue, qi: this.qi, ppos: this.ppos, trail: this.trail, journal: this.journal, episodes: this.episodes, epSeq: this.epSeq,
@@ -1173,6 +1173,7 @@
     actUntil(w, Infinity);
     lifeUntil(w, 1440);
     settleWork(w);
+    stockDecay(w);
     upkeep(w);
     w.dayOpen = false;
     w.clock = 0;
@@ -1603,7 +1604,7 @@
     if (h >= 9 && h < 20) S.play = (fine(w) ? 0.9 : rainy ? 0.15 : 0.45) * (0.4 + (1 - n.mood) * 1.1 + tr.bravery * 0.3) * (holiday && h >= 13 ? 4 : holiday ? 2 : restDay ? 1.5 : 1) * (intent === "social" ? 1.4 : 1);
     if (holiday && h >= 13) S.play = Math.max(S.play || 0, 3); // 잔치는 날씨와 상관없이 열린다
     S.social = (0.15 + tr.kindness * 0.3 + (1 - n.mood) * 0.35) * (intent === "social" || intent === "help" ? 2 : 1) * (h >= 17 ? 1.6 : workHours ? 0.5 : 1);
-    if (h >= 9 && h < 18 && n.gold > 25) S.shop = 0.25 + tr.greed * 0.25;
+    if (h >= 9 && h < 18 && n.gold > 8) { const need = wantList(w, n).some((id) => (w.towns[n.town].stock || {})[id] > 0); S.shop = (need ? 0.8 : 0.1) + tr.greed * 0.2; }
     if (J.healer || tr.kindness > 0.75) S.pray = 0.2 + (rainy ? 0.15 : 0);
     S.chores = 0.25;
     const acts = Object.keys(S).filter((k) => S[k] > 0);
@@ -1658,13 +1659,14 @@
       case "meal": {
         if (h < 15) t.ate.L = true; else t.ate.D = true;
         n.mood = Math.min(1, n.mood + 0.08); n.fatigue = Math.max(0, n.fatigue - 0.05);
+        if (L.place === "home") useOwn(w, n, "eat"); // 집에서는 사 둔 것을 먹는다
         if (L.place === "tavern" && n.gold >= 2) { // 주점 밥값은 그 마을 요리사의 벌이가 된다
           const cooks = w.residents(n.town, true).filter((m) => m.job === "cook" && m !== n);
           n.gold -= 2; if (cooks.length) w.rng.choice(cooks).gold += 1.6;
         }
         break;
       }
-      case "rest": n.fatigue = Math.max(0, n.fatigue - 0.15); n.health = Math.min(10, n.health + 0.04); n.mood += (0.6 - n.mood) * 0.05; break;
+      case "rest": if (n.health < 6) useOwn(w, n, "heal"); n.fatigue = Math.max(0, n.fatigue - 0.15); n.health = Math.min(10, n.health + 0.04); n.mood += (0.6 - n.mood) * 0.05; break;
       case "play":
         if (L.feast) { // 잔치: 광장에 모인 사람들끼리 가까워지고, 곳간에서 음식을 낸다
           const others = w.residents(n.town, true).filter((m) => m !== n && m.life && m.life.feast);
@@ -1673,9 +1675,9 @@
           n.mood = Math.min(1, n.mood + 0.2); break;
         }
         n.mood = Math.min(1, n.mood + 0.14); n.fatigue = Math.min(1, n.fatigue + 0.03); if (L.with !== undefined) { adjust(n, L.with, 1); maybePromise(w, n, L); } if (L.with !== undefined && w.rng.next() < 0.015) smallMoment(w, n, L); break;
-      case "social": n.mood = Math.min(1, n.mood + 0.1); if (L.with !== undefined) { adjust(n, L.with, 2); if (w.rng.next() < 0.01) smallMoment(w, n, L); maybePromise(w, n, L); } break;
+      case "social": n.mood = Math.min(1, n.mood + 0.1); if (L.with !== undefined) { adjust(n, L.with, 2); if (w.rng.next() < 0.01) smallMoment(w, n, L); maybePromise(w, n, L); maybeGift(w, n, L); } break;
       case "fish": n.mood = Math.min(1, n.mood + 0.12); { const tw = w.towns[n.town]; if (tw) tw.food += 0.25; } if (L.with !== undefined) adjust(n, L.with, 1); break;
-      case "shop": { const sellers = w.residents(n.town, true).filter((m) => ["merchant", "baker"].includes(m.job) && m !== n); const v = Math.min(n.gold * 0.1, 4); n.gold -= v; if (sellers.length) w.rng.choice(sellers).gold += v * 0.9; n.mood = Math.min(1, n.mood + 0.05); break; }
+      case "shop": { if (shopFor(w, n)) n.mood = Math.min(1, n.mood + 0.06); break; }
       case "pray": n.mood = Math.min(1, n.mood + 0.08); { const pr = w.residents(n.town, true).find((m) => m.job === "priest" && m !== n); if (pr && n.gold > 1) { n.gold -= 0.3; pr.gold += 0.3; } } break;
       case "chores": n.mood += (0.55 - n.mood) * 0.03; break;
       default: break;
@@ -1723,6 +1725,14 @@
     return ap;
   }
 
+  /** 함께 있는 동안 가끔 가진 것을 선물한다 */
+  function maybeGift(w, n, L) {
+    const f = w.npcs[L.with]; if (!f || !n.inv || w.rng.next() > 0.01 || opinion(n, f.id) < 30) return;
+    const id = Object.keys(n.inv).find((x) => !["hoe", "axe"].includes(x)); if (!id) return;
+    invTake(n, id); invAdd(f, id); adjust(f, n.id, 6);
+    const nm = (itemOf(id) || {}).name || id;
+    w.record("gift", `${jo(n.name, "이/가")} ${f.name}에게 ${nm}${jo(nm, "을/를").slice(nm.length)} 선물했다`, { actor: n.id, target: f.id, town: n.town, imp: 1, sent: 3, wr: 0 });
+  }
   /** 함께 있는 동안 가끔 다음 약속을 잡는다 */
   function maybePromise(w, n, L) {
     const f = w.npcs[L.with];
@@ -1746,12 +1756,84 @@
       w.lifeDone = b + 1;
     }
   }
+  // ---------------------------------------------------------------- 마을 재고 (실제 물건)
+  /* 마을마다 t.stock{물건: 개수}. 일한 날 업무가 만드는 물건이 품질만큼 쌓이고(settleWork), 사람들이 장 보러 와서 산다(shop).
+   * 값은 재고에 따라 오르내린다(stockPrice). 상하는 것(빵·고기·스튜)은 날마다 조금씩 준다. 주민도 가방 n.inv를 갖고 산 것을 쓴다.
+   * 물건의 값·쓰임은 화면 쪽 아이템 표(Game.ITEMS)를 본다(없으면 팩·세계의 CONTENT.items). */
+  const itemOf = (id) => (root.Game && root.Game.ITEMS && root.Game.ITEMS[id]) || CONTENT.items[id] || null;
+  const itemVal = (id) => { const it = itemOf(id) || {}; return it.sell || (it.price ? it.price / 2 : 4); };
+  const PERISH = new Set(["bread", "meat", "meal", "dish", "fish"]);
+  function stockAdd(t, id, k) { if (!t || !k || !itemOf(id)) return; t.stock = t.stock || {}; t.stock[id] = (t.stock[id] || 0) + k; }
+  /** 만든 물건을 재고로: 이 마을에 넘치면(어른 수만큼이 한도) 그 물건이 가장 모자란 다른 마을로 실어 보낸다 */
+  function stockSupply(w, t, id, k) {
+    if (!t || !k) return;
+    const cap = Math.max(4, w.residents(t.id, true).length);
+    const room = Math.max(0, cap - ((t.stock || {})[id] || 0)), here = Math.min(k, room);
+    stockAdd(t, id, here);
+    const rest = k - here; if (rest <= 0) return;
+    const other = Object.values(w.towns).filter((u) => u !== t && !u.fallen && ((u.stock || {})[id] || 0) < Math.max(4, w.residents(u.id, true).length)).sort((a, b) => ((a.stock || {})[id] || 0) - ((b.stock || {})[id] || 0))[0];
+    if (other) stockAdd(other, id, Math.min(rest, 2)); // 실어 나를 수 있는 만큼만, 나머지는 팔리지 않아 버려진다
+  }
+  function stockTake(t, id, k = 1) { if (!t || !t.stock || (t.stock[id] || 0) < k) return false; t.stock[id] -= k; if (!t.stock[id]) delete t.stock[id]; return true; }
+  /** 이 마을에서 이 물건 한 개의 값 (사는 값). 재고가 넉넉하면 싸고, 모자라면 비싸다 */
+  function stockPrice(w, t, id) {
+    const s = (t && t.stock && t.stock[id]) || 0, want = Math.max(3, (t ? w.residents(t.id, true).length : 8) / 3);
+    return Math.max(1, Math.round(itemVal(id) * 1.5 * clamp(1.6 - (s / want) * 0.6, 0.6, 1.8)));
+  }
+  /** 파는 값: 그 물건이 이미 넘치면 덜 쳐준다 */
+  function stockSellPrice(w, t, id) { return Math.max(1, Math.round(stockPrice(w, t, id) * 0.6)); }
+  function stockDecay(w) { for (const t of Object.values(w.towns)) for (const id of Object.keys(t.stock || {})) if (PERISH.has(id)) { t.stock[id] = Math.floor(t.stock[id] * 0.85); if (!t.stock[id]) delete t.stock[id]; } }
+  const invAdd = (n, id, k = 1) => { n.inv = n.inv || {}; n.inv[id] = (n.inv[id] || 0) + k; };
+  const invTake = (n, id, k = 1) => { if (!n.inv || (n.inv[id] || 0) < k) return false; n.inv[id] -= k; if (!n.inv[id]) delete n.inv[id]; return true; };
+  /** 주민이 지금 사고 싶은 것: 먹을 것 → 약 → 일 도구 → (넉넉하면) 좋은 것 */
+  function wantList(w, n) {
+    const J = JOBS[n.job] || {}, inv = n.inv || {}, out = [];
+    const foods = Object.keys(inv).filter((id) => (itemOf(id) || {}).food).reduce((s, id) => s + inv[id], 0);
+    if (foods < 2) out.push("bread", "meal", "fish");
+    if (n.health < 7) out.push("salve", "fever_tonic", "potion");
+    if (J.seasonal && !inv.hoe) out.push("hoe");
+    if ((J.workplace === "forge" || n.job === "builder") && !inv.axe) out.push("axe");
+    const LUX = [...Object.keys(CONTENT.items).filter((id) => CONTENT.items[id].gen), "gem_ring", "gem", "mead"];
+    const owned = LUX.filter((id) => inv[id]).length; // 좋은 것은 이미 가진 것은 또 사지 않고, 둘까지만
+    if (n.gold > 60 && owned < 2 && (n.traits.greed > 0.5 || n.mood < 0.5)) out.push(...LUX.filter((id) => !inv[id]));
+    return out;
+  }
+  /** 장보기: 마을 재고에서 하나 사 가방에 넣는다. 돈은 그 물건을 만드는 사람(없으면 상인)에게 */
+  function shopFor(w, n) {
+    const t = w.towns[n.town]; if (!t || !t.stock) return null;
+    for (const id of wantList(w, n)) {
+      if (!(t.stock[id] > 0)) continue;
+      const price = stockPrice(w, t, id); if (n.gold < price) continue;
+      stockTake(t, id); invAdd(n, id); n.gold -= price;
+      const makers = w.residents(n.town, true).filter((m) => m !== n && worksOf(m.job).some((x) => x.gives && x.gives[id]));
+      const sellers = makers.length ? makers : w.residents(n.town, true).filter((m) => m !== n && m.job === "merchant");
+      if (sellers.length) w.rng.choice(sellers).gold += price * 0.9;
+      return id;
+    }
+    return null;
+  }
+  /** 가진 것을 쓴다: 집에서 밥 먹을 때 먹을 것, 아플 때 약 */
+  function useOwn(w, n, why) {
+    const inv = n.inv || {};
+    if (why === "eat") { const f = Object.keys(inv).find((id) => (itemOf(id) || {}).food); if (f) { invTake(n, f); n.mood = Math.min(1, n.mood + 0.05); n.hunger = Math.max(0, n.hunger - 1); return f; } }
+    if (why === "heal") { const m = ["fever_tonic", "potion", "salve"].find((id) => inv[id]); if (m) { invTake(n, m); n.health = Math.min(10, n.health + ((itemOf(m) || {}).heal || 3)); return m; } }
+    return null;
+  }
+
   /** 하루 끝: 일한 만큼 정산한다 (7시간이 하루치) */
   function settleWork(w) {
     for (const n of w.alive()) {
       const t = n.today;
       if (!t || t.day !== w.day || !t.worked || n.controller === "player" || !isAdult(n) || n.at_war) continue;
-      rWork(n, w, Math.min(1.3, t.worked / 7) * (0.85 + 0.3 * (n.mood ?? 0.6)));
+      const tool = (JOBS[n.job] || {}).seasonal && n.inv && n.inv.hoe ? 1.1 : 1; // 괭이가 있는 농부는 더 거둔다
+      const scale = Math.min(1.3, t.worked / 7) * (0.85 + 0.3 * (n.mood ?? 0.6)) * tool;
+      rWork(n, w, scale);
+      // 만든 물건은 마을 재고로 (업무의 결과물 × 품질 × 일한 만큼)
+      const tw = w.towns[n.town], lw = n.lastWork, wk = lw && lw.day === w.day && CONTENT.works.find((x) => x.id === lw.id);
+      if (wk && wk.gives) for (const [id, k] of Object.entries(wk.gives)) stockSupply(w, tw, id, Math.max(1, Math.round(k * gradeOf(lw.q).mult * Math.min(1, scale))));
+      if ((JOBS[n.job] || {}).seasonal && w.harvestMult() > 0.3 && w.rng.next() < 0.5 * scale) stockSupply(w, tw, "wheat", 1);
+      if (n.job === "adventurer" && w.rng.next() < 0.3) stockSupply(w, tw, w.rng.choice(["meat", "hide", "old_coin"]), 1);
+      if (tool > 1 && w.rng.next() < 0.01) invTake(n, "hoe"); // 연장은 닳는다
     }
   }
   /** 지금 무얼 하는지 (말 걸 때·사람 목록에 쓰인다) */
@@ -2450,7 +2532,7 @@
     return n;
   }
 
-  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, rHeal, rForage, enlist, returnHome, borderTown, DPS };
-  root.Asteria = { SAVE_VERSION, SPREAD, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
+  const _ = { RNG, maxBy, clamp, adjust, power, related, rWork, rJob, betterJob, granaries, settleWork, rHeal, rForage, enlist, returnHome, borderTown, DPS };
+  root.Asteria = { SAVE_VERSION, SPREAD, stockPrice, stockSellPrice, stockAdd, stockTake, shopFor, wantList, useOwn, makeAppt, apptWhen, apptText, APPT_KIND, LIFE_LABEL, LIFE_LABEL_FEAST, holidayOf, calendarDay, liveHour, lifeUntil, planHour, newWeather, weatherWork, dayOf, agriLife, farmMult, experienceBirth, raceLife, makeKnowledge, gainExp, envOf, ENVS, jobLife, genesis, knowledgeBirth, bornOk, applyDefs, makeJobDef, demandMet, worksOf, registerTool, TOOL_AUTO, TOOL_DOMAINS, workClient, clientOk, applyEffects, fill, GRADES, gradeOf, workLv, workQuality, autoScores, workAutoReady, toolsOf, setJob, addXp, skillLv, skillOf, knownSkills, mastery, SKILL_LV, SKILL_LV_NAME, migrate, extStore, adultAge, heritageOf, blendHeritage, makeLook, inheritLook, nationName: nameOfNation, houseId, pickHouse, settleIn, freshWorld, jobDemand, _, CONTENT, RACES, JOBS, DREAMS, extend, syncContent, foundNation, allTownDefs, recent, knows, learn, KNOW, seenRace, racesInWorld, pickDream, dreamName, dreamProgress, DPY, DPS, SEASONS, World, ACTIONS, ACT, available, choose, step, advance, beginDay, finishDay, newWorld, addPlayer,
     answerOracle, playerNeedsChoice, feuds, chain, storyScore, age, isAdult, opinion, family, jo, lordName };
 })(typeof window !== "undefined" ? window : globalThis);

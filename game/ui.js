@@ -844,6 +844,7 @@ function winTowns() {
       return h("div", { class: "town card" + (p && p.town === t.id ? " here" : "") },
         h("div", { class: "ttl" }, h("span", null, t.name, h("span", { class: "small muted" }, ` · ${A.nationName(W, t.nation)}${t.border ? " · 국경" : ""}`)), h("span", { class: "chip " + mood[1] }, mood[0])),
         h("div", { class: "small" }, `주민 ${res.length}명 · 곡식 한 끼 ${price}닢${t.store >= 1 ? ` · 곳간 비축 ${Math.round(t.store)}` : ""}${p && p.home === t.id ? " · 내 집" : ""}`),
+        t.stock && Object.keys(t.stock).length ? h("div", { class: "small muted" }, `재고 ${Object.entries(t.stock).filter(([id]) => G.ITEMS[id]).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id, k]) => `${G.ITEMS[id].name} ${k}(${A.stockPrice(W, t, id)}닢)`).join(" · ")}`) : null,
         t.agri && (t.agri.ids.length || t.agri.breed) ? h("div", { class: "small muted" }, `농법 ${t.agri.ids.map((id) => (A.CONTENT.innovations.find((x) => x.id === id) || {}).name).join("·")}${t.agri.breed ? ` · ${t.agri.breed}대 개량` : ""} · 수확 ×${A.farmMult(t).toFixed(2)}`) : null,
         h("div", { class: "jobs" }, Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, c]) => h("span", { class: "chip" }, `${A.JOBS[j].name} ${c}`))),
         h("div", { class: "sub" }, "이름난 사람"), h("div", { class: "fam" }, notable.map((n) => h("button", { type: "button", onclick: () => { bioId = n.id; openWin("people"); } }, following(n.id) ? "★ " : "", n.name, h("span", { class: "muted" }, ` ${W.jobName(n)}`)))),

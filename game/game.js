@@ -1590,7 +1590,11 @@
 
   // ================================================================ 건물 안에서
   function seedsOnSale(w) { return Object.entries(CROPS).filter(([, c]) => c.seasons.includes(w.season)).map(([k]) => SEED_OF[k]); }
-  function sellPrice(w, id) { const p = w.player; return Math.max(1, Math.round(ITEMS[id].sell * (p.job === "merchant" ? 1.3 : 1))); }
+  /** 파는 값: 그 마을 재고가 넘치면 덜 쳐준다 (상인은 흥정을 잘한다) */
+  function sellPrice(w, id) { const p = w.player, t = w.towns[p.town]; return Math.max(1, Math.round(A.stockSellPrice(w, t, id) * (p.job === "merchant" ? 1.3 : 1))); }
+  /** 재고로 파는 물건(마을에서 만드는 것)은 재고에 따라, 그 밖(씨앗·만들지 않는 연장)은 정해진 값 */
+  const STOCKED = (id) => !id.startsWith("seed") && !["can", "dagger", "sword", "potion"].includes(id);
+  const buyPrice = (w, t, id) => (STOCKED(id) ? A.stockPrice(w, t, id) : ITEMS[id].price);
   /** 건물의 메뉴. {id, label, hint, ok, why, min, e, arg} */
   function buildingMenu(w, pl) {
     const p = w.player, e = ext(w), v = [];
@@ -1640,12 +1644,21 @@
       if (!ms.length && !inv && !bi) add({ id: "locked", label: "남의 집이다", ok: false, why: p.job === "builder" ? "집주인에게 ‘고칠 데 없어요?’라고 물어 일을 받아 보자" : "문이 잠겨 있다" });
     }
     if (pl.kind === "market") {
-      for (const id of [...seedsOnSale(w), "bread"]) add({ id: "buy:" + id, label: `${ITEMS[id].name} 사기 (금화 ${ITEMS[id].price})`, min: 0, e: 0, hint: id.startsWith("seed") ? `${CROPS[ITEMS[id].seed].days}일이면 자란다` : "기력을 채워 준다", ok: p.gold >= ITEMS[id].price, why: "금화가 모자라다" });
+      const tw = w.towns[pl.town], st = tw.stock || {};
+      for (const id of Object.keys(st).filter((id) => ITEMS[id] && !["hoe", "axe"].includes(id) && st[id] > 0).sort((a, b) => st[b] - st[a]).slice(0, 6)) {
+        const pr = buyPrice(w, tw, id); add({ id: "buy:" + id, label: `${ITEMS[id].name} 사기 (금화 ${pr})`, min: 0, e: 0, hint: `이 마을 재고 ${st[id]}개`, ok: p.gold >= pr, why: "금화가 모자라다" });
+      }
+      if (!(st.bread > 0)) add({ id: "soldout:bread", label: "빵 (품절)", ok: false, why: "빵집에서 아직 굽지 않았다" });
+      for (const id of seedsOnSale(w)) add({ id: "buy:" + id, label: `${ITEMS[id].name} 사기 (금화 ${ITEMS[id].price})`, min: 0, e: 0, hint: id.startsWith("seed") ? `${CROPS[ITEMS[id].seed].days}일이면 자란다` : "기력을 채워 준다", ok: p.gold >= ITEMS[id].price, why: "금화가 모자라다" });
       const sell = Object.keys(e.inv).filter((id) => ITEMS[id].sell && !ITEMS[id].tool);
       for (const id of sell) add({ id: "sell:" + id, label: `${ITEMS[id].name} 팔기 ×${e.inv[id]} (개당 ${sellPrice(w, id)})`, min: 0, e: 0, hint: "전부 판다" });
     }
     if (pl.kind === "forge") {
-      for (const id of ["hoe", "can", "axe", "dagger", "sword"]) if (!e.inv[id]) add({ id: "buy:" + id, label: `${ITEMS[id].name} 사기 (금화 ${ITEMS[id].price})`, min: 0, e: 0, hint: ITEMS[id].hint, ok: p.gold >= ITEMS[id].price, why: "금화가 모자라다" });
+      const tw = w.towns[pl.town], st = tw.stock || {};
+      for (const id of ["hoe", "can", "axe", "dagger", "sword"]) if (!e.inv[id]) {
+        if (STOCKED(id) && !(st[id] > 0)) { add({ id: "soldout:" + id, label: `${ITEMS[id].name} (품절)`, ok: false, why: "대장간에 남은 게 없다. 대장장이가 벼려야 한다" }); continue; }
+        add({ id: "buy:" + id, label: `${ITEMS[id].name} 사기 (금화 ${buyPrice(w, tw, id)})`, min: 0, e: 0, hint: ITEMS[id].hint + (STOCKED(id) ? ` · 재고 ${st[id]}개` : ""), ok: p.gold >= buyPrice(w, tw, id), why: "금화가 모자라다" });
+      }
       if (!e.sharp) add({ id: "sharpen", label: "무기 벼리기 (금화 10)", min: 30, e: 0, hint: "무기가 더 아프게 벤다", ok: p.gold >= 10, why: "금화가 모자라다" });
     }
     if (pl.kind === "tavern") {
@@ -1742,11 +1755,13 @@
       w.record("career", `${jo(old, "이었던/였던")} ${jo(p.name, "이/가")} ${j.start_text || jo(j.name, "이/가") + " 되었다"}`, { actor: p.id, town: p.town, imp: 4, wr: 0.4, data: { from, to: j.id, cost: j.entry_cost } });
       text = `이제 나는 ${j.name}다. 직업 기술이 ‘${SKILL[j.id].name}’(으)로 바뀌었다.`;
     } else if (id.startsWith("buy:")) {
-      const it = id.split(":")[1]; p.gold -= ITEMS[it].price; give(w, it, 1, "사기", `${town.name} ${pl.name}`); text = `${jo(ITEMS[it].name, "을/를")} 샀다.`;
+      const it = id.split(":")[1], pr = buyPrice(w, town, it);
+      if (STOCKED(it) && !A.stockTake(town, it)) return { text: "방금 다 팔렸다." };
+      p.gold -= pr; give(w, it, 1, "사기", `${town.name} ${pl.name}`); text = `${jo(ITEMS[it].name, "을/를")} 금화 ${pr}닢에 샀다.`;
       return finish(w, text, 0, 0);
     } else if (id.startsWith("sell:")) {
       const it = id.split(":")[1], n = e.inv[it], v = sellPrice(w, it) * n;
-      take(w, it, n); p.gold += v; text = `${ITEMS[it].name} ${n}개를 팔아 금화 ${v}닢을 받았다.`;
+      take(w, it, n); p.gold += v; A.stockAdd(town, it, n); text = `${ITEMS[it].name} ${n}개를 팔아 금화 ${v}닢을 받았다.`;
       return finish(w, text, 0, 0);
     } else if (id === "sharpen") { p.gold -= 10; e.sharp = true; text = "대장장이가 무기를 날카롭게 벼려 주었다."; }
     else if (id === "meal") { p.gold -= 6; p.hunger = 0; p.energy = Math.min(100, p.energy + 30); text = "따끈한 스튜와 빵으로 배를 채웠다."; }
@@ -1880,7 +1895,7 @@
   }
 
   const G = {
-    syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
+    buyPrice, STOCKED, syncGenItems, JOBMAKE, jobDraft, checkJobDraft, workSig, sameWork, draftWork, createJob, itemValue, SIMS, registerSim, HANDS, registerHand, toolReady, workReady, finishWork, jobReady, houseAsset, furnKey, sourcesOf, note, codexHas, catOf, CODEX_CATS, knownRecipes, zoneName,
     MAP, T, O, MW, MH, TOWN_POS, FRONT, rebuildMap, styleOf, crossOK, unstick, inviteAt, seeOut, breakinAt, residentsOf, canExpand, houseExpandOptions, applyHouseWork, houseOfNpc, practice, doBuildWork, renoOptions, orderReno, renoDawn, renoName, stationPlaces, findSite, insideBuilding, furnitureIn, entryOf, canEnter, readScroll, ITEMS, berryReady, projectiles, updateProjectiles, throwAt, recipes, craft, stationReady, nearHome, grassy, CROPS, SKILL, ANIMAL, animals, walkers,
     walkable, townAt, placeOf, findPath, objAt, ext, has, give, take, absMin, clockText, hour, isNight,
     setup, newLife, resetLife, extOf, blockedReason, tick, spend, sleep, faint, syncPos, placeIn, move, facingTile, face, useAt, eat,
