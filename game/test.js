@@ -489,6 +489,13 @@
       const w2 = A.World.deserialize(JSON.parse(W.serialize()));
       t.check(A.JOBS[J.id] && A.worksOf(J.id).length === 2 && w2.npcs[p.id].job === J.id, "불러와도 남아 있다");
       A.newWorld(77, "다른 세계"); t.check(!A.JOBS[J.id], "다른 세계에는 없다"); A.applyDefs(W);
+      // 도토리골 팩을 기본에서 뺐다: 그 팩으로 생긴 마을·하플링·양봉가가 있는 옛 저장(v9)은 그 세계의 정의로 살아남는다
+      const od = JSON.parse(W.serialize()); od.version = 9; od.towns.acorn = { food: 50, seeded: true, nation: "greenhill" };
+      od.nations = { ...od.nations, greenhill: { id: "greenhill", name: "초록언덕 자치령", since: 0, founder: null, from: null } };
+      const hn = od.npcs.find((n) => n.alive && n.controller !== "player"); hn.race = "halfling"; hn.job = "beekeeper"; hn.town = "acorn"; hn.home = "acorn";
+      const wa = A.World.deserialize(od); G.setup(wa);
+      t.check(wa.towns.acorn && wa.towns.acorn.name === "도토리골" && A.RACES.halfling && A.JOBS.beekeeper && wa.npcs[hn.id].town === "acorn", "옛 세계의 도토리골·하플링·양봉가는 그 세계에 남는다");
+      A.newWorld(78, "새 세계"); t.check(!A.RACES.halfling && !Object.values(A.newWorld(79, "또").towns).some((x) => x.id === "acorn"), "새 세계에는 도토리골이 없다"); A.applyDefs(W);
     } },
     { id: "granary", name: "가을에 비축하고, 모자라면 곳간을 열고, 이웃 마을이 돕는다", run(t) {
       const W = t.w, ts = Object.values(W.towns).filter((x) => !x.fallen), a = ts[0], pop = (x) => Math.max(1, W.residents(x.id).length);

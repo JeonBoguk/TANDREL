@@ -1,6 +1,6 @@
 /* 확장 팩 예시: 초록언덕 자치령
  * 이 파일 하나로 새 국가·마을·종족·직업·아이템·이름 있는 주민을 더한다. 엔진은 건드리지 않는다.
- * index.html에서 content.js 다음, game.js 앞에 <script src="pack-greenhill.js">를 넣으면 된다.
+ * 기본으로는 불러오지 않는다(예시). 쓰려면 index.html에서 content.js 다음, game.js 앞에 <script src="pack-greenhill.js">를 넣는다.
  * 이미 진행 중인 세계를 불러와도, 새 마을과 주민이 그 세계에 자연스럽게 들어온다. */
 (function (root) {
   "use strict";
@@ -23,6 +23,13 @@
 
     knowledge: [
       { id: "beekeeping", name: "벌 치기", domain: ["nature", "craft"], desc: "벌통을 돌보고 꿀을 거둔다" },
+      { id: "mead", name: "꿀술 빚기", desc: "꿀을 삭혀 술을 빚는다", domain: ["craft", "heat"], noun: "꿀술", jobName: "꿀술 장인", workName: "꿀술 빚기",
+        born: { job: "beekeeper", lv: 2, p: 0.0012, text: "꿀단지가 저절로 삭는 것을 보고 ‘{k}’{k:을/를} 깨쳤다" },
+        demand: { events: ["festival", "marriage", "feast"], within: 120, n: 2 }, makes: { needs: { honey: 2 }, gives: { mead: 1 } } },
+    ],
+    // 경험의 대상: 꿀 (양봉가의 경험이 깊어지면 밀랍 공예 같은 앎이 생긴다)
+    subjects: [
+      { id: "honey", name: "꿀", doms: ["art","care","craft","nature","heat"], item: "honey", color: "#e0b02a", names: { art: ["밀랍 공예", "밀랍 장인"], care: ["꿀 처방", "꿀 의원"] } },
     ],
     jobs: [
       { id: "beekeeper", teaches: ["beekeeping"], exp: [["nature", "honey"], ["craft", "honey"]], name: "양봉가", income: [1.5, 3.5], food: 0.8, entry_cost: 20, weight: 0.5, start_text: "벌통을 놓았다",
@@ -48,6 +55,7 @@
     items: {
       honey: { name: "꿀", icon: "🍯", food: 1, energy: 14, sell: 12 },
       honey_cake: { name: "꿀 케이크", icon: "🍰", food: 4, energy: 30, sell: 28 },
+      mead: { name: "꿀술", sell: 16, food: 1, energy: 10, art: ["bottle", "#d8a840"], hint: "잔치에 빠지지 않는다" },
     },
     recipes: [
       { id: "honey_cake", out: "honey_cake", station: "workbench", needs: { honey: 2, wheat: 2 }, mins: 40, energy: 3, hint: "금화 28닢에 팔린다" },

@@ -100,7 +100,6 @@
       table: { name: "나무 탁자", icon: "🟫", sell: 34, furniture: "table", hint: "집 안에 놓거나 판다" },
       rug: { name: "풀 깔개", icon: "🟩", sell: 16, furniture: "rug", walk: true, hint: "집 안 바닥에 깐다" },
       flowerpot: { name: "화분", icon: "🪴", sell: 10, furniture: "pot", hint: "집 안에 놓는다" },
-      mead: { name: "꿀술", sell: 16, food: 1, energy: 10, art: ["bottle", "#d8a840"], hint: "잔치에 빠지지 않는다" },
       fever_tonic: { name: "해열 탕약", icon: "🍵", heal: 6, sell: 20 },
       rune_spear: { name: "룬 돌창", icon: "🔱", tool: true, weapon: 4, sell: 40, hint: "룬이 빛나는 창" },
       elixir: { name: "비약", icon: "⚗️", heal: 10, energy: 100, sell: 60 },
@@ -395,7 +394,7 @@
       { id: "battle", name: "싸움", doms: ["body","knowledge","care","art"], color: "#a84a4a", demand: { war: true }, names: { body: ["싸움 기술", "검술 사범"], knowledge: ["병법", "군사"], care: ["전상 돌보기", "전상 의원"], art: ["싸움 노래", "전가 시인"] } }, { id: "law", name: "법도", doms: ["social","knowledge"], color: "#8a7ad8", demand: { crime: 5 }, names: { social: ["법도 따지기", "법률가"], knowledge: ["법 풀이", "율사"] } }, { id: "ruin", name: "유적", doms: ["knowledge","body"], color: "#9a9070", names: { knowledge: ["유적 읽기", "유적 학자"], body: ["유적 파기", "도굴꾼"] } },
       { id: "relic", name: "옛 물건", doms: ["magic","social","art","knowledge"], item: "relic", color: "#c8a050", names: { magic: ["유물 깨우기", "유물 술사"], social: ["골동 흥정", "골동상"], art: ["유물 손질", "유물 복원가"] } }, { id: "potion", name: "물약", doms: ["care","social","magic"], color: "#7ac8b8", names: { care: ["물약 처방", "약사"], social: ["물약 팔기", "약장수"] } }, { id: "light", name: "빛", doms: ["magic","art"], color: "#f0e090", names: { magic: ["빛 부리기", "빛 술사"], art: ["빛 그림", "빛 화가"] } },
       { id: "heart", name: "마음", doms: ["care","art","social"], color: "#e8a0a8", names: { care: ["마음 돌보기", "상담가"], art: ["노래 짓기", "음유시인"], social: ["중매", "중매쟁이"] } }, { id: "star", name: "별", doms: ["knowledge","magic"], color: "#c8c8f0", names: { knowledge: ["별 읽기", "점성가"], magic: ["별 부르기", "별 술사"] } }, { id: "house", name: "집", doms: ["art","knowledge","craft"], color: "#a87a4a", names: { art: ["집 꾸미기", "집 장식가"], knowledge: ["집터 보기", "풍수가"] } }, { id: "body", name: "몸", doms: ["knowledge","body","care"], color: "#e0b090", names: { knowledge: ["몸 읽기", "해부학자"], body: ["몸 단련", "무술 사범"], care: ["몸 주무르기", "안마사"] } },
-      { id: "forest", name: "숲", doms: ["nature","knowledge","magic"], color: "#4a7a3a", names: { nature: ["숲 가꾸기", "숲지기"], knowledge: ["숲 읽기", "약초꾼"], magic: ["숲 주술", "숲 주술사"] } }, { id: "honey", name: "꿀", doms: ["art","care","craft","nature","heat"], item: "honey", color: "#e0b02a", names: { art: ["밀랍 공예", "밀랍 장인"], care: ["꿀 처방", "꿀 의원"] } }, { id: "gem", name: "보석", doms: ["magic","social","craft","art"], item: "rough_gem", color: "#6ec6e0", names: { magic: ["보석 마법", "보석 술사"], social: ["보석 흥정", "보석상"] } },
+      { id: "forest", name: "숲", doms: ["nature","knowledge","magic"], color: "#4a7a3a", names: { nature: ["숲 가꾸기", "숲지기"], knowledge: ["숲 읽기", "약초꾼"], magic: ["숲 주술", "숲 주술사"] } }, { id: "gem", name: "보석", doms: ["magic","social","craft","art"], item: "rough_gem", color: "#6ec6e0", names: { magic: ["보석 마법", "보석 술사"], social: ["보석 흥정", "보석상"] } },
     ],
     knowledge: [
       { id: "farming", domain: ["nature", "body"], name: "농사", desc: "땅을 고르고 씨를 뿌려 곡식을 거둔다" },
@@ -431,9 +430,6 @@
       { id: "reckoning", name: "셈", desc: "곳간과 장부를 맞추는 셈법", domain: ["knowledge", "social"], noun: "셈", jobName: "장부지기", workName: "곳간 장부 맞추기",
         born: { job: "merchant", lv: 3, p: 0.0012, text: "오래 장사하며 셈이 늘어, 마을 곳간까지 셈할 수 있게 되었다" },
         demand: { pop: 80, events: ["food_worry", "granary_open", "food_aid"], within: 240, n: 2 }, client: null, effects: { food: 6, gold: [2, 5], record: { kind: "ledger", text: "{me:이/가} {town} 곳간 장부를 바로잡아 새는 곡식을 막았다", imp: 3, p: 0.1 } } },
-      { id: "mead", name: "꿀술 빚기", desc: "꿀을 삭혀 술을 빚는다", domain: ["craft", "heat"], noun: "꿀술", jobName: "꿀술 장인", workName: "꿀술 빚기",
-        born: { job: "beekeeper", lv: 2, p: 0.0012, text: "꿀단지가 저절로 삭는 것을 보고 ‘{k}’{k:을/를} 깨쳤다" },
-        demand: { events: ["festival", "marriage", "feast"], within: 120, n: 2 }, makes: { needs: { honey: 2 }, gives: { mead: 1 } } },
     ],
     loot: [ // 유적(ruin)·흙더미(mound)·황무지 유적(waste)에서 나오는 것. w: 비중
       { id: null, w: 5, text: "흙과 돌 부스러기뿐이었다" },

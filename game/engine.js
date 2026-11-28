@@ -303,7 +303,7 @@
   // ================================================================ 저장 형식의 버전과 이전
   /* 저장 형식을 바꿀 때: SAVE_VERSION을 올리고, 옛 버전 → 새 버전으로 바꾸는 함수를 MIGRATIONS에 더한다.
    * deserialize는 저장된 버전부터 차례로 적용한다. 저장 키(asteria.*)와 format 문자열은 바꾸지 않는다. */
-  const SAVE_VERSION = 9;
+  const SAVE_VERSION = 10;
   /* 플레이어로 살며 생기는 상태가 어디에 사는가 (game.js의 ext()가 이 표대로 나눠 담는다)
    *  land: 세계에 남는 흔적 · session: 화면·조작 · 나머지: 그 인물의 것(n.ext). 인물이 바뀌어도 인물의 것은 그 인물에게 남는다 */
   const EXT_STORE = { farm: "land", picked: "land", removed: "land", looted: "land", mw: "land", respread: "land", board: "land", chickenGone: "land", v: "land",
@@ -391,6 +391,24 @@
     8: (d) => {
       const founded = (d.founded || []).map((f) => ({ ...f, pos: f.pos ? f.pos.map((v) => Math.round(v * SPREAD)) : f.pos }));
       return { ...d, founded, land: { ...(d.land || {}), respread: SPREAD }, version: 9 };
+    },
+    // v9 → v10: 도토리골 팩(pack-greenhill)을 기본에서 뺐다. 그 팩으로 생긴 마을·종족·직업이 있는 세계는 그 세계만의 정의(defs)로 옮겨 살린다
+    9: (d) => {
+      const uses = (d.towns && d.towns.acorn) || (d.npcs || []).some((n) => n.race === "halfling" || n.job === "beekeeper");
+      if (!uses || CONTENT.towns.some((t) => t.id === "acorn")) return { ...d, version: 10 };
+      const defs = { jobs: [], works: [], knowledge: [], items: {}, races: [], ...(d.defs || {}) };
+      const add = (key, x) => { if (!defs[key].some((y) => y.id === x.id)) defs[key].push(x); };
+      add("races", { id: "halfling", name: "하플링", lifespan: [90, 120], adultAge: 20, magic: 0.25, traits: { kindness: 0.15, ambition: -0.1, bravery: -0.05 },
+        look: { skin: ["#f6d1ad", "#eab98f"], short: true, curly: true, hair: ["#7a4a26", "#b8742e", "#d9a85a", "#4a3020"] },
+        names: ["포피", "밀로", "로지", "빌보", "데이지", "토비", "페린", "머틀", "올리", "클로버", "호브", "피핀", "메리골드", "탐"], born: 0 });
+      add("knowledge", { id: "beekeeping", name: "벌 치기", domain: ["nature", "craft"], desc: "벌통을 돌보고 꿀을 거둔다" });
+      add("jobs", { id: "beekeeper", name: "양봉가", teaches: ["beekeeping"], income: [1.5, 3.5], food: 0.8, entry_cost: 20, weight: 0, color: "#e0b02a", workplace: "fields", look: { hat: "veil" }, born: 0 });
+      defs.items = { honey: { name: "꿀", food: 1, energy: 14, sell: 12, art: ["jar", "#e0a830"] }, honey_cake: { name: "꿀 케이크", food: 4, energy: 30, sell: 28, art: ["cake", "#e8c070"] }, ...defs.items };
+      const founded = [...(d.founded || [])];
+      if (d.towns && d.towns.acorn && !founded.some((f) => f.id === "acorn"))
+        founded.unshift({ id: "acorn", name: "도토리골", nation: "greenhill", nationName: "초록언덕 자치령", pos: [Math.round(140 * SPREAD), Math.round(62 * SPREAD)], roads: ["granok", "lumen"],
+          races: { halfling: 0.8, human: 0.2 }, job_bias: { cook: 3, farmer: 2, beekeeper: 3 }, founder: null, day: 0 });
+      return { ...d, defs, founded, version: 10 };
     },
   };
   function migrate(d) {
